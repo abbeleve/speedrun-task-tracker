@@ -29,11 +29,11 @@ body {
   margin: 0;
   height: 100vh !important;
   overflow: hidden !important;
-  background: var(--bg-primary, #1a1a2e);
+  background: var(--bg-page, var(--bg-primary, #1a1a2e));
 }
 
 #root {
   height: 100vh !important;
   overflow: hidden !important;
-  background: var(--bg-primary, #1a1a2e);
+  background: var(--bg-page, var(--bg-primary, #1a1a2e));
 }

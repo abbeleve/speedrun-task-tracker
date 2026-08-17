@@ -16,8 +16,8 @@ const PRESETS: { name: string; plannedTime: number }[] = [
   { name: 'Deploy', plannedTime: 180 },
 ];
 
-const MIN_BLOCK_PX = 56;
-const MAX_BLOCK_PX = 160;
+const MIN_BLOCK_PX = 72;
+const MAX_BLOCK_PX = 200;
 
 function App() {
   // ── Pick ruler interval so labels don't overlap ──
@@ -38,7 +38,6 @@ function App() {
   const [newMinutes, setNewMinutes] = useState('5');
   const [newEmoji, setNewEmoji] = useState(DEFAULT_EMOJI);
   const [newColor, setNewColor] = useState(DEFAULT_COLOR);
-  const [newType, setNewType] = useState<TaskType>('task');
   const [showEmojiPopup, setShowEmojiPopup] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [emojiSearch, setEmojiSearch] = useState("");
@@ -57,10 +56,12 @@ function App() {
   const [jumpStr, setJumpStr] = useState('');
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [pauseTotalMs, setPauseTotalMs] = useState(0);
   const pauseStartRef = useRef<number | null>(null);
   const [congrats, setCongrats] = useState<{ id: string; name: string } | null>(null);
   const congratsTimerRef = useRef<number | null>(null);
+  const [glow, setGlow] = useState<{ id: string; color: string } | null>(null);
+  const glowTimerRef = useRef<number | null>(null);
+  const prevTaskIdRef = useRef<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [tplName, setTplName] = useState('');
   const [tplMinutes, setTplMinutes] = useState('5');
@@ -82,6 +83,21 @@ function App() {
   useEffect(() => {
     const id = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // Escape always closes any open dialog/overlay so the app can't get stuck
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setEditingEmojiId(null);
+      setEmojiEditSearch('');
+      setEditingColorId(null);
+      setShowSaveTpl(false);
+      setShowEmojiPopup(false);
+      setShowTplEmojiPopup(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -223,30 +239,33 @@ function App() {
     return idx >= 0 ? sortedTasks[idx] : sortedTasks[sortedTasks.length - 1];
   }, [sortedTasks]);
 
-  const timeToNextTask = useMemo(() => {
-    if (sessionState === 'idle' || sortedTasks.length === 0) return null;
-    // Find first uncompleted task
-    let firstIdx = -1;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      if (sortedTasks[i].completedAt === null) {
-        firstIdx = i;
-        break;
+  // Flash the edge glow only when moving to another task
+  useEffect(() => {
+    const task = currentTask;
+    const prevId = prevTaskIdRef.current;
+    prevTaskIdRef.current = task?.id ?? null;
+    if (!task || prevId === null || prevId === task.id) return;
+    if (glowTimerRef.current !== null) window.clearTimeout(glowTimerRef.current);
+    setGlow({ id: task.id, color: task.color });
+    glowTimerRef.current = window.setTimeout(() => setGlow(null), 1800);
+  }, [currentTask]);
+
+  // Total work time left: planned time of uncompleted tasks minus time already
+  // spent in the current task and minus banked credit
+  const remainingWorkSec = useMemo(() => {
+    const planned = sortedTasks.reduce(
+      (s, t) => s + (t.completedAt === null ? t.plannedTime : 0),
+      0
+    );
+    let taskStart = 0;
+    for (const t of sortedTasks) {
+      if (t.completedAt !== null && t.completedAt > taskStart) {
+        taskStart = t.completedAt;
       }
     }
-    if (firstIdx < 0) return null;
-    // Find next uncompleted task after the first
-    let nextIdx = -1;
-    for (let i = firstIdx + 1; i < sortedTasks.length; i++) {
-      if (sortedTasks[i].completedAt === null) {
-        nextIdx = i;
-        break;
-      }
-    }
-    if (nextIdx < 0) return null;
-    const nextTaskStart = cumulativeTimes[nextIdx];
-    const remaining = nextTaskStart * 1000 - elapsed;
-    return remaining;
-  }, [sortedTasks, cumulativeTimes, elapsed, sessionState]);
+    const elapsedInTask = Math.max(0, sessionElapsedSec - taskStart);
+    return Math.max(0, planned - elapsedInTask - timeCredit);
+  }, [sortedTasks, sessionElapsedSec, timeCredit]);
 
   const calcPlayheadPx = useCallback(() => {
     let sec = sessionElapsedSec;
@@ -279,16 +298,12 @@ function App() {
     }
     if (fillRef.current) {
       fillRef.current.style.height = `${playheadPx}px`;
-      if (currentTask) {
-        fillRef.current.style.background = currentTask.color;
-      }
     }
-  }, [playheadPx, sessionState, currentTask]);
+  }, [playheadPx, sessionState]);
 
   useEffect(() => {
     if (sessionState === 'idle' && fillRef.current) {
       fillRef.current.style.height = '0px';
-      fillRef.current.style.background = '';
     }
     if (sessionState === 'idle' && playheadRef.current) {
       playheadRef.current.style.transform = 'translateY(0px)';
@@ -316,8 +331,8 @@ function App() {
 
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // Only scrub when clicking on the thermo column or ruler
-      if (!target.closest('.timeline-thermo, .timeline-ruler')) return;
+      // Only scrub when clicking on the thermo column
+      if (!target.closest('.timeline-thermo')) return;
       if (sessionStateRef.current === 'idle') return;
 
       scrubbing = true;
@@ -372,14 +387,13 @@ function App() {
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      addTask(newName, Math.max(1, Math.round(parseFloat(newMinutes) * 60)), newEmoji, newColor, newType);
+      addTask(newName, Math.max(1, Math.round(parseFloat(newMinutes) * 60)), newEmoji, newColor);
       setNewName('');
       setNewMinutes('5');
       setNewEmoji(DEFAULT_EMOJI);
       setNewColor(DEFAULT_COLOR);
-      setNewType('task');
     },
-    [addTask, newName, newMinutes, newEmoji, newColor, newType]
+    [addTask, newName, newMinutes, newEmoji, newColor]
   );
 
   const removeTask = useCallback((id: string) => {
@@ -396,10 +410,19 @@ function App() {
     setTimeCredit(0);
   }, [reset]);
 
+  const [showSaveTpl, setShowSaveTpl] = useState(false);
+  const [saveTplName, setSaveTplName] = useState('');
+
   const saveTemplate = useCallback(() => {
     if (sortedTasks.length === 0) return;
-    const templateName = prompt('Enter template name:');
-    if (!templateName) return;
+    setSaveTplName('');
+    setShowSaveTpl(true);
+  }, [sortedTasks.length]);
+
+  const confirmSaveTemplate = useCallback(() => {
+    const templateName = saveTplName.trim();
+    setShowSaveTpl(false);
+    if (!templateName || sortedTasks.length === 0) return;
 
     const newTemplate: Template = {
       id: uid(),
@@ -410,7 +433,7 @@ function App() {
     const updated = [...savedTemplates, newTemplate];
     setSavedTemplates(updated);
     localStorage.setItem('speedrun_templates', JSON.stringify(updated));
-  }, [savedTemplates, sortedTasks]);
+  }, [saveTplName, savedTemplates, sortedTasks]);
 
   const loadTemplate = useCallback((template: Template) => {
     reset();
@@ -777,7 +800,6 @@ function App() {
     setTasks((prev) => prev.map((t) => ({ ...t, completedAt: null })));
     setSessionStartTime(null);
     setTimeCredit(0);
-    setPauseTotalMs(0);
     pauseStartRef.current = null;
   }, [reset]);
 
@@ -786,17 +808,13 @@ function App() {
       if (sortedTasks.length === 0) return;
       setSessionStartTime(Date.now());
       setTimeCredit(0);
-      setPauseTotalMs(0);
       pauseStartRef.current = null;
       start();
     } else if (sessionState === 'running') {
       pauseStartRef.current = Date.now();
       pause();
     } else if (sessionState === 'paused') {
-      if (pauseStartRef.current !== null) {
-        setPauseTotalMs(prev => prev + (Date.now() - pauseStartRef.current!));
-        pauseStartRef.current = null;
-      }
+      pauseStartRef.current = null;
       resume();
     }
   }, [sessionState, sortedTasks.length, start, pause, resume]);
@@ -812,7 +830,10 @@ function App() {
   const onDragStart = (idx: number) => setDragIdx(idx);
   const onDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
-    setDragOverIdx(idx);
+    // Sidebar template drags have no source index — skip reorder state entirely
+    if (dragIdx === null) return;
+    // Only re-render when the hovered block actually changes
+    setDragOverIdx(prev => (prev === idx ? prev : idx));
   };
   const onDrop = (toIdx: number) => {
     if (dragIdx !== null && dragIdx !== toIdx) {
@@ -868,61 +889,6 @@ function App() {
     }
     return marks;
   }, [sortedTasks, totalPlannedSec, blockHeight]);
-
-  // ── Wall Clock ruler marks ──
-  // Dynamic anchor: the playhead (= "now") carries the wall clock.
-  // At playhead position: always shows current real time.
-  // Formula: wallAnchor + sec * 1000  where wallAnchor = now - elapsed.
-  const wallAnchorMs = useMemo(() => {
-    if (sessionState === 'finished' || sessionState === 'idle') {
-      // Freeze at finish — wall clock doesn't keep drifting after session ends
-      return (sessionStartTime ?? now) + pauseTotalMs;
-    }
-    return now - elapsed;
-  }, [sessionState, now, elapsed, sessionStartTime, pauseTotalMs]);
-
-  const wallRulerMarks = useMemo(() => {
-    if (!sessionStartTime || sortedTasks.length === 0) return [];
-
-    // Wall ruler is tighter (target 30px gap) — more time labels
-    const interval = pickInterval(totalPlannedSec, timelineHeight, 30);
-
-    const markMap = new Map<number, { px: number; sec: number }>();
-
-    // 1. Regular interval marks
-    let nextMark = interval;
-    let secAccum = 0;
-    let pxAccum = 0;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      const t = sortedTasks[i];
-      const bH = blockHeight(t.plannedTime);
-      const blockSec = t.plannedTime;
-      while (nextMark <= secAccum + blockSec) {
-        const secIntoBlock = nextMark - secAccum;
-        const pxIntoBlock = (secIntoBlock / blockSec) * bH;
-        markMap.set(nextMark, { px: pxAccum + pxIntoBlock, sec: nextMark });
-        nextMark += interval;
-      }
-      secAccum += blockSec;
-      pxAccum += bH;
-    }
-
-    // 2. Task boundary marks
-    for (let i = 1; i < sortedTasks.length; i++) {
-      const taskStartSec = cumulativeTimes[i];
-      if (!markMap.has(taskStartSec)) {
-        markMap.set(taskStartSec, { px: taskLayout[i].offset, sec: taskStartSec });
-      }
-    }
-
-    // 3. Finish line
-    const finishSec = totalPlannedSec;
-    if (!markMap.has(finishSec)) {
-      markMap.set(finishSec, { px: timelineHeight, sec: finishSec });
-    }
-
-    return Array.from(markMap.values()).sort((a, b) => a.px - b.px);
-  }, [sessionStartTime, sortedTasks, cumulativeTimes, taskLayout, timelineHeight, totalPlannedSec, blockHeight]);
 
   const showPlayhead = sessionState === 'running' || sessionState === 'paused';
 
@@ -1084,9 +1050,9 @@ function App() {
               </div>
               <button
                 type="button"
-                className={`type-toggle ${newType === 'rest' ? 'active' : ''}`}
-                onClick={() => setNewType(newType === 'rest' ? 'task' : 'rest')}
-                title={newType === 'rest' ? 'Regular task' : 'Rest / break — no congratulations on completion'}
+                className="type-toggle"
+                onClick={() => addTask('Rest', 600, '😴', DEFAULT_COLOR, 'rest')}
+                title="Add a 10-minute rest / break task"
               >
                 ☕ Rest
               </button>
@@ -1167,6 +1133,54 @@ function App() {
         </div>
       )}
 
+      <footer className="footer">
+        <div className="timer-block timer-next">
+          <span className="timer-label">⏳ Осталось работать</span>
+          <span className="timer-value">
+            {formatTime(remainingWorkSec * 1000, true)}
+          </span>
+        </div>
+        <div className="timer-block timer-clock">
+          <span className="timer-label">🕐 Текущее время</span>
+          <span className="timer-value timer-clock-value">
+            {(() => {
+              const utc8 = new Date(currentTime.getTime() + 8 * 60 * 60 * 1000);
+              const hh = String(utc8.getUTCHours()).padStart(2, '0');
+              const mm = String(utc8.getUTCMinutes()).padStart(2, '0');
+              const ss = String(utc8.getUTCSeconds()).padStart(2, '0');
+              return `${hh}:${mm}:${ss}`;
+            })()}
+          </span>
+        </div>
+        <div className="timer-block timer-session">
+          <span className="timer-label">⏱ Сколько длится сессия</span>
+          <span className="timer-value timer-main">{formatTime(elapsed, true)}</span>
+          <div className="timer-jump">
+            <input
+              className="jump-input"
+              type="text"
+              inputMode="decimal"
+              placeholder="+5 or -2"
+              value={jumpStr}
+              onChange={(e) => setJumpStr(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleJump(); }}
+              disabled={sessionState === 'idle' || sessionState === 'finished'}
+            />
+            <button
+              className="btn btn-jump"
+              onClick={handleJump}
+              disabled={sessionState === 'idle' || sessionState === 'finished'}
+              title="Jump to time"
+            >
+              ⏩
+            </button>
+          </div>
+          <span className="timer-planned">
+            Planned: {formatTime(totalPlannedSec * 1000, false)}
+          </span>
+        </div>
+      </footer>
+
       <div className="timeline-container" ref={timelineRef} onDragOver={handleTimelineDragOver} onDrop={handleTimelineDrop}>
         {sortedTasks.length === 0 && sessionState === 'idle' ? (
           <div className="empty-state">
@@ -1175,55 +1189,22 @@ function App() {
           </div>
         ) : (
           <div className="timeline-inner">
-            {/* Wall Clock ruler — real-world time */}
-            {sessionStartTime && (
-              <div className="timeline-wall-ruler" style={{ height: timelineHeight }}>
-                {/* Fill overlay — grows as the playhead descends, like the thermometer */}
-                {sessionState !== 'idle' && (
-                  <div className="ruler-fill" style={{ height: playheadPx, background: currentTask?.color || 'var(--accent-cyan)' }} />
-                )}
-                <div className="ruler-zero">
-                  <span className="ruler-label">{formatWallTime(sessionStartTime)}</span>
-                  <div className="ruler-tick" />
+            {/* Thermometer column (planned) — glass tube with elapsed-time ticks */}
+            <div
+              className="timeline-thermo"
+              style={{ height: timelineHeight, '--thermo-color': currentTask?.color } as React.CSSProperties}
+            >
+              <div className="thermo-fill" ref={fillRef} />
+              <div className="thermo-marks">
+                <div className="thermo-mark" style={{ top: 12 }}>
+                  <span className="thermo-mark-label">0:00</span>
                 </div>
-                {wallRulerMarks.map((m, i) => (
-                  <div key={i} className={`ruler-mark ${m.px <= playheadPx ? 'ruler-mark-filled' : ''}`} style={{ top: m.px }}>
-                    <span className="ruler-label">{formatWallTime(wallAnchorMs + m.sec * 1000)}</span>
-                    <div className="ruler-tick" />
+                {rulerMarks.map((m) => (
+                  <div key={m.sec} className="thermo-mark" style={{ top: m.px }}>
+                    <span className="thermo-mark-label">{m.label}</span>
                   </div>
                 ))}
-                {/* Playhead-following mark — shows current real time at the playhead position */}
-                {showPlayhead && (
-                  <div className="ruler-mark ruler-playhead-mark" style={{ top: playheadPx }}>
-                    <span className="ruler-label ruler-playhead-label">{formatWallTime(now)}</span>
-                    <div className="ruler-tick ruler-playhead-tick" />
-                  </div>
-                )}
               </div>
-            )}
-
-            {/* Time ruler */}
-            <div className="timeline-ruler" style={{ height: timelineHeight }}>
-              {/* Fill overlay — grows as the playhead descends */}
-              {sessionState !== 'idle' && (
-                <div className="ruler-fill" style={{ height: playheadPx, background: currentTask?.color || 'var(--accent-cyan)' }} />
-              )}
-              <div className="ruler-zero">
-                <span className="ruler-label">0:00</span>
-                <div className="ruler-tick" />
-              </div>
-              {rulerMarks.map((m) => (
-                <div key={m.sec} className={`ruler-mark ${m.px <= playheadPx && sessionState !== 'idle' ? 'ruler-mark-filled' : ''}`} style={{ top: m.px }}>
-                  <span className="ruler-label">{m.label}</span>
-                  <div className="ruler-tick" />
-                </div>
-              ))}
-            </div>
-
-            {/* Thermometer column (planned) */}
-            <div className="timeline-thermo" style={{ height: timelineHeight }}>
-              <div className="thermo-track" />
-              <div className="thermo-fill" ref={fillRef} />
               {sortedTasks.map((task, idx) => {
                 const dotSec = cumulativeTimes[idx];
                 const dotPx = taskLayout[idx].offset;
@@ -1240,10 +1221,7 @@ function App() {
                 );
               })}
               {showPlayhead && (
-                <div className="thermo-marker" ref={playheadRef}>
-                  <div className="thermo-marker-dot" />
-                  <div className="thermo-marker-glow" />
-                </div>
+                <div className="thermo-marker" ref={playheadRef} />
               )}
             </div>
 
@@ -1360,27 +1338,6 @@ function App() {
                         <span className="task-type-badge" title="Rest / break">☕ Rest</span>
                       )}
                       <div className="block-info">
-                        {editingTimeId === task.id ? (
-                        <input
-                          className="edit-time-input"
-                          placeholder="m:ss or h:mm:ss"
-                          type="text"
-                          inputMode="decimal"
-                          value={editTimeStr}
-                          onChange={(e) => setEditTimeStr(e.target.value)}
-                          onBlur={() => commitEditTime(task.id)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') commitEditTime(task.id); if (e.key === 'Escape') setEditingTimeId(null); }}
-                          autoFocus
-                        />
-                      ) : (
-                        <span
-                          className="task-planned-lg task-planned-clickable"
-                          onClick={() => { if (sessionState === 'idle' || sessionState === 'paused') startEditTime(task.id, task.plannedTime); }}
-                          title="Click to edit time"
-                        >
-                          {formatTime(task.plannedTime * 1000, false)}
-                        </span>
-                      )}
                         {editingNameId === task.id ? (
                           <input
                             className="edit-name-input"
@@ -1405,6 +1362,37 @@ function App() {
                             {task.name}
                           </span>
                         )}
+                        <div className="block-timers">
+                          {remaining !== null && (
+                            <div className="timer-stack">
+                              <span className="timer-caption">Времени на задачу осталось</span>
+                              <span className={`task-remaining ${remaining < 0 ? 'overdue' : ''}`}>
+                                {formatTime(Math.abs(remaining), true)}
+                              </span>
+                            </div>
+                          )}
+                          {editingTimeId === task.id ? (
+                            <input
+                              className="edit-time-input"
+                              placeholder="m:ss or h:mm:ss"
+                              type="text"
+                              inputMode="decimal"
+                              value={editTimeStr}
+                              onChange={(e) => setEditTimeStr(e.target.value)}
+                              onBlur={() => commitEditTime(task.id)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') commitEditTime(task.id); if (e.key === 'Escape') setEditingTimeId(null); }}
+                              autoFocus
+                            />
+                          ) : (
+                            <span
+                              className="task-planned-lg task-planned-clickable"
+                              onClick={() => { if (sessionState === 'idle' || sessionState === 'paused') startEditTime(task.id, task.plannedTime); }}
+                              title="Click to edit time"
+                            >
+                              {formatTime(task.plannedTime * 1000, false)}
+                            </span>
+                          )}
+                        </div>
                         <span
                           className={`task-delta ${delta !== null && delta < 0 ? 'ahead' : ''} ${delta !== null && delta > 0 ? 'behind' : ''}`}
                         >
@@ -1414,11 +1402,6 @@ function App() {
                     </div>
 
                     <div className="block-right">
-                      {remaining !== null && (
-                        <span className={`task-remaining ${remaining < 0 ? 'overdue' : ''}`}>
-                          {formatTime(Math.abs(remaining), true)}
-                        </span>
-                      )}
                       <span className="task-segment">{segmentTime ?? '—'}</span>
                       <span className="task-realtime">
                         {displayRealTime}
@@ -1491,56 +1474,6 @@ function App() {
         )}
       </div>
 
-      <footer className="footer">
-        <div className="timer-block timer-next">
-          <span className="timer-label">⏳ Next Task</span>
-          <span
-            className={`timer-value ${timeToNextTask !== null && timeToNextTask < 0 ? 'behind' : 'ahead'}`}
-          >
-            {timeToNextTask !== null ? formatTime(Math.abs(timeToNextTask), true) : '—'}
-            {timeToNextTask !== null && timeToNextTask < 0 ? ' OVERDUE' : ''}
-          </span>
-        </div>
-        <div className="timer-block timer-clock">
-          <span className="timer-label">🕐 UTC+8</span>
-          <span className="timer-value timer-clock-value">
-            {(() => {
-              const utc8 = new Date(currentTime.getTime() + 8 * 60 * 60 * 1000);
-              const hh = String(utc8.getUTCHours()).padStart(2, '0');
-              const mm = String(utc8.getUTCMinutes()).padStart(2, '0');
-              const ss = String(utc8.getUTCSeconds()).padStart(2, '0');
-              return `${hh}:${mm}:${ss}`;
-            })()}
-          </span>
-        </div>
-        <div className="timer-block timer-session">
-          <span className="timer-label">⏱ Session</span>
-          <span className="timer-value timer-main">{formatTime(elapsed, true)}</span>
-          <div className="timer-jump">
-            <input
-              className="jump-input"
-              type="text"
-              inputMode="decimal"
-              placeholder="+5 or -2"
-              value={jumpStr}
-              onChange={(e) => setJumpStr(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleJump(); }}
-              disabled={sessionState === 'idle' || sessionState === 'finished'}
-            />
-            <button
-              className="btn btn-jump"
-              onClick={handleJump}
-              disabled={sessionState === 'idle' || sessionState === 'finished'}
-              title="Jump to time"
-            >
-              ⏩
-            </button>
-          </div>
-          <span className="timer-planned">
-            Planned: {formatTime(totalPlannedSec * 1000, false)}
-          </span>
-        </div>
-      </footer>
       {showSidebar && (
         <div className="sidebar">
           <div className="sidebar-header">
@@ -1700,9 +1633,44 @@ function App() {
         </div>
       )}
 
-      {/* Edge glow in the active task's color — decorative overlay, never intercepts clicks */}
-      {currentTask && (
-        <div className="task-glow" style={{ '--glow-color': currentTask.color } as React.CSSProperties} aria-hidden="true" />
+      {/* Save template dialog */}
+      {showSaveTpl && (
+        <div className="emoji-overlay" onClick={() => setShowSaveTpl(false)}>
+          <div className="emoji-overlay-popup" onClick={e => e.stopPropagation()}>
+            <div className="emoji-overlay-header">
+              <span>Save template</span>
+              <button
+                className="emoji-overlay-close"
+                onClick={() => setShowSaveTpl(false)}
+                title="Cancel"
+              >
+                ✕
+              </button>
+            </div>
+            <input
+              className="emoji-search-input"
+              type="text"
+              placeholder="Template name..."
+              value={saveTplName}
+              onChange={(e) => setSaveTplName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmSaveTemplate(); if (e.key === 'Escape') setShowSaveTpl(false); }}
+              autoFocus
+            />
+            <div className="tpl-save-actions">
+              <button className="btn btn-cancel" onClick={() => setShowSaveTpl(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-add" onClick={confirmSaveTemplate} disabled={!saveTplName.trim()}>
+                💾 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edge glow flash when switching to the next task — decorative overlay, never intercepts clicks */}
+      {glow && (
+        <div key={glow.id} className="task-glow" style={{ '--glow-color': glow.color } as React.CSSProperties} aria-hidden="true" />
       )}
     </div>
   );

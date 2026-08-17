@@ -3,6 +3,7 @@
 :root,
 [data-theme="dark"] {
   --bg-primary: #1e1f22;
+  --bg-page: var(--bg-primary);
   --bg-secondary: #2b2d31;
   --bg-surface: #383a40;
   --bg-row: transparent;
@@ -22,8 +23,6 @@
   --accent-orange: #e67e22;
   --accent-teal: #1abc9c;
   --border: #3f4147;
-  --marker-bg: #ffffff;
-  --ruler-width: 64px;
   --radius: 6px;
   --shadow: 0 2px 8px rgba(0,0,0,0.4);
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
@@ -32,6 +31,8 @@
 
 [data-theme="light"] {
   --bg-primary: #f0f2f5;
+  --bg-page: linear-gradient(180deg, #f3efe5 0%, #cecac3 100%);
+  --bg-footer: #f3efe5;
   --bg-secondary: #ffffff;
   --bg-surface: #e4e6eb;
   --bg-row: transparent;
@@ -51,7 +52,6 @@
   --accent-orange: #d35400;
   --accent-teal: #16a085;
   --border: #d0d3d9;
-  --marker-bg: #1a1a2e;
   --shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
@@ -62,14 +62,14 @@
 }
 
 .app {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   height: 100vh !important;
   display: flex;
   flex-direction: column;
   font-family: var(--font-sans);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--bg-page, var(--bg-primary));
 }
 
 /* ===== Header ===== */
@@ -660,100 +660,6 @@
   position: relative;
 }
 
-/* ===== Wall Clock Ruler ===== */
-.timeline-wall-ruler {
-  width: 52px;
-  position: relative;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: var(--bg-secondary);
-  overflow: hidden;
-}
-
-/* ===== Time Ruler ===== */
-.timeline-ruler {
-  width: var(--ruler-width);
-  position: relative;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: var(--bg-secondary);
-  overflow: hidden;
-}
-
-/* Ruler fill overlay — grows from top like the thermometer */
-.ruler-fill {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 0;
-  opacity: 0.12;
-  pointer-events: none;
-  will-change: height;
-  z-index: 0;
-}
-
-.ruler-zero {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  height: 20px;
-}
-
-.ruler-mark {
-  position: absolute;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  transform: translateY(-50%);
-  height: 20px;
-}
-
-.ruler-label {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--text-dim);
-  padding-left: 6px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.ruler-tick {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-  margin-left: 2px;
-}
-
-/* Playhead-following ruler mark — shows current time at the playhead */
-.ruler-playhead-mark {
-  z-index: 3;
-}
-.ruler-playhead-label {
-  color: var(--accent-cyan);
-  font-weight: 700;
-  font-size: 0.7rem;
-}
-.ruler-playhead-tick {
-  background: var(--accent-cyan);
-  height: 2px;
-  opacity: 0.6;
-}
-
-/* Filled (passed) ruler marks — light up like the thermometer */
-.ruler-mark-filled .ruler-label {
-  color: var(--text);
-  opacity: 0.9;
-}
-.ruler-mark-filled .ruler-tick {
-  background: var(--accent-cyan);
-  opacity: 0.3;
-}
-
 /* ===== Timeline Tracks ===== */
 .timeline-tracks {
   flex: 1;
@@ -762,39 +668,137 @@
   overflow: hidden;
 }
 
-/* ===== Thermometer Column ===== */
+/* ===== Thermometer Column (glass) ===== */
 .timeline-thermo {
-  width: 36px;
+  width: 192px;
   position: relative;
   flex-shrink: 0;
-  margin: 0 4px;
+  margin: 0 16px;
+  border-radius: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 35%,
+    rgba(0, 0, 0, 0.08) 70%,
+    rgba(0, 0, 0, 0.18) 100%
+  );
+  box-shadow:
+    inset 0 0 14px rgba(255, 255, 255, 0.05),
+    inset 0 0 28px rgba(0, 0, 0, 0.25),
+    0 2px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
 
-/* Background track (unfilled) */
-.thermo-track {
+/* Glossy reflection stripe on the glass */
+.timeline-thermo::before {
+  content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  background: var(--border);
-  border-radius: 2px;
+  top: 14px;
+  bottom: 14px;
+  left: 20px;
+  width: 10px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.05));
+  z-index: 1;
+  pointer-events: none;
 }
 
-/* Filled portion — grows downward */
+/* Liquid fill — pours from the top and fills the whole tube volume like
+   water in a glass: translucent, cylinder-shaded for depth, glossy,
+   with a wave surface at the bottom. */
 .thermo-fill {
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 10px;
+  left: 5px;
+  right: 5px;
   height: 0;
-  border-radius: 3px;
+  border-radius: 6px 6px 26px 26px;
+  overflow: hidden;
   pointer-events: none;
   z-index: 2;
-  background: var(--accent-blue);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
+  background:
+    /* left gloss (light source) */
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16) 4%, transparent 26%),
+    /* cylinder shading — darker near the glass walls */
+    linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0%, transparent 22%, transparent 78%, rgba(0, 0, 0, 0.3) 100%),
+    /* base liquid: brighter top → task color → darker bottom, translucent */
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 88%, #ffffff) 0%,
+      color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 92%, transparent) 50%,
+      color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 78%, #000000) 100%
+    );
+  box-shadow:
+    inset 0 14px 16px -10px rgba(255, 255, 255, 0.35),
+    inset 0 -4px 6px rgba(255, 255, 255, 0.35),
+    0 0 10px color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 55%, transparent),
+    0 0 24px color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 30%, transparent);
+}
+
+/* Traveling waves at the surface (bottom edge) — two SVG wave trains
+   of different periods moving at different speeds. The wave line hugs the
+   very bottom edge of the liquid so the visible surface matches the
+   drag/seek line exactly. */
+.thermo-fill::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  bottom: 0;
+  height: 10px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='48'%20height='10'%20viewBox='0%200%2048%2010'%3E%3Cpath%20d='M0%208%20Q%2012%204%2024%208%20T%2048%208%20L%2048%2010%20L%200%2010%20Z'%20fill='rgba(255,255,255,0.28)'/%3E%3Cpath%20d='M0%208%20Q%2012%204%2024%208%20T%2048%208'%20fill='none'%20stroke='rgba(255,255,255,0.85)'%20stroke-width='1.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='6'%20viewBox='0%200%2024%206'%3E%3Cpath%20d='M0%205%20Q%206%203%2012%205%20T%2024%205%20L%2024%206%20L%200%206%20Z'%20fill='rgba(255,255,255,0.22)'/%3E%3Cpath%20d='M0%205%20Q%206%203%2012%205%20T%2024%205'%20fill='none'%20stroke='rgba(255,255,255,0.7)'%20stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 48px 10px, 24px 6px;
+  background-repeat: repeat-x, repeat-x;
+  background-position: 0 100%, 0 100%;
+  pointer-events: none;
+  animation: liquid-waves 1.6s linear infinite;
+}
+
+/* Each wave train travels exactly one of its tile widths per loop → seamless
+   undulation; the two trains move at different speeds like real waves */
+@keyframes liquid-waves {
+  from { background-position: 0 100%, 0 100%; }
+  to { background-position: -48px 100%, -24px 100%; }
+}
+
+/* Elapsed-time tick marks on the glass tube */
+.thermo-marks {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.thermo-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.thermo-mark::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--text-dim);
+  opacity: 0.4;
+  margin-right: 6px;
+}
+
+.thermo-mark-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  padding-left: 10px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 /* ===== Thermo Dots (task boundaries) ===== */
@@ -802,8 +806,8 @@
   position: absolute;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--bg-primary);
   border: 2px solid var(--border);
@@ -820,11 +824,11 @@
 }
 
 .thermo-dot-emoji {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1;
 }
 
-/* ===== Thermo Marker (current time indicator) ===== */
+/* ===== Thermo Marker (current time indicator) — invisible, position only ===== */
 .thermo-marker {
   position: absolute;
   left: 50%;
@@ -833,34 +837,6 @@
   z-index: 10;
   pointer-events: none;
   will-change: transform;
-}
-
-.thermo-marker-dot {
-  position: absolute;
-  left: 50%;
-  top: -10px;
-  transform: translateX(-50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--marker-bg);
-  border: 3px solid var(--accent-cyan);
-  box-shadow: 0 0 12px var(--accent-cyan), 0 0 24px rgba(0, 212, 255, 0.5);
-}
-
-.thermo-marker-glow {
-  position: absolute;
-  left: -16px;
-  right: -16px;
-  top: -28px;
-  height: 56px;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(0, 212, 255, 0.3) 0%,
-    rgba(0, 212, 255, 0.08) 50%,
-    transparent 100%
-  );
-  pointer-events: none;
 }
 
 /* ===== Task Block ===== */
@@ -964,21 +940,14 @@
   min-width: 0;
 }
 
-.block-info .task-planned-lg {
-  font-family: var(--font-mono);
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
 .block-info .task-name {
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 700;
+  font-size: 1.25rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .block-info .task-delta {
@@ -1023,6 +992,35 @@
   gap: 10px;
   flex-shrink: 0;
   z-index: 1;
+}
+
+/* Stacked timers under the task name: remaining (with caption) above planned */
+.block-timers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.timer-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.timer-caption {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  text-align: left;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.block-timers .task-planned-lg {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .task-segment {
@@ -1075,30 +1073,29 @@
 .footer {
   display: flex;
   gap: 1px;
-  background: var(--border);
-  border-top: 2px solid var(--accent-purple);
+  background: var(--bg-footer, var(--bg-primary));
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
 }
 
 .timer-block {
   flex: 1;
   padding: 16px 20px;
-  background: var(--bg-secondary);
+  background: transparent;
   text-align: center;
 }
 
 .timer-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 1rem;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .timer-value {
   display: block;
   font-family: var(--font-mono);
-  font-size: 2.4rem;
+  font-size: 2.8rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 1px;
@@ -1113,7 +1110,7 @@
 }
 
 .timer-main {
-  font-size: 3rem;
+  font-size: 3.4rem;
   color: var(--accent-gold) !important;
   text-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
 }
@@ -1129,7 +1126,7 @@
 .timer-clock-value {
   color: var(--accent-cyan, #00d4ff);
   text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
-  font-size: 2.4rem;
+  font-size: 2.8rem;
 }
 
 /* ===== Responsive ===== */
@@ -1144,10 +1141,6 @@
 
   .block-left {
     gap: 4px;
-  }
-
-  .block-info .task-planned-lg {
-    font-size: 0.85rem;
   }
 
   .block-info .task-delta {
@@ -1169,18 +1162,6 @@
 
   .footer {
     flex-direction: column;
-  }
-
-  :root {
-    --ruler-width: 48px;
-  }
-
-  .ruler-label {
-    font-size: 0.55rem;
-  }
-
-  .timeline-wall-ruler {
-    width: 40px;
   }
 }
 
@@ -1462,11 +1443,10 @@
 
 .task-remaining {
   font-family: var(--font-mono);
-  font-size: 1.1rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--accent-gold);
-  min-width: 75px;
-  text-align: right;
+  text-align: left;
 }
 
 .task-remaining.overdue {
@@ -1545,8 +1525,8 @@
   }
 }
 
-/* ===== Task-color edge glow =====
-   Decorative fixed overlay: lights the viewport edges with the active task's color.
+/* ===== Task-color edge glow flash =====
+   Decorative fixed overlay that flashes only when switching to the next task.
    pointer-events: none so it never blocks clicks on the app. */
 .task-glow {
   position: fixed;
@@ -1557,7 +1537,14 @@
     inset 0 0 14px var(--glow-color),
     inset 0 0 44px color-mix(in srgb, var(--glow-color) 55%, transparent),
     inset 0 0 110px color-mix(in srgb, var(--glow-color) 30%, transparent);
-  transition: box-shadow 0.5s ease;
+  animation: task-glow-flash 1.8s ease-out forwards;
+}
+
+@keyframes task-glow-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  60% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ===== Task type (task / rest) ===== */
@@ -1685,5 +1672,18 @@
     opacity: 0;
     transform: translateX(-50%) scale(0.95) translateY(-8px);
   }
+}
+
+/* ===== Save template dialog ===== */
+.tpl-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-cancel {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
 }
 
