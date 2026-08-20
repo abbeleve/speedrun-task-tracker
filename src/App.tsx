@@ -3,6 +3,7 @@ import type { Task, Template, TaskTemplate, TaskType } from './types';
 import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
+import { SnakeView } from './SnakeView';
 import './App.css';
 
 let nextId = 1;
@@ -76,9 +77,9 @@ function App() {
     return saved !== null ? saved === 'dark' : true;
   });
 
-  const [view, setView] = useState<'timeline' | 'spiral'>(() => {
+  const [view, setView] = useState<'timeline' | 'spiral' | 'snake'>(() => {
     const saved = localStorage.getItem('speedrun_view');
-    return saved === 'spiral' ? 'spiral' : 'timeline';
+    return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : 'timeline';
   });
 
   useEffect(() => {
@@ -939,14 +940,32 @@ function App() {
           {darkMode ? '☀️' : '🌙'}
           <span className="theme-toggle-label">{darkMode ? 'Light' : 'Dark'}</span>
         </button>
-        <button
-          className="view-toggle"
-          onClick={() => setView(view === 'timeline' ? 'spiral' : 'timeline')}
-          title={view === 'timeline' ? 'Switch to spiral thermometer' : 'Switch to classic timeline thermometer'}
-        >
-          {view === 'timeline' ? '🌀' : '🌡️'}
-          <span className="view-toggle-label">{view === 'timeline' ? 'Spiral' : 'Timeline'}</span>
-        </button>
+        <div className="view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={`view-toggle-btn ${view === 'timeline' ? 'active' : ''}`}
+            onClick={() => setView('timeline')}
+            title="Таймлайн в виде термометра"
+          >
+            🌡️<span className="view-toggle-label">Timeline</span>
+          </button>
+          <button
+            type="button"
+            className={`view-toggle-btn ${view === 'spiral' ? 'active' : ''}`}
+            onClick={() => setView('spiral')}
+            title="Спиральная траектория в космосе"
+          >
+            🌀<span className="view-toggle-label">Spiral</span>
+          </button>
+          <button
+            type="button"
+            className={`view-toggle-btn ${view === 'snake' ? 'active' : ''}`}
+            onClick={() => setView('snake')}
+            title="Змейка, которая поедает задачи"
+          >
+            🐍<span className="view-toggle-label">Snake</span>
+          </button>
+        </div>
         <button
           className="btn btn-sidebar"
           onClick={() => setShowSidebar(!showSidebar)}
@@ -1241,6 +1260,24 @@ function App() {
           <div className="empty-state">
             <p>Add tasks to create your speedrun splits</p>
             <p className="hint">Each task = one split with a planned time. Height = sqrt-scaled for visual balance.</p>
+          </div>
+        ) : view === 'snake' ? (
+          <div className="snake-view-wrap">
+            <SnakeView
+              tasks={sortedTasks}
+              cumulativeTimes={cumulativeTimes}
+              totalPlannedSec={totalPlannedSec}
+              elapsedSec={sessionElapsedSec}
+              sessionState={sessionState}
+              currentTaskColor={currentTask?.color ?? DEFAULT_COLOR}
+              deltaMs={currentDeltaMs}
+              onCompleteTask={(id) => completeTask(id)}
+              onUncompleteTask={(id) => uncompleteTask(id)}
+              onRenameTask={renameTask}
+              onChangeTaskTime={changeTaskTime}
+              onChangeTaskColor={changeTaskColor}
+              onSeek={(ms) => seek(ms)}
+            />
           </div>
         ) : view === 'spiral' ? (
           <div className="spiral-view">

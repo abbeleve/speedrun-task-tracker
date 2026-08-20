@@ -1693,15 +1693,23 @@
   color: var(--text-secondary);
 }
 
-/* ===== View switcher (timeline / spiral) ===== */
+/* ===== View switcher (timeline / spiral / snake) ===== */
 .view-toggle {
-  background: transparent;
+  display: inline-flex;
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  overflow: hidden;
+  padding: 0;
+}
+
+.view-toggle-btn {
+  background: transparent;
+  border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 1.1rem;
-  padding: 6px 10px;
+  font-size: 1rem;
+  padding: 7px 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1709,10 +1717,15 @@
   font-family: var(--font-sans);
 }
 
-.view-toggle:hover {
-  border-color: var(--accent-purple);
-  color: var(--accent-purple);
+.view-toggle-btn:hover {
   background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.view-toggle-btn.active {
+  background: var(--bg-secondary);
+  color: var(--accent-purple);
+  box-shadow: inset 0 0 0 1px var(--accent-purple);
 }
 
 .view-toggle-label {
@@ -1722,8 +1735,8 @@
   letter-spacing: 0.5px;
 }
 
-@media (max-width: 600px) {
-  .view-toggle-label {
+@media (max-width: 720px) {
+  .view-toggle-btn span {
     display: none;
   }
 }
@@ -2029,3 +2042,385 @@
   filter: drop-shadow(0 0 6px rgba(241, 196, 15, 0.8));
 }
 
+
+/* ===== Snake view — сетка, змейка и её еда ===== */
+/* Игровое поле: в тёмной теме — глубокий «космос», в светлой — светлый
+   «настольный» фон. Тема переключается через переменные ниже. */
+:root,
+[data-theme="dark"] {
+  --snake-bg-1: #0b0e17;
+  --snake-bg-2: #02030a;
+  --snake-accent-1: rgba(96, 60, 180, 0.16);
+  --snake-accent-2: rgba(20, 120, 200, 0.12);
+  --snake-grid: rgba(170, 180, 205, 0.13);
+  --snake-route: rgba(170, 180, 205, 0.3);
+  --snake-card-bg: rgba(24, 28, 42, 0.85);
+  --snake-card-border: rgba(255, 255, 255, 0.13);
+  --snake-card-text: #e9ecf2;
+  --snake-meat: #aeb6c6;
+  --snake-start-ring: rgba(120, 220, 160, 0.85);
+  --snake-check-bg: #0f7c3f;
+  --snake-check-fill: #ffffff;
+  --snake-head-body: #141a28;
+  --snake-head-stroke: var(--accent-cyan);
+  --snake-eye: #f4f6fb;
+  --snake-pupil: #0c0f16;
+  --snake-label-fill: rgba(255, 255, 255, 0.92);
+  --snake-label-stroke: rgba(0, 0, 0, 0.85);
+  --snake-pill-bg: rgba(10, 16, 26, 0.7);
+  --snake-pill-stroke: rgba(255, 255, 255, 0.35);
+  --snake-finish: color-mix(in srgb, var(--accent-gold) 10%, var(--bg-secondary));
+}
+
+[data-theme="light"] {
+  --snake-bg-1: #eef0e6;
+  --snake-bg-2: #fbfaf4;
+  --snake-accent-1: rgba(120, 90, 200, 0.1);
+  --snake-accent-2: rgba(20, 130, 210, 0.08);
+  --snake-grid: rgba(60, 70, 90, 0.12);
+  --snake-route: rgba(60, 70, 90, 0.3);
+  --snake-card-bg: rgba(255, 255, 255, 0.88);
+  --snake-card-border: rgba(30, 40, 60, 0.15);
+  --snake-card-text: #232a38;
+  --snake-meat: #39445a;
+  --snake-start-ring: #1a9e5c;
+  --snake-check-bg: #13a05a;
+  --snake-check-fill: #ffffff;
+  --snake-head-body: #edf1f7;
+  --snake-head-stroke: #232a38;
+  --snake-eye: #10131a;
+  --snake-pupil: #ffffff;
+  --snake-label-fill: rgba(18, 24, 36, 0.94);
+  --snake-label-stroke: rgba(255, 255, 255, 0.85);
+  --snake-pill-bg: rgba(255, 255, 255, 0.75);
+  --snake-pill-stroke: rgba(20, 30, 50, 0.35);
+  --snake-pill-fill: rgba(18, 24, 36, 0.94);
+  --snake-finish: color-mix(in srgb, var(--accent-gold) 30%, #ffffff);
+}
+
+.snake-view-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.snake-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 18% 26%, var(--snake-accent-1), transparent 55%),
+    radial-gradient(ellipse at 82% 72%, var(--snake-accent-2), transparent 55%),
+    linear-gradient(180deg, var(--snake-bg-1) 0%, var(--snake-bg-2) 100%);
+}
+
+.snake-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+}
+
+.snake-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+.snake-svg text {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Grid lines */
+.snake-grid line {
+  stroke: var(--snake-grid);
+  stroke-width: 1;
+}
+
+/* Faint full-route baseline under the colored body */
+.snake-route-base {
+  stroke: var(--snake-route);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2 14;
+  opacity: 0.6;
+}
+
+/* The snake body — outer thicker stroke + bright core reads like a cell */
+.snake-body-outer {
+  stroke-width: 15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.32;
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.snake-body-core {
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.95;
+}
+
+/* Start marker — a soft green ring */
+.snake-start-ring {
+  fill: none;
+  stroke: var(--snake-start-ring);
+  stroke-width: 2.5;
+  stroke-dasharray: 0 4;
+}
+
+/* Finish flag */
+.snake-finish-marker {
+  pointer-events: none;
+}
+.snake-finish-ring {
+  fill: var(--snake-finish);
+  stroke: var(--accent-gold);
+  stroke-width: 1.6;
+}
+.snake-finish-emoji {
+  font-size: 14px;
+}
+
+/* Meals — печеньки для змейки */
+.snake-meal {
+  cursor: pointer;
+  --meal-color: var(--accent-cyan);
+}
+.snake-meal-card {
+  fill: var(--snake-card-bg);
+  stroke: var(--snake-card-border);
+  stroke-width: 1.4;
+  transition: stroke 0.2s, fill 0.25s;
+}
+.snake-meal:hover .snake-meal-card {
+  stroke: var(--meal-color);
+  fill: color-mix(in srgb, var(--meal-color) 14%, var(--snake-card-bg));
+}
+.snake-meal-emoji {
+  font-size: 26px;
+}
+.snake-meal-name {
+  fill: var(--snake-meat);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.snake-meal.current .snake-meal-card {
+  stroke: var(--meal-color);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--meal-color) 70%, transparent));
+}
+.snake-meal.eaten {
+  opacity: 0.55;
+  filter: grayscale(0.35) brightness(0.8);
+}
+.snake-meal.eaten .snake-meal-name {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+/* "Съели" badge on completed meals */
+.snake-meal-check {
+  pointer-events: none;
+}
+.snake-meal-check circle {
+  fill: var(--snake-check-bg);
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 1;
+}
+.snake-meal-check text {
+  fill: var(--snake-check-fill);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Expansion ring when a meal is eaten */
+.snake-eat-ring {
+  fill: none;
+  stroke: var(--meal-color);
+  stroke-width: 2.5;
+}
+
+/* Pulse of the current meal while the run is live */
+.snake-meal-pulse {
+  fill: none;
+  stroke: var(--meal-color);
+  stroke-width: 3;
+  opacity: 0.7;
+  animation: snake-pulse 1.8s ease-out infinite;
+}
+@keyframes snake-pulse {
+  0%, 100% { r: 12; opacity: 0.7; }
+  50% { r: 24; opacity: 0; }
+}
+
+/* Head — the crawler */
+.snake-head {
+  pointer-events: none;
+}
+.snake-head-glow {
+  opacity: 0.35;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+.snake-head-body {
+  fill: var(--snake-head-body);
+  stroke: var(--snake-head-stroke);
+  stroke-width: 3.5;
+}
+.snake-tongue {
+  fill: none;
+}
+.snake-tongue-line {
+  stroke: #ff4b5c;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.snake-eye {
+  fill: var(--snake-eye);
+}
+.snake-pupil {
+  fill: var(--snake-pupil);
+}
+
+/* Readouts near the head */
+.snake-elapsed-label {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--snake-label-fill);
+  paint-order: stroke;
+  stroke: var(--snake-label-stroke);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.snake-delta-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--snake-label-fill);
+  paint-order: stroke;
+  stroke: var(--snake-label-stroke);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.snake-delta-label.ahead {
+  fill: var(--accent-green);
+}
+.snake-delta-label.behind {
+  fill: var(--accent-red);
+}
+.snake-next-timer {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--snake-label-fill);
+  paint-order: stroke;
+  stroke: var(--snake-label-stroke);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* "Выполнить?" / "Отменить?" pill */
+.snake-done-btn-bg {
+  fill: var(--snake-pill-bg);
+  stroke: var(--snake-pill-stroke);
+  stroke-width: 1.4;
+}
+.snake-done-btn-bg:hover {
+  stroke: var(--accent-cyan);
+}
+.snake-done-btn-bg.undo {
+  stroke: var(--accent-gold);
+}
+.snake-done-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--snake-pill-fill);
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.snake-done-label.undo {
+  fill: var(--accent-gold);
+}
+
+/* Edit popup */
+.snake-edit-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 40;
+}
+
+.snake-edit-popup {
+  width: 340px;
+  max-width: calc(100% - 32px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.snake-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.snake-edit-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+.snake-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.snake-edit-save {
+  background: var(--accent-green);
+  color: #04120a;
+}
+
+.snake-edit-save:hover {
+  filter: brightness(1.1);
+}
