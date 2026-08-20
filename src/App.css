@@ -1129,6 +1129,12 @@
   font-size: 2.8rem;
 }
 
+.timer-finish-value {
+  color: var(--accent-purple);
+  text-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
+  font-size: 2.8rem;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
   .header {

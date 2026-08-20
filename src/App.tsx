@@ -1152,6 +1152,20 @@ function App() {
             })()}
           </span>
         </div>
+        <div className="timer-block timer-finish">
+          <span className="timer-label">🎯 Вы закончите в</span>
+          <span className="timer-value timer-finish-value">
+            {(() => {
+              const utc8 = new Date(
+                currentTime.getTime() + 8 * 60 * 60 * 1000 + remainingWorkSec * 1000
+              );
+              const hh = String(utc8.getUTCHours()).padStart(2, '0');
+              const mm = String(utc8.getUTCMinutes()).padStart(2, '0');
+              const ss = String(utc8.getUTCSeconds()).padStart(2, '0');
+              return `${hh}:${mm}:${ss}`;
+            })()}
+          </span>
+        </div>
         <div className="timer-block timer-session">
           <span className="timer-label">⏱ Сколько длится сессия</span>
           <span className="timer-value timer-main">{formatTime(elapsed, true)}</span>
