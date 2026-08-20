@@ -1792,7 +1792,8 @@
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
 }
 
-/* Time-left label — fixed text outside the spiral, small and readable */
+/* Time-left label — fixed text outside the spiral, small and readable.
+   Gently pulses so the countdown draws the eye without being distracting. */
 .spiral-next-label {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -1802,6 +1803,16 @@
   stroke: rgba(0, 0, 0, 0.8);
   stroke-width: 4px;
   stroke-linejoin: round;
+  animation: spiral-next-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes spiral-next-pulse {
+  0%, 100% {
+    opacity: 0.88;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* Fallback timer — time left until the next task, under the task timer */
@@ -1946,6 +1957,38 @@
 .spiral-dot {
   cursor: pointer;
   --dot-color: var(--accent-cyan);
+}
+
+/* Constellation clusters — far, fixed star groups in the background */
+.spiral-constellations {
+  pointer-events: none;
+}
+.spiral-constellations path {
+  stroke: rgba(150, 165, 215, 0.28);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Near stars — the only layer that slowly approaches during the run */
+.spiral-near-stars {
+  pointer-events: none;
+}
+.spiral-near-stars circle {
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6));
+}
+
+/* Polar guide lines — faint trig-circle rays from the spiral's center */
+.spiral-polar {
+  pointer-events: none;
+}
+.spiral-polar line {
+  stroke: rgba(140, 150, 170, 0.13);
+  stroke-width: 1;
+}
+.spiral-polar line.major {
+  stroke: rgba(140, 150, 170, 0.25);
+  stroke-width: 1.4;
 }
 
 .spiral-dot circle {

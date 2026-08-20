@@ -29,6 +29,22 @@ const rnd = (n: number) => {
 const K_TURN = 0.18;
 const rAtTheta = (th: number) => OUTER_R * Math.pow(K_TURN, th / (Math.PI * 2));
 
+// Polar guide rays: one full turn = one hour, so 30° steps mark 5 minutes.
+const POLAR_STEP = Math.PI / 6;
+
+// Deterministic spin parameters per planet (stable for the task's lifetime),
+// so neighbouring planets rotate at their own rate, direction and phase —
+// never in sync. Only the ANGLE is time-driven: planets turn while the run
+// advances and freeze on pause / before start / after reset.
+const spinParams = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  const period = 8 + (h % 1600) / 100; // seconds per full turn (8–24)
+  const dir = (h >>> 7) & 1 ? 1 : -1;
+  const phase = ((h >>> 13) % 360) * (Math.PI / 180);
+  return { period, dir, phase };
+};
+
 interface SpiralThermometerProps {
   tasks: Task[];
   cumulativeTimes: number[];
@@ -60,6 +76,124 @@ const fmtTime = (sec: number): string => {
   const ss = s % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 };
+
+// ── Planet sphere artwork ────────────────────────────────────────────────
+// A planet is drawn as a shaded gas-giant sphere, not a flat disc: latitude
+// bands + limb darkening give the round volume, and a *cloud texture* (wavy
+// strips + storm ovals) scrolls horizontally inside a circular clip. The
+// scroll is driven by the planet's axial spin angle, so the planet really
+// turns around its axis — features drift across the disk and wrap around
+// the limb — instead of the whole picture rotating in the screen plane.
+const PLANET_R = 13;
+const CLOUD_PERIOD = 34; // texture repeat width (local units)
+const CLOUD_COPIES = [-2, -1, 0, 1, 2]; // repeated strips → seamless wrap
+const CLOUD_STEP = 1.3; // polyline sampling for the wavy strips
+
+// Deterministic per-planet "weather" (seeded from the id, stable per render):
+// two wavy cloud strips and three storm ovals with their own latitude,
+// phase and size.
+const planetWeather = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 131 + id.charCodeAt(i)) >>> 0;
+  const s = (n: number) => rnd(h * 1.31 + n * 7.77);
+  const waves = [0, 1].map((i) => ({
+    y0: -4.5 + s(10 + i) * 9, // band latitude
+    h: 1.5 + s(20 + i) * 2, // strip thickness
+    amp: 0.8 + s(30 + i) * 1.3, // waviness of the cloud edge
+    cycles: 1 + Math.floor(s(40 + i) * 3), // waves per texture period
+    phase: s(50 + i) * Math.PI * 2,
+    dark: s(60 + i) > 0.5,
+  }));
+  const storms = [0, 1, 2].map((i) => {
+    const ry = 0.9 + s(80 + i) * 1.1;
+    return {
+      x: s(90 + i) * CLOUD_PERIOD,
+      y: -7 + s(100 + i) * 14,
+      rx: ry * (1.2 + s(110 + i)),
+      ry,
+      dark: s(120 + i) > 0.5,
+      o: 0.5 + s(130 + i) * 0.45,
+    };
+  });
+  return { waves, storms };
+};
+
+// One wavy cloud strip (drawn in the strip's own coordinates, 0..PERIOD).
+const stripPath = (w: ReturnType<typeof planetWeather>['waves'][number]) => {
+  let d = `M 0 ${w.y0 + w.amp * Math.sin(w.phase)}`;
+  for (let x = CLOUD_STEP; x <= CLOUD_PERIOD + 0.001; x += CLOUD_STEP) {
+    const y = w.y0 + w.amp * Math.sin((x / CLOUD_PERIOD) * w.cycles * Math.PI * 2 + w.phase);
+    d += ` L ${x} ${y.toFixed(2)}`;
+  }
+  return `${d} L ${CLOUD_PERIOD} ${w.y0 + w.h} L 0 ${w.y0 + w.h} Z`;
+};
+
+interface PlanetBodyProps {
+  id: string;
+  color: string;
+  angle: number; // axial spin angle — drives the cloud scroll
+}
+
+function PlanetBody({ id, color, angle }: PlanetBodyProps) {
+  const { waves, storms } = planetWeather(id);
+  // One full 2π rotation scrolls the texture by exactly one period, so the
+  // wrap is seamless. Angle grows with the run; idle/paused keep it frozen.
+  const scroll = (((angle / (Math.PI * 2)) % 1) + 1) % 1 * CLOUD_PERIOD;
+  const wavePaths = waves.map(stripPath);
+  return (
+    <>
+      <defs>
+        <clipPath id={`planet-clip-${id}`}>
+          <circle cx={0} cy={0} r={PLANET_R} />
+        </clipPath>
+        {/* Limb lighting: bright top-left, dark rim — sells the sphere */}
+        <radialGradient id={`planet-lite-${id}`} cx="32%" cy="26%" r="82%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.42)" />
+          <stop offset="26%" stopColor="rgba(255,255,255,0.05)" />
+          <stop offset="55%" stopColor="rgba(0,0,0,0)" />
+          <stop offset="78%" stopColor="rgba(0,0,0,0.1)" />
+          <stop offset="100%" stopColor="rgba(0,0,0,0.5)" />
+        </radialGradient>
+      </defs>
+      {/* Base sphere — flat color shading comes from the gradient + lighting */}
+      <circle cx={0} cy={0} r={PLANET_R} fill={`url(#planet-grad-${id})`} />
+      {/* Surface, clipped to the disk */}
+      <g clipPath={`url(#planet-clip-${id})`}>
+        {/* Static latitude bands — rotation-invariant, they frame the sphere */}
+        <rect x={-PLANET_R} y={-9.2} width={PLANET_R * 2} height={3.4} fill="rgba(0,0,0,0.18)" />
+        <rect x={-PLANET_R} y={-5.2} width={PLANET_R * 2} height={2.6} fill="rgba(255,255,255,0.12)" />
+        <rect x={-PLANET_R} y={1.6} width={PLANET_R * 2} height={1.3} fill="rgba(255,255,255,0.18)" />
+        <rect x={-PLANET_R} y={3.4} width={PLANET_R * 2} height={1.4} fill="rgba(0,0,0,0.14)" />
+        <rect x={-PLANET_R} y={7.4} width={PLANET_R * 2} height={3} fill="rgba(0,0,0,0.2)" />
+        {/* Cloud texture — scrolls with the spin, wraps seamlessly */}
+        <g transform={`translate(${-scroll})`}>
+          {CLOUD_COPIES.map((k) => (
+            <g key={k} transform={`translate(${k * CLOUD_PERIOD})`}>
+              {wavePaths.map((d, i) => (
+                <path key={i} d={d} fill={waves[i].dark ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.14)'} />
+              ))}
+              {storms.map((st, i) => (
+                <ellipse
+                  key={i}
+                  cx={st.x}
+                  cy={st.y}
+                  rx={st.rx}
+                  ry={st.ry}
+                  fill={st.dark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.28)'}
+                  opacity={st.o}
+                />
+              ))}
+            </g>
+          ))}
+        </g>
+      </g>
+      {/* Lighting overlay + rim + specular highlight */}
+      <circle cx={0} cy={0} r={PLANET_R} fill={`url(#planet-lite-${id})`} />
+      <circle cx={0} cy={0} r={PLANET_R} fill="none" stroke={color} strokeWidth={2} />
+      <circle cx={-4.5} cy={-4.5} r={3.8} fill="rgba(255,255,255,0.55)" />
+    </>
+  );
+}
 
 export function SpiralThermometer({
   tasks,
@@ -254,10 +388,93 @@ export function SpiralThermometer({
     return stars;
   }, []);
 
-  // Slow background approach while the session runs — the starfield gently
-  // drifts closer (space-travel feel). Keeps growing with elapsed time instead
-  // of capping after an hour. Freezes on pause, resets with the run.
-  const bgScale = 1 + Math.min(Math.max(elapsedSec, 0) / 1800, 2.5);
+  // Near stars — an endless approach flow. Each star has a fixed ray
+  // direction, period and phase, and every cycle it is reborn at a fresh
+  // random spot near the spiral's center, drifts outward past the screen
+  // edge, and is reborn again. Cycles are long (8–16 min) so the drift is a
+  // slow, calm motion that never stops, no matter how long the run goes.
+  const nearStars = useMemo(() => {
+    const stars: { th: number; period: number; phase: number; key: number }[] = [];
+    for (let i = 0; i < 42; i++) {
+      stars.push({
+        th: rnd(i + 301) * Math.PI * 2,
+        period: 480 + rnd(i + 302) * 480, // 8–16 min per cycle
+        phase: rnd(i + 303),
+        key: i,
+      });
+    }
+    return stars;
+  }, []);
+
+  // Constellation clusters — far, fixed star groups, deterministic per index
+  // so they never shift between renders. They stay pinned in place while the
+  // nearer star layer moves around them.
+  const constellations = useMemo(() => {
+    const groups: { stars: { x: number; y: number; r: number; o: number }[]; path: string; key: number }[] = [];
+    for (let g = 0; g < 7; g++) {
+      const cx = (rnd(g * 13 + 101) - 0.5) * VIEW * 1.15;
+      const cy = (rnd(g * 13 + 102) - 0.5) * VIEW * 1.15;
+      const n = 3 + Math.floor(rnd(g * 13 + 103) * 3); // 3–5 stars per cluster
+      const stars: { x: number; y: number; r: number; o: number }[] = [];
+      const segs: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const x = cx + (rnd(g * 13 + i * 7 + 104) - 0.5) * 150;
+        const y = cy + (rnd(g * 13 + i * 7 + 105) - 0.5) * 150;
+        stars.push({
+          x,
+          y,
+          r: 0.6 + rnd(g * 13 + i * 7 + 106) * 1.3,
+          o: 0.3 + rnd(g * 13 + i * 7 + 107) * 0.55,
+        });
+        segs.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
+      }
+      groups.push({ stars, path: segs.join(' '), key: g });
+    }
+    return groups;
+  }, []);
+
+  // Polar guide lines — a static trig-circle backdrop: faint rays from the
+  // spiral's center at multiples of 30°. One full turn equals one hour, so
+  // each ray marks 5 minutes of the run; the 90° axes are drawn brighter.
+  const polarLines = useMemo(() => {
+    const lines: { x2: number; y2: number; major: boolean; key: number }[] = [];
+    const R = VIEW * 0.72; // reaches past the square's corners; clipped by the SVG
+    for (let i = 0; i < 12; i++) {
+      const th = i * POLAR_STEP;
+      lines.push({
+        x2: R * Math.cos(th),
+        y2: R * Math.sin(th),
+        major: i % 3 === 0,
+        key: i,
+      });
+    }
+    return lines;
+  }, []);
+
+  // Background depth layers: far starfield and constellations are fixed in
+  // place. Near stars recompute every frame from their cycle progress: born
+  // near the center → drift outward → fade → reborn at a fresh spot. Loop
+  // length doesn't matter — the approach never stalls.
+  const nearField = useMemo(
+    () =>
+      nearStars.map((st) => {
+        const prog = ((elapsedSec / st.period) + st.phase) % 1; // 0 born → 1 off-screen
+        const cycle = Math.floor((elapsedSec / st.period) + st.phase);
+        // A tiny deterministic reshuffle per cycle gives each rebirth a
+        // fresh spot instead of retracing the same ray.
+        const th = st.th + (rnd(cycle * 107 + 312) - 0.5) * 0.35;
+        const R = (90 + rnd(cycle * 101 + st.key * 13 + 311) * 150) + prog * 1500;
+        // Fade in right after birth, fade out before the off-screen handoff.
+        const o =
+          (0.4 + rnd(st.key + 304) * 0.5) *
+          Math.min(1, prog * 12) *
+          Math.min(1, (1 - prog) * 10);
+        // Stars grow slightly as they approach, then vanish.
+        const r = (0.9 + rnd(st.key + 305) * 1.7) * (1 + prog * 1.3);
+        return { x: R * Math.cos(th), y: R * Math.sin(th), r, o, key: st.key };
+      }),
+    [elapsedSec, nearStars]
+  );
 
   // Filled portion of the spiral: from the start up to the current frontier,
   // painted with the current task's color. All in *screen* units aligned with
@@ -411,6 +628,11 @@ export function SpiralThermometer({
         if (anchor === 'end' && px - 16 * size - labelW < -HALF + margin) {
           lx = Math.max(-16, (-HALF + margin + labelW - px) / size);
         }
+        // Axial spin — elapsed run time drives the turn; paused/idle keep the
+        // current (or initial) angle. Per-planet period/direction/phase come
+        // from the task's stable id.
+        const spin = spinParams(t.id);
+        const spinAngle = spin.phase + spin.dir * ((elapsedSec / spin.period) * Math.PI * 2);
         return {
           id: t.id,
           x: px,
@@ -422,6 +644,7 @@ export function SpiralThermometer({
           completed: t.completedAt !== null,
           visible,
           size,
+          spinAngle,
           lx,
           anchor,
           // Names only on planets big enough to host readable text — a sea
@@ -746,10 +969,49 @@ export function SpiralThermometer({
           </radialGradient>
         </defs>
 
-        {/* Starfield — static background stars */}
-        <g className="spiral-starfield" transform={`scale(${bgScale})`}>
-          {starfield.map((s) => (
-            <circle key={s.key} cx={s.x} cy={s.y} r={s.r} fill="rgba(255,255,255,0.85)" opacity={s.o} />
+        {/* Starfield — static background stars; a good share twinkles slowly */}
+        <g className="spiral-starfield">
+          {starfield.map((s) => {
+            // Slow twinkle on every third or fifth star: a noticeable opacity
+            // breathing (≈±30%) over a 2.4–5.6 s period, phase per star.
+            const tw =
+              s.key % 3 === 0 || s.key % 5 === 0
+                ? 0.7 + 0.3 * Math.sin((elapsedSec * 2 * Math.PI) / (2.4 + (s.key % 5) * 0.8) + s.key * 1.7)
+                : 1;
+            return <circle key={s.key} cx={s.x} cy={s.y} r={s.r} fill="rgba(255,255,255,0.85)" opacity={s.o * tw} />;
+          })}
+        </g>
+
+        {/* Constellation clusters — linked stars fixed in the background */}
+        <g className="spiral-constellations">
+          {constellations.map((c) => (
+            <g key={c.key}>
+              <path d={c.path} fill="none" stroke="rgba(150,165,215,0.28)" strokeWidth={1} />
+              {c.stars.map((s, i) => (
+                <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="rgba(205,215,255,0.9)" opacity={s.o} />
+              ))}
+            </g>
+          ))}
+        </g>
+
+        {/* Near stars — endless approach: born near the center, drift out, reborn */}
+        <g className="spiral-near-stars">
+          {nearField.map((s) => (
+            <circle key={s.key} cx={s.x} cy={s.y} r={s.r} fill="rgba(255,255,255,0.9)" opacity={s.o} />
+          ))}
+        </g>
+
+        {/* Polar guide lines — static trig-circle backdrop, behind the spiral */}
+        <g className="spiral-polar">
+          {polarLines.map((l) => (
+            <line
+              key={l.key}
+              x1={0}
+              y1={0}
+              x2={l.x2}
+              y2={l.y2}
+              className={l.major ? 'major' : ''}
+            />
           ))}
         </g>
 
@@ -832,7 +1094,6 @@ export function SpiralThermometer({
               >
                 {/* atmospheric glow */}
                 <circle cx={0} cy={0} r={17} fill={dot.color} opacity={0.16} />
-                {/* planet body with a horizontal band (gas giant) */}
                 <defs>
                   <radialGradient id={`planet-grad-${dot.id}`} cx="38%" cy="32%" r="75%">
                     <stop offset="0%" stopColor={`color-mix(in srgb, ${dot.color} 55%, #ffffff)`} />
@@ -840,14 +1101,9 @@ export function SpiralThermometer({
                     <stop offset="100%" stopColor={`color-mix(in srgb, ${dot.color} 55%, #000000)`} />
                   </radialGradient>
                 </defs>
-                <circle cx={0} cy={0} r={13} fill={`url(#planet-grad-${dot.id})`} stroke={dot.color} strokeWidth={2} />
-                {/* band across the planet */}
-                <path d="M -13 -2 A 13 13 0 0 0 13 -2" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={2.4} />
-                <path d="M -13 3 A 13 13 0 0 0 13 3" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth={1.6} />
-                {/* terminator shadow (crescent phase) */}
-                <path d="M -13 0 A 13 13 0 0 0 13 0 A 11 13 0 0 1 -13 0 Z" fill="rgba(0,0,0,0.45)" />
-                {/* specular highlight */}
-                <circle cx={-4.5} cy={-4.5} r={3.8} fill="rgba(255,255,255,0.55)" />
+                {/* 3D sphere — shaded body whose cloud layer turns with the
+                    planet's axial angle (real rotation, not a flat spin) */}
+                <PlanetBody id={dot.id} color={dot.color} angle={dot.spinAngle} />
                 {/* small ring for some planets */}
                 {dot.id.charCodeAt(dot.id.length - 1) % 2 === 0 && (
                   <ellipse cx={0} cy={0} rx={21} ry={6} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1.8} transform="rotate(-18)" />
