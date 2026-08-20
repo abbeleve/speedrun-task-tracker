@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, Template, TaskTemplate, TaskType } from './types';
 import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
+import { SpiralThermometer } from './SpiralThermometer';
 import './App.css';
 
 let nextId = 1;
@@ -74,6 +75,15 @@ function App() {
     const saved = localStorage.getItem('speedrun_theme');
     return saved !== null ? saved === 'dark' : true;
   });
+
+  const [view, setView] = useState<'timeline' | 'spiral'>(() => {
+    const saved = localStorage.getItem('speedrun_view');
+    return saved === 'spiral' ? 'spiral' : 'timeline';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('speedrun_view', view);
+  }, [view]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
@@ -230,6 +240,19 @@ function App() {
     () => sortedTasks.findIndex((t) => t.completedAt === null),
     [sortedTasks]
   );
+
+  // Ahead/behind schedule for the current task, in ms — the same value the
+  // timeline shows as the task delta (negative = ahead, positive = behind).
+  // Shown whenever a session is active (running or paused), so the delta
+  // timer on the spiral page is always a real number, never "—".
+  const currentDeltaMs = useMemo(() => {
+    if ((sessionState !== 'running' && sessionState !== 'paused') || currentTaskIdx < 0 || currentTaskIdx >= sortedTasks.length) return null;
+    const plannedStartSec = cumulativeTimes[currentTaskIdx];
+    const task = sortedTasks[currentTaskIdx];
+    const actualProgressSec = sessionElapsedSec - plannedStartSec;
+    const remainingPlanned = task.plannedTime - actualProgressSec;
+    return -(remainingPlanned + timeCredit) * 1000;
+  }, [sessionState, currentTaskIdx, sortedTasks, cumulativeTimes, sessionElapsedSec, timeCredit]);
 
   // Active task = first uncompleted one, so the color switches immediately when
   // a task is finished early (used for thermo/fill/glow color).
@@ -621,6 +644,16 @@ function App() {
     setEditingColorId(null);
   }, []);
 
+  // Direct task edits for the spiral view's edit popup.
+  const renameTask = useCallback((id: string, name: string) => {
+    const trimmed = name.trim();
+    if (trimmed) setTasks(prev => prev.map(t => t.id === id ? { ...t, name: trimmed } : t));
+  }, []);
+
+  const changeTaskTime = useCallback((id: string, plannedTime: number) => {
+    if (plannedTime > 0) setTasks(prev => prev.map(t => t.id === id ? { ...t, plannedTime } : t));
+  }, []);
+
   const moveTask = useCallback((fromIdx: number, toIdx: number) => {
     setTasks((prev) => {
       const sorted = [...prev].sort((a, b) => a.order - b.order);
@@ -905,6 +938,14 @@ function App() {
         >
           {darkMode ? '☀️' : '🌙'}
           <span className="theme-toggle-label">{darkMode ? 'Light' : 'Dark'}</span>
+        </button>
+        <button
+          className="view-toggle"
+          onClick={() => setView(view === 'timeline' ? 'spiral' : 'timeline')}
+          title={view === 'timeline' ? 'Switch to spiral thermometer' : 'Switch to classic timeline thermometer'}
+        >
+          {view === 'timeline' ? '🌀' : '🌡️'}
+          <span className="view-toggle-label">{view === 'timeline' ? 'Spiral' : 'Timeline'}</span>
         </button>
         <button
           className="btn btn-sidebar"
@@ -1200,6 +1241,25 @@ function App() {
           <div className="empty-state">
             <p>Add tasks to create your speedrun splits</p>
             <p className="hint">Each task = one split with a planned time. Height = sqrt-scaled for visual balance.</p>
+          </div>
+        ) : view === 'spiral' ? (
+          <div className="spiral-view">
+            <SpiralThermometer
+              tasks={sortedTasks}
+              cumulativeTimes={cumulativeTimes}
+              totalPlannedSec={totalPlannedSec}
+              elapsedSec={sessionElapsedSec}
+              sessionState={sessionState}
+              currentTaskColor={currentTask?.color ?? DEFAULT_COLOR}
+              currentTaskIdx={currentTaskIdx}
+              deltaMs={currentDeltaMs}
+              onCompleteTask={(id) => completeTask(id)}
+              onUncompleteTask={(id) => uncompleteTask(id)}
+              onRenameTask={renameTask}
+              onChangeTaskTime={changeTaskTime}
+              onChangeTaskColor={changeTaskColor}
+              onSeek={(ms) => seek(ms)}
+            />
           </div>
         ) : (
           <div className="timeline-inner">
