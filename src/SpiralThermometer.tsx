@@ -39,7 +39,7 @@ const POLAR_STEP = Math.PI / 6;
 const spinParams = (id: string) => {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  const period = 8 + (h % 1600) / 100; // seconds per full turn (8–24)
+  const period = 5 + (h % 1100) / 100; // seconds per full turn (5–16)
   const dir = (h >>> 7) & 1 ? 1 : -1;
   const phase = ((h >>> 13) % 360) * (Math.PI / 180);
   return { period, dir, phase };
@@ -115,7 +115,11 @@ const planetWeather = (id: string) => {
       o: 0.5 + s(130 + i) * 0.45,
     };
   });
-  return { waves, storms };
+  // Axial tilt — only SOME planets have one (deterministic per id): the
+  // sphere's axis leans, so its latitude bands and cloud drift run at that
+  // angle while the silhouette and lighting stay upright.
+  const tilt = (h >>> 17) % 10 < 4 ? ((h >>> 19) % 65) - 32 : 0; // ±32°, ~40% of planets
+  return { waves, storms, tilt };
 };
 
 // One wavy cloud strip (drawn in the strip's own coordinates, 0..PERIOD).
@@ -135,7 +139,7 @@ interface PlanetBodyProps {
 }
 
 function PlanetBody({ id, color, angle }: PlanetBodyProps) {
-  const { waves, storms } = planetWeather(id);
+  const { waves, storms, tilt } = planetWeather(id);
   // One full 2π rotation scrolls the texture by exactly one period, so the
   // wrap is seamless. Angle grows with the run; idle/paused keep it frozen.
   const scroll = (((angle / (Math.PI * 2)) % 1) + 1) % 1 * CLOUD_PERIOD;
@@ -157,34 +161,39 @@ function PlanetBody({ id, color, angle }: PlanetBodyProps) {
       </defs>
       {/* Base sphere — flat color shading comes from the gradient + lighting */}
       <circle cx={0} cy={0} r={PLANET_R} fill={`url(#planet-grad-${id})`} />
-      {/* Surface, clipped to the disk */}
+      {/* Surface, clipped to the disk. When the planet has an axial tilt,
+          the whole surface (bands + clouds) leans by that angle around the
+          center — the axis of rotation is tilted, but the silhouette and
+          lighting stay upright. */}
       <g clipPath={`url(#planet-clip-${id})`}>
-        {/* Static latitude bands — rotation-invariant, they frame the sphere */}
-        <rect x={-PLANET_R} y={-9.2} width={PLANET_R * 2} height={3.4} fill="rgba(0,0,0,0.18)" />
-        <rect x={-PLANET_R} y={-5.2} width={PLANET_R * 2} height={2.6} fill="rgba(255,255,255,0.12)" />
-        <rect x={-PLANET_R} y={1.6} width={PLANET_R * 2} height={1.3} fill="rgba(255,255,255,0.18)" />
-        <rect x={-PLANET_R} y={3.4} width={PLANET_R * 2} height={1.4} fill="rgba(0,0,0,0.14)" />
-        <rect x={-PLANET_R} y={7.4} width={PLANET_R * 2} height={3} fill="rgba(0,0,0,0.2)" />
-        {/* Cloud texture — scrolls with the spin, wraps seamlessly */}
-        <g transform={`translate(${-scroll})`}>
-          {CLOUD_COPIES.map((k) => (
-            <g key={k} transform={`translate(${k * CLOUD_PERIOD})`}>
-              {wavePaths.map((d, i) => (
-                <path key={i} d={d} fill={waves[i].dark ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.14)'} />
-              ))}
-              {storms.map((st, i) => (
-                <ellipse
-                  key={i}
-                  cx={st.x}
-                  cy={st.y}
-                  rx={st.rx}
-                  ry={st.ry}
-                  fill={st.dark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.28)'}
-                  opacity={st.o}
-                />
-              ))}
-            </g>
-          ))}
+        <g transform={tilt !== 0 ? `rotate(${tilt})` : undefined}>
+          {/* Static latitude bands — rotation-invariant, they frame the sphere */}
+          <rect x={-PLANET_R} y={-9.2} width={PLANET_R * 2} height={3.4} fill="rgba(0,0,0,0.18)" />
+          <rect x={-PLANET_R} y={-5.2} width={PLANET_R * 2} height={2.6} fill="rgba(255,255,255,0.12)" />
+          <rect x={-PLANET_R} y={1.6} width={PLANET_R * 2} height={1.3} fill="rgba(255,255,255,0.18)" />
+          <rect x={-PLANET_R} y={3.4} width={PLANET_R * 2} height={1.4} fill="rgba(0,0,0,0.14)" />
+          <rect x={-PLANET_R} y={7.4} width={PLANET_R * 2} height={3} fill="rgba(0,0,0,0.2)" />
+          {/* Cloud texture — scrolls with the spin (along the tilted axis), wraps seamlessly */}
+          <g transform={`translate(${-scroll})`}>
+            {CLOUD_COPIES.map((k) => (
+              <g key={k} transform={`translate(${k * CLOUD_PERIOD})`}>
+                {wavePaths.map((d, i) => (
+                  <path key={i} d={d} fill={waves[i].dark ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.14)'} />
+                ))}
+                {storms.map((st, i) => (
+                  <ellipse
+                    key={i}
+                    cx={st.x}
+                    cy={st.y}
+                    rx={st.rx}
+                    ry={st.ry}
+                    fill={st.dark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.28)'}
+                    opacity={st.o}
+                  />
+                ))}
+              </g>
+            ))}
+          </g>
         </g>
       </g>
       {/* Lighting overlay + rim + specular highlight */}
