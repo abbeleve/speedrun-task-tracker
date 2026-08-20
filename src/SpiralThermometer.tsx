@@ -5,9 +5,10 @@ import { TASK_COLORS } from './types';
 import { formatDelta } from './useTimer';
 
 // Spiral geometry — starts at the outer edge, winds inward to the center.
-// One task = one full turn (2π): the turn starts at full screen scale, the
-// star travels it toward the center, and the next task's turn — visible as a
-// small continuation at the center — expands to full screen when it begins.
+// One hour of time = one full turn (2π): the star sweeps exactly one turn
+// per hour at full screen scale, and the portion of the spiral ahead — a
+// self-similar continuation toward the center — expands to full screen as
+// the time approaches it.
 const OUTER_R = 350;
 const VIEW = 800;
 const HALF = VIEW / 2;
@@ -77,7 +78,6 @@ export function SpiralThermometer({
   onSeek,
 }: SpiralThermometerProps) {
   const totalSec = Math.max(totalPlannedSec, 1);
-  const taskCount = Math.max(tasks.length, 1);
 
   // Edit popup — opened by clicking a planet while idle/paused. Lets the user
   // rename the task, change its planned duration and its color (same fields
@@ -86,12 +86,13 @@ export function SpiralThermometer({
   const [editName, setEditName] = useState('');
   const [editTime, setEditTime] = useState('');
 
-  // Build the spiral path once per task list. One task = one full turn.
-  // Point density is modest (~500 points total regardless of task count):
+  // Build the spiral path once per task list. One hour = one full turn, so
+  // the path's angular extent is the TOTAL planned time of the run.
+  // Point density is modest (~500 points total regardless of run length):
   // the line is thin, so extra points only make per-frame rebuilds heavier
   // (which showed up as jank/flicker while the run advances).
   const geometry = useMemo(() => {
-    const thetaMax = taskCount * Math.PI * 2;
+    const thetaMax = (totalSec / 3600) * Math.PI * 2;
     const step = thetaMax > 20 ? thetaMax / 500 : THETA_STEP;
     const pts: GeoPt[] = [];
     const segs: string[] = [];
@@ -158,31 +159,23 @@ export function SpiralThermometer({
     };
 
     return { thetaMax, totalLen, pts, d: segs.join(' '), lenAtTheta, pointAtTheta };
-  }, [taskCount]);
+  }, [totalSec]);
 
-  // Time ⇄ angle: each task occupies exactly one turn (2π) of its own.
+  // Time ⇄ angle: one hour of planned time = one full turn (2π) of the
+  // spiral. The star sweeps a constant arc per second, so a planet sits at
+  // its task's planned start time (a 30-min task spans half a turn, a
+  // 2-hour task spans two turns).
   const angleFromSec = useCallback(
     (s: number): number => {
       const clamped = Math.max(0, Math.min(s, totalSec));
-      let idx = tasks.findIndex((t, i) => clamped < (cumulativeTimes[i] ?? 0) + t.plannedTime);
-      if (idx === -1) idx = Math.max(0, tasks.length - 1);
-      const start = cumulativeTimes[idx] ?? 0;
-      const dur = tasks[idx]?.plannedTime ?? 1;
-      const progress = dur > 0 ? Math.min(Math.max((clamped - start) / dur, 0), 1) : 1;
-      return (idx + progress) * Math.PI * 2;
+      return (clamped / 3600) * Math.PI * 2;
     },
-    [tasks, cumulativeTimes, totalSec]
+    [totalSec]
   );
 
   const secFromAngle = useCallback(
-    (th: number): number => {
-      const k = Math.max(0, Math.min(Math.floor(th / (Math.PI * 2)), Math.max(0, tasks.length - 1)));
-      const phi = Math.max(0, th - k * Math.PI * 2);
-      const start = cumulativeTimes[k] ?? 0;
-      const dur = tasks[k]?.plannedTime ?? 1;
-      return Math.min(totalSec, start + (phi / (Math.PI * 2)) * dur);
-    },
-    [tasks, cumulativeTimes, totalSec]
+    (th: number): number => Math.max(0, Math.min((th / (Math.PI * 2)) * 3600, totalSec)),
+    [totalSec]
   );
 
   const liquidTheta = angleFromSec(elapsedSec);
@@ -190,11 +183,11 @@ export function SpiralThermometer({
   const fillLen = geometry.lenAtTheta(liquidTheta);
   const frontier = geometry.pointAtTheta(liquidTheta);
 
-  // Zoom: fully continuous, no per-task jumps. scale = K^(-turns) keeps the
-  // star at a constant on-screen radius while the spiral continuously unwinds
-  // toward the center. The next task's planet starts near the center and
-  // gradually slides out to the right edge (where the first task began) as
-  // the current task progresses — then the pattern repeats.
+  // Zoom: fully continuous, no jumps. scale = K^(-turns) keeps the star at a
+  // constant on-screen radius while the spiral continuously unwinds toward the
+  // center. A planet (or boundary) ahead starts small near the center and
+  // gradually grows to full size as the star approaches it — then, once
+  // passed, it recedes behind the star and leaves the screen.
   const turns = liquidTheta / (Math.PI * 2);
   const scale = Math.min(Math.pow(K_TURN, -turns), MAX_SCALE);
 
@@ -277,15 +270,23 @@ export function SpiralThermometer({
   // Time to the next task — the label sits ON the spiral at the midpoint of
   // the arc between the star (current position) and the end of the current
   // task, written along the spiral.
-  const currentTurn = Math.floor(turns);
-  const nextTaskStart = currentTurn + 1 < tasks.length ? cumulativeTimes[currentTurn + 1] : null;
+  // The current task is the one containing the star's elapsed time (a task
+  // spans a fraction of a turn, a full turn, or several turns, depending on
+  // its planned duration).
+  const curTaskIdx = (() => {
+    const raw = tasks.findIndex((t, i) => elapsedSec < (cumulativeTimes[i] ?? 0) + t.plannedTime);
+    return raw === -1 ? tasks.length - 1 : raw;
+  })();
+  const curTaskEndSec = curTaskIdx >= 0 ? (cumulativeTimes[curTaskIdx] ?? 0) + (tasks[curTaskIdx]?.plannedTime ?? 0) : 0;
+  const curTaskEndTheta = (curTaskEndSec / 3600) * Math.PI * 2;
+  const nextTaskStart = curTaskIdx + 1 < tasks.length ? cumulativeTimes[curTaskIdx + 1] : null;
   const timeToNext = nextTaskStart !== null ? Math.max(0, nextTaskStart - elapsedSec) : null;
   const nextLabelText = timeToNext !== null ? `Время до следующей задачи: ${fmtTime(timeToNext)}` : '';
   // Arc midpoint of the remaining segment: binary search on the monotonic
   // lenAtTheta between the star and the end of the current task.
   let nextMidTheta = liquidTheta;
   if (timeToNext !== null) {
-    const endTheta = (currentTurn + 1) * Math.PI * 2;
+    const endTheta = curTaskEndTheta;
     const targetLen = (geometry.lenAtTheta(liquidTheta) + geometry.lenAtTheta(endTheta)) / 2;
     let lo = liquidTheta;
     let hi = endTheta;
@@ -309,7 +310,7 @@ export function SpiralThermometer({
   // and a plain timer appears under the task timer instead.
   const nextGapLen =
     timeToNext !== null
-      ? (geometry.lenAtTheta((currentTurn + 1) * Math.PI * 2) - geometry.lenAtTheta(liquidTheta)) * scale
+      ? (geometry.lenAtTheta(curTaskEndTheta) - geometry.lenAtTheta(liquidTheta)) * scale
       : 0;
   const nextLabelFits = timeToNext !== null && nextGapLen >= nextLabelLen + 48;
 
@@ -328,9 +329,9 @@ export function SpiralThermometer({
   // fallback: while the planet itself is on screen it can be clicked directly,
   // so the pill shows only when the planet is NOT visible (it flies off-screen
   // as the turn progresses).
-  const curTask = currentTurn < tasks.length ? tasks[currentTurn] : null;
-  const turnStartSec = currentTurn < cumulativeTimes.length ? cumulativeTimes[currentTurn] : 0;
-  const curPlanetTheta = currentTurn * Math.PI * 2;
+  const curTask = curTaskIdx >= 0 && curTaskIdx < tasks.length ? tasks[curTaskIdx] : null;
+  const turnStartSec = curTaskIdx >= 0 && curTaskIdx < cumulativeTimes.length ? cumulativeTimes[curTaskIdx] : 0;
+  const curPlanetTheta = ((cumulativeTimes[curTaskIdx] ?? 0) / 3600) * Math.PI * 2;
   const curPlanetR = rAtTheta(curPlanetTheta) * scale;
   const curPlanetX = curPlanetR * Math.cos(curPlanetTheta);
   const curPlanetY = curPlanetR * Math.sin(curPlanetTheta);
@@ -378,25 +379,21 @@ export function SpiralThermometer({
   if (starY - 16 < -HALF + starMargin) starLabelDy = -HALF + starMargin - starY + 16;
   if (starY + 66 > HALF - starMargin) starLabelDy = HALF - starMargin - starY - 66;
 
-  // Task boundary dots — only TWO planets are shown at a time: the current
-  // turn's planet and the next one (the goal). The nearer planet is rendered
-  // larger, the farther one smaller. Hidden planets are still kept in the
-  // array with visible=false (the star/turn logic relies on taskCount).
+  // Task boundary dots — every task's planet is shown along the spiral at its
+  // planned start time. Size is proportional to on-screen distance: planets
+  // further ahead are smaller. Below MIN_PLANET_SIZE the planet art is
+  // sub-pixel noise, so those are culled instead of rendered.
+  const MIN_PLANET_SIZE = 0.1;
   const dots = useMemo(
     () =>
       tasks.map((t, i) => {
         const start = cumulativeTimes[i] ?? 0;
-        const th = i * Math.PI * 2;
+        const th = (start / 3600) * Math.PI * 2;
         const r = rAtTheta(th) * scale;
         const screenR = r;
-        // Show only current + next turn planets (plus the previous one briefly
-        // at the very start, so the first turn has a visible origin).
-        const isCurrent = i === currentTurn;
-        const isNext = i === currentTurn + 1;
-        const isStart = i === 0 && currentTurn === 0;
-        const visible = isCurrent || isNext || isStart;
-        // Size: nearer = bigger. Scale relative to a reference radius.
-        const size = visible ? Math.min(1.6, Math.max(0.45, screenR / 220)) : 0;
+        // Size: nearer = bigger — linear in screen radius, top-clamped only.
+        const size = Math.min(1.6, screenR / 220);
+        const visible = size >= MIN_PLANET_SIZE;
         // Label placement: the name must stay inside the viewport. It sits to
         // the right of the planet when there's room, otherwise to the left.
         // The text is inside the scaled planet group, so its on-screen width
@@ -427,22 +424,24 @@ export function SpiralThermometer({
           size,
           lx,
           anchor,
-          labelVisible: visible && (sessionState === 'idle' || screenR > 105),
+          // Names only on planets big enough to host readable text — a sea
+          // of tiny labels would drown the map.
+          labelVisible: visible && size >= 0.45 && (sessionState === 'idle' || screenR > 105),
         };
       }),
-    [tasks, cumulativeTimes, sessionState, elapsedSec, scale, currentTurn]
+    [tasks, cumulativeTimes, sessionState, elapsedSec, scale]
   );
 
-  // Finish planet — the goal of the LAST task. The last task has no "next
-  // task" planet (the following turn doesn't exist), so without this the
-  // screen would be empty of planets during the final turn. It sits at the
-  // very end of the spiral and, like every "next" planet, travels from the
-  // center out to the edge during the last task.
+  // Finish planet — the goal of the LAST task. The last task's end has no
+  // planet of its own (planets sit at task *starts*), so without this the
+  // screen would have no goal marker during the final task. It sits at the
+  // very end of the spiral and, like every boundary ahead, grows from small
+  // to full size during the last task.
   const finishPt = geometry.pointAtTheta(geometry.thetaMax);
   const finish = {
     x: finishPt.x * scale,
     y: finishPt.y * scale,
-    visible: turns >= taskCount - 1,
+    visible: elapsedSec >= (cumulativeTimes[tasks.length - 1] ?? 0),
     screenR: Math.hypot(finishPt.x, finishPt.y) * scale,
   };
 
@@ -541,15 +540,17 @@ export function SpiralThermometer({
       // Candidates are clamped to the spiral's angular range instead of being
       // discarded: the end of the last turn and the start of it share the same
       // ray (angle 0), so a plain skip would snap the drag from the finish
-      // back to the beginning of the last task. Clamping keeps the drag
-      // pinned at the ends of the path.
+      // back to the beginning of the last turn. Clamping keeps the drag
+      // pinned at the ends of the path. Branches are one hour wide now, so
+      // the previous position's branch ±1 covers any reachable ray.
       const thetaC = Math.atan2(rawY, rawX);
       const k = Math.floor(angleFromSec(prevSec) / (Math.PI * 2));
+      const kkMax = Math.ceil(geometry.thetaMax / (Math.PI * 2));
       let bestTh = 0;
       let bestD = Infinity;
       for (let dk = -1; dk <= 1; dk++) {
         const kk = k + dk;
-        if (kk < 0 || kk > taskCount) continue;
+        if (kk < 0 || kk > kkMax) continue;
         const thRaw = thetaC + kk * Math.PI * 2;
         const th = Math.max(0, Math.min(thRaw, geometry.thetaMax));
         const p = geometry.pointAtTheta(th);
@@ -564,7 +565,7 @@ export function SpiralThermometer({
       if (!isFinite(bestD)) return null;
       return secFromAngle(bestTh);
     },
-    [geometry, scale, viewBoxFromClient, taskCount, angleFromSec, secFromAngle]
+    [geometry, scale, viewBoxFromClient, angleFromSec, secFromAngle]
   );
 
   const handlePointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -817,7 +818,7 @@ export function SpiralThermometer({
             </text>
           )}
 
-          {/* Task dots — planets along the route (only 2 at a time) */}
+          {/* Task dots — planets along the route; far ones small, sub-pixel ones culled */}
           {dots.map((dot, i) => {
             if (!dot.visible) return null;
             return (
