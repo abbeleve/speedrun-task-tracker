@@ -1314,6 +1314,7 @@
 
 .sidebar-input {
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
@@ -1329,7 +1330,8 @@
 
 .sidebar-input-sm {
   width: 44px;
-  flex: 0;
+  flex: 0 0 44px;
+  min-width: 44px;
   text-align: center;
 }
 
