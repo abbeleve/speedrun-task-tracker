@@ -2830,3 +2830,224 @@
     flex: 0 0 24px;
   }
 }
+
+/* ===== Day navigation (per-day tracker state) ===== */
+.day-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 24px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.btn-day-nav {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  padding: 6px 12px;
+}
+.btn-day-nav:hover:not(:disabled) {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.day-date-input {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color-scheme: dark;
+}
+
+[data-theme="light"] .day-date-input {
+  color-scheme: light;
+}
+
+.day-saved-select {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+.day-nav-badge {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  background: var(--bg-current);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+}
+
+/* ===== Days timeline page ===== */
+.days-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.days-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.days-empty {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.days-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-left: 28px;
+}
+
+.days-timeline::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--border);
+}
+
+.day-card {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.day-card:hover {
+  border-color: var(--accent-blue);
+  box-shadow: var(--shadow);
+}
+
+.day-card:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.day-card::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 18px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid var(--bg-primary);
+}
+
+.day-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.day-card-date {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.day-card-pct {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent-green);
+  font-size: 0.95rem;
+}
+
+.day-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.day-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  margin: 10px 0 4px;
+}
+
+.day-progress-fill {
+  height: 100%;
+  background: var(--accent-green);
+  transition: width 0.3s ease;
+}
+
+.day-card-tasks {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.day-card-tasks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.day-card-tasks li.done {
+  color: var(--text-dim);
+}
+
+.day-card-tasks li.done .dc-name {
+  text-decoration: line-through;
+}
+
+.dc-emoji {
+  width: 1.2em;
+  text-align: center;
+}
+
+.dc-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-time {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.dc-status {
+  color: var(--accent-green);
+  width: 1em;
+  text-align: center;
+}
+
+.day-card-tasks li:not(.done) .dc-status {
+  color: var(--text-dim);
+}

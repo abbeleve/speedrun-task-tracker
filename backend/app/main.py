@@ -14,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from . import db, security
 from .deps import bearer_scheme, get_current_user, get_db
 from .schemas import (
+    DayStateIn,
     DayStatsIn,
     LoginIn,
     RegisterIn,
@@ -146,6 +147,72 @@ def delete_history(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     conn.execute('DELETE FROM history WHERE user_id = ? AND date = ?', (user['id'], date))
+    conn.commit()
+    return {'ok': True}
+
+
+# ── Per-day tracker state (tasks + timeline progress) ───────────────
+
+_EMPTY_DAY = {
+    'tasks': [],
+    'elapsedMs': 0,
+    'timeCredit': 0,
+    'sessionState': 'idle',
+    'startedAt': None,
+}
+
+
+@app.get('/api/day-dates')
+def get_day_dates(
+    user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
+):
+    rows = conn.execute(
+        'SELECT date FROM day_state WHERE user_id = ? ORDER BY date', (user['id'],)
+    ).fetchall()
+    return [r['date'] for r in rows]
+
+
+@app.get('/api/days')
+def get_days(
+    user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
+):
+    rows = conn.execute(
+        'SELECT date, data FROM day_state WHERE user_id = ? ORDER BY date', (user['id'],)
+    ).fetchall()
+    return {r['date']: {'date': r['date'], **json.loads(r['data'])} for r in rows}
+
+
+@app.get('/api/day/{date}')
+def get_day(
+    date: str,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    row = conn.execute(
+        'SELECT data FROM day_state WHERE user_id = ? AND date = ?', (user['id'], date)
+    ).fetchone()
+    if row is None:
+        return {'date': date, **_EMPTY_DAY}
+    return {'date': date, **json.loads(row['data'])}
+
+
+@app.put('/api/day/{date}')
+def put_day(
+    date: str,
+    body: DayStateIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    conn.execute(
+        """
+        INSERT INTO day_state (user_id, date, data, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(user_id, date) DO UPDATE SET
+            data = excluded.data,
+            updated_at = excluded.updated_at
+        """,
+        (user['id'], date, body.model_dump_json()),
+    )
     conn.commit()
     return {'ok': True}
 

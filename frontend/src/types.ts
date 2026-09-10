@@ -17,6 +17,17 @@ export interface Template {
   tasks: { name: string; plannedTime: number; emoji: string; color: string; type: TaskType }[];
 }
 
+// Full, resumable state of a single day: the planned/completed tasks plus where
+// the timeline was left, so a past day can be reopened and continued.
+export interface DayState {
+  date: string; // 'YYYY-MM-DD' (local)
+  tasks: Task[];
+  elapsedMs: number; // timeline progress, in ms
+  timeCredit: number; // banked seconds from early completions
+  sessionState: SessionState;
+  startedAt: number | null; // wall-clock anchor for ruler labels
+}
+
 export type SessionState = 'idle' | 'running' | 'paused' | 'finished';
 
 export const DEFAULT_EMOJI = '⬜';

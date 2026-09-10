@@ -55,6 +55,23 @@ export function useTimer() {
     setSessionState('finished');
   }, []);
 
+  // Restore a saved timeline position (from a persisted day). A non-zero
+  // position is shown as paused so the playhead is visible and the run can be
+  // resumed; zero means the day had not started yet.
+  const restore = useCallback((ms: number) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const clamped = Math.max(0, ms);
+    elapsedRef.current = clamped;
+    setElapsed(clamped);
+    if (clamped > 0) {
+      stateRef.current = 'paused';
+      setSessionState('paused');
+    } else {
+      stateRef.current = 'idle';
+      setSessionState('idle');
+    }
+  }, []);
+
   const seek = useCallback((ms: number) => {
     const clamped = Math.max(0, ms);
     if (stateRef.current === 'running') {
@@ -69,7 +86,7 @@ export function useTimer() {
     }
   }, [tick]);
 
-  return { elapsed, sessionState, start, pause, resume, reset, finish, seek };
+  return { elapsed, sessionState, start, pause, resume, reset, finish, restore, seek };
 }
 
 export function formatTime(ms: number, showMs = true): string {

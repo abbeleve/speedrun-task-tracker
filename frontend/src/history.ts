@@ -15,6 +15,12 @@ export function todayKey(): string {
   return dateKey(new Date());
 }
 
+// Step a 'YYYY-MM-DD' key by a whole number of days (can be negative).
+export function shiftDayKey(key: string, delta: number): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return dateKey(new Date(y, m - 1, d + delta));
+}
+
 // Split finished session time into work vs rest using actual task completion
 // timestamps. An unfinished current task counts only its partial progress.
 export function splitSessionByType(

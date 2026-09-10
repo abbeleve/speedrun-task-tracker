@@ -4,7 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
-import type { DayStats, TaskTemplate, Template } from './types';
+import type { DayState, DayStats, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
 
@@ -67,7 +67,7 @@ export interface SleepLogData {
 }
 
 // Re-export the shared entities so callers can import them uniformly from ./api.
-export type { DayStats, Template, TaskTemplate } from './types';
+export type { DayState, DayStats, Template, TaskTemplate } from './types';
 
 // ── Auth ───────────────────────────────────────────────────────────
 
@@ -117,6 +117,27 @@ export async function addSessionToHistory(workSec: number, restSec: number): Pro
     sessions: (cur?.sessions ?? 0) + 1,
   };
   await saveDayStats(date, next);
+}
+
+// ── Per-day tracker state (tasks + timeline progress) ──────────────
+
+export async function loadDay(date: string): Promise<DayState> {
+  return apiFetch(`/day/${encodeURIComponent(date)}`);
+}
+
+export async function saveDay(date: string, state: DayState): Promise<void> {
+  await apiFetch(`/day/${encodeURIComponent(date)}`, {
+    method: 'PUT',
+    body: JSON.stringify(state),
+  });
+}
+
+export async function loadDayDates(): Promise<string[]> {
+  return apiFetch('/day-dates');
+}
+
+export async function loadDays(): Promise<Record<string, DayState>> {
+  return apiFetch('/days');
 }
 
 // ── Sleep log ──────────────────────────────────────────────────────

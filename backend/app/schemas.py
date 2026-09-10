@@ -36,6 +36,25 @@ class DayStatsOut(BaseModel):
     sessions: int
 
 
+class DayTask(BaseModel):
+    id: str
+    name: str
+    plannedTime: float
+    completedAt: Optional[float] = None
+    order: int = 0
+    emoji: str = ''
+    color: str = ''
+    type: str = 'task'
+
+
+class DayStateIn(BaseModel):
+    tasks: List[DayTask] = []
+    elapsedMs: float = 0
+    timeCredit: float = 0
+    sessionState: str = 'idle'
+    startedAt: Optional[float] = None
+
+
 class SleepIn(BaseModel):
     hours: Optional[List[int]] = None
     quality: Optional[int] = None

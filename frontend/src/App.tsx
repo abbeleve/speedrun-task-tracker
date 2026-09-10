@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Task, Template, TaskTemplate, TaskType } from './types';
+import type { Task, Template, TaskTemplate, TaskType, DayState } from './types';
 import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { SnakeView } from './SnakeView';
 import StatsPage from './StatsPage';
-import { splitSessionByType } from './history';
+import DaysPage from './DaysPage';
+import { splitSessionByType, todayKey, shiftDayKey } from './history';
 import * as api from './api';
 import { useAuth } from './auth';
 import './App.css';
@@ -90,8 +91,16 @@ function App() {
     return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : 'timeline';
   });
 
-  // 'main' = tracker, 'stats' = daily activity + sleep statistics page
-  const [page, setPage] = useState<'main' | 'stats'>('main');
+  // 'main' = tracker, 'stats' = daily activity + sleep statistics page.
+  // 'days' = vertical timeline of saved days.
+  const [page, setPage] = useState<'main' | 'stats' | 'days'>('main');
+
+  // Currently shown day and whether its saved state has been loaded yet. Until
+  // readyDate === dayDate the autosave stays off, so a freshly selected day is
+  // never overwritten by the previous day's (still-hydrated) state.
+  const [dayDate, setDayDate] = useState<string>(() => todayKey());
+  const [readyDate, setReadyDate] = useState<string | null>(null);
+  const [savedDates, setSavedDates] = useState<string[]>([]);
 
   useEffect(() => {
     localStorage.setItem('speedrun_view', view);
@@ -125,13 +134,133 @@ function App() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
-  const { elapsed, sessionState, start, pause, resume, reset, finish, seek } = useTimer();
+  const { elapsed, sessionState, start, pause, resume, reset, finish, restore, seek } = useTimer();
   const sessionStateRef = useRef(sessionState);
   sessionStateRef.current = sessionState;
   const seekRef = useRef(seek);
   seekRef.current = seek;
   const pauseRef = useRef(pause);
   pauseRef.current = pause;
+
+  // ── Per-day persistence: tasks + timeline progress ──
+  // Latest tracker values, read by the autosave so a debounced/intervalled save
+  // writes the current state without re-subscribing on every timer frame.
+  const latestDayRef = useRef({ dayDate, tasks, elapsed, timeCredit, sessionState, sessionStartTime });
+  latestDayRef.current = { dayDate, tasks, elapsed, timeCredit, sessionState, sessionStartTime };
+
+  const buildDayState = useCallback((overrideDate?: string): DayState => {
+    const s = latestDayRef.current;
+    return {
+      date: overrideDate ?? s.dayDate,
+      tasks: s.tasks,
+      elapsedMs: s.elapsed,
+      timeCredit: s.timeCredit,
+      sessionState: s.sessionState,
+      startedAt: s.sessionStartTime,
+    };
+  }, []);
+
+  const persistDay = useCallback((state: DayState) => {
+    void api
+      .saveDay(state.date, state)
+      .then(() =>
+        setSavedDates((prev) =>
+          prev.includes(state.date) ? prev : [...prev, state.date].sort()
+        )
+      )
+      .catch((e) => console.error('Failed to save day', e));
+  }, []);
+
+  // Load the selected day (today by default) and hydrate the tracker from it.
+  useEffect(() => {
+    let active = true;
+    setReadyDate(null);
+    (async () => {
+      try {
+        const state = await api.loadDay(dayDate);
+        if (!active) return;
+        setTasks(state.tasks ?? []);
+        setTimeCredit(state.timeCredit ?? 0);
+        setSessionStartTime(state.startedAt ?? null);
+        restore(state.elapsedMs ?? 0);
+        setShowPresets((state.tasks?.length ?? 0) === 0);
+        setReadyDate(dayDate);
+      } catch (e) {
+        console.error('Failed to load day', e);
+        if (!active) return;
+        // Show an empty plan and keep autosave disabled (readyDate stays null)
+        // so the previous day's state can never be written into this one.
+        setTasks([]);
+        setTimeCredit(0);
+        setSessionStartTime(null);
+        restore(0);
+        setShowPresets(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [dayDate, restore]);
+
+  // Known saved days, for the quick-jump selector.
+  useEffect(() => {
+    let active = true;
+    api
+      .loadDayDates()
+      .then((dates) => {
+        if (active) setSavedDates(dates);
+      })
+      .catch((e) => console.error('Failed to load day dates', e));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Debounced save whenever the day's plan or progress state changes.
+  const saveTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (readyDate !== dayDate) return;
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      persistDay(buildDayState());
+    }, 700);
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [tasks, timeCredit, sessionState, dayDate, readyDate, persistDay, buildDayState]);
+
+  // While a run is active the elapsed time changes every frame, so persist it on
+  // a slow timer instead of on every render.
+  useEffect(() => {
+    if (sessionState !== 'running' || readyDate !== dayDate) return;
+    const id = window.setInterval(() => persistDay(buildDayState()), 15000);
+    return () => window.clearInterval(id);
+  }, [sessionState, dayDate, readyDate, persistDay, buildDayState]);
+
+  // Best-effort save when the tab is hidden or closed.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && readyDate === dayDate) {
+        persistDay(buildDayState());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [readyDate, dayDate, persistDay, buildDayState]);
+
+  // Switch days, flushing the current one first so no progress is lost.
+  const goToDay = useCallback(
+    (next: string) => {
+      if (next === dayDate) return;
+      if (readyDate === dayDate) persistDay(buildDayState(dayDate));
+      setDayDate(next);
+    },
+    [dayDate, readyDate, persistDay, buildDayState]
+  );
 
   useEffect(() => {
     let active = true;
@@ -353,20 +482,25 @@ function App() {
     }
   }, [currentTaskIdx, sessionState]);
 
-  // Time scrubbing — drag on timeline tracks to seek
+  // Time scrubbing — drag on the thermo column to seek. The listener is
+  // attached to the window and resolves the timeline element on every event:
+  // the tracker view (and its DOM node) is unmounted while the stats/days
+  // pages are shown, so a captured reference would go stale and scrubbing
+  // would silently stop working after visiting those pages.
   useEffect(() => {
-    const container = timelineRef.current;
-    if (!container) return;
-
     let scrubbing = false;
 
     const getTimeFromEvent = (e: MouseEvent): number => {
+      const container = timelineRef.current;
+      if (!container) return 0;
       const rect = container.getBoundingClientRect();
       const px = e.clientY - rect.top + container.scrollTop;
       return calcTimeFromPxRef.current(Math.max(0, px));
     };
 
     const onMouseDown = (e: MouseEvent) => {
+      const container = timelineRef.current;
+      if (!container) return;
       const target = e.target as HTMLElement;
       // Only scrub when clicking on the thermo column
       if (!target.closest('.timeline-thermo')) return;
@@ -389,15 +523,15 @@ function App() {
     const onMouseUp = () => {
       if (!scrubbing) return;
       scrubbing = false;
-      container.style.cursor = '';
+      if (timelineRef.current) timelineRef.current.style.cursor = '';
     };
 
-    container.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
 
     return () => {
-      container.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -1009,6 +1143,13 @@ function App() {
           📊<span className="view-toggle-label">{page === 'stats' ? 'К трекеру' : 'Статистика'}</span>
         </button>
         <button
+          className={`btn btn-stats-nav ${page === 'days' ? 'active' : ''}`}
+          onClick={() => setPage(page === 'days' ? 'main' : 'days')}
+          title="Таймлайн сохранённых дней"
+        >
+          🗓<span className="view-toggle-label">{page === 'days' ? 'К трекеру' : 'Дни'}</span>
+        </button>
+        <button
           className="btn btn-sidebar"
           onClick={() => setShowSidebar(!showSidebar)}
           title="Task Templates"
@@ -1086,8 +1227,63 @@ function App() {
 
       {page === 'stats' ? (
         <StatsPage />
+      ) : page === 'days' ? (
+        <DaysPage
+          onOpenDay={(d) => {
+            goToDay(d);
+            setPage('main');
+          }}
+        />
       ) : (
         <>
+      <div className="day-nav">
+        <button
+          type="button"
+          className="btn btn-day-nav"
+          onClick={() => goToDay(shiftDayKey(dayDate, -1))}
+          title="Предыдущий день"
+        >
+          ←
+        </button>
+        <input
+          type="date"
+          className="day-date-input"
+          value={dayDate}
+          max={todayKey()}
+          onChange={(e) => { if (e.target.value) goToDay(e.target.value); }}
+          title="Выбрать день"
+        />
+        <button
+          type="button"
+          className="btn btn-day-nav"
+          onClick={() => goToDay(shiftDayKey(dayDate, 1))}
+          disabled={dayDate >= todayKey()}
+          title="Следующий день"
+        >
+          →
+        </button>
+        {dayDate !== todayKey() && (
+          <button type="button" className="btn btn-day-nav" onClick={() => goToDay(todayKey())}>
+            Сегодня
+          </button>
+        )}
+        {savedDates.length > 0 && (
+          <select
+            className="day-saved-select"
+            value={savedDates.includes(dayDate) ? dayDate : ''}
+            onChange={(e) => { if (e.target.value) goToDay(e.target.value); }}
+            title="Сохранённые дни"
+          >
+            <option value="">Сохранённые дни…</option>
+            {savedDates.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        )}
+        {dayDate !== todayKey() && (
+          <span className="day-nav-badge">📅 Прошлый день</span>
+        )}
+      </div>
       {(sessionState === 'idle' || sessionState === 'paused') && (
         <div className="add-section">
           <form className="add-form" onSubmit={handleSubmit}>

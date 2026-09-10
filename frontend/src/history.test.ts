@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateKey, heatLevel, splitSessionByType } from './history';
+import { dateKey, heatLevel, shiftDayKey, splitSessionByType } from './history';
 import type { Task } from './types';
 
 function task(partial: Partial<Task>): Task {
@@ -23,6 +23,14 @@ describe('dateKey', () => {
 
   it('pads month and day with zeros', () => {
     expect(dateKey(new Date(2026, 0, 5))).toBe('2026-01-05');
+  });
+});
+
+describe('shiftDayKey', () => {
+  it('steps forward and backward across month boundaries', () => {
+    expect(shiftDayKey('2026-09-10', 1)).toBe('2026-09-11');
+    expect(shiftDayKey('2026-09-01', -1)).toBe('2026-08-31');
+    expect(shiftDayKey('2026-12-31', 1)).toBe('2027-01-01');
   });
 });
 
