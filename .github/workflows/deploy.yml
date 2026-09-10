@@ -16,7 +16,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /home/deploy/speedrun-task-tracker
-            git pull origin main
+            git pull origin master
 
             cd backend
             source venv/bin/activate
