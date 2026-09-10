@@ -15,7 +15,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 & login are included). Deployment instructions for a bare server are in
 [`DEPLOY.md`](./DEPLOY.md).
 
-## Features
+## Features (test)
 
 - **Thermometer timeline** — vertical fill bar that grows as time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
