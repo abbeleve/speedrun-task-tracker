@@ -3051,3 +3051,430 @@
 .day-card-tasks li:not(.done) .dc-status {
   color: var(--text-dim);
 }
+
+/* ===== List View — plain task list with an expanding thermometer =====
+   The spine runs vertically; each task is a node on it, and the task the run
+   has reached expands into a glass tube that tapers back into the spine at
+   the top and bottom. A motivational picture card sits to its right. */
+.liquid-list {
+  position: relative;
+  max-width: 1080px;
+  margin: 0 auto;
+  /* Content starts 130px in; the marker column is 90px wide, so the spine /
+     node axis sits at 175px. `.liquid-thermo-wrap` cancels the difference to
+     keep the tube centred on that same axis. */
+  padding: 40px 32px 64px 130px;
+}
+
+.liquid-list--empty {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.liquid-clip-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Connector between two nodes. Drawn per row (not as one global line) so the
+   part the run has already passed can be tinted with the task colour. */
+.liquid-connector {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border);
+  z-index: 0;
+}
+
+.liquid-connector.filled {
+  background: var(--node-color, var(--accent-cyan));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--node-color, var(--accent-cyan)) 60%, transparent);
+}
+
+/* No dangling connector above the first / below the last node. */
+.liquid-row:first-child .liquid-connector {
+  top: 50%;
+}
+
+.liquid-row:last-child .liquid-connector {
+  bottom: 50%;
+}
+
+.liquid-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 62px;
+}
+
+.liquid-marker {
+  position: relative;
+  width: 90px;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.liquid-node {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+}
+
+.liquid-node.filled {
+  border-color: var(--node-color, var(--accent-cyan));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--node-color, var(--accent-cyan)) 55%, transparent);
+}
+
+.liquid-node.done {
+  background: color-mix(in srgb, var(--node-color, var(--accent-cyan)) 22%, var(--bg-primary));
+}
+
+.liquid-node-emoji {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.liquid-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 0 4px;
+}
+
+.liquid-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.liquid-row:has(.liquid-node.filled) .liquid-name {
+  color: var(--text-secondary);
+}
+
+.liquid-times {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.liquid-duration {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.liquid-end {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Schedule delta for a task: green when ahead, red when behind. */
+.liquid-delta {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  min-width: 72px;
+  text-align: right;
+}
+
+.liquid-delta.ahead {
+  color: var(--accent-green);
+}
+
+.liquid-delta.behind {
+  color: var(--accent-red);
+}
+
+.liquid-progress .liquid-delta {
+  margin-left: 12px;
+  font-size: 0.95rem;
+}
+
+/* ── Expanded (current) task ── */
+.liquid-row--active {
+  min-height: 0;
+  margin: 0;
+  align-items: center;
+}
+
+/* Grow the tube out of the spine when a task becomes current, and collapse it
+   back into the node when the run moves on. Each keyframe sets only the end it
+   departs from, so the implicit destination is the element's computed size —
+   which keeps the desktop and mobile (150×300) geometries in sync. */
+@keyframes liquid-wrap-in {
+  from {
+    width: 56px;
+    margin-left: 17px;
+  }
+}
+
+@keyframes liquid-flask-in {
+  from {
+    width: 56px;
+    height: 56px;
+    opacity: 0.25;
+  }
+}
+
+@keyframes liquid-wrap-out {
+  to {
+    width: 56px;
+    margin-left: 17px;
+  }
+}
+
+@keyframes liquid-flask-out {
+  to {
+    width: 56px;
+    height: 56px;
+    opacity: 0;
+  }
+}
+
+@keyframes liquid-info-in {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    max-height: 320px;
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes liquid-info-out {
+  from {
+    max-height: 320px;
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
+.liquid-row--enter .liquid-thermo-wrap {
+  animation: liquid-wrap-in 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.liquid-row--enter .liquid-thermo {
+  animation: liquid-flask-in 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.liquid-row--enter .liquid-active-info {
+  animation: liquid-info-in 0.45s ease both;
+}
+
+.liquid-row--exit {
+  pointer-events: none;
+}
+
+.liquid-row--exit .liquid-thermo-wrap {
+  animation: liquid-wrap-out 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.liquid-row--exit .liquid-thermo {
+  animation: liquid-flask-out 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.liquid-row--exit .liquid-active-info {
+  animation: liquid-info-out 0.36s ease both;
+}
+
+.liquid-thermo-wrap {
+  position: relative;
+  width: 200px;
+  flex-shrink: 0;
+  /* 130 (padding) + margin + 100 (half tube) = 175 → margin = -55 */
+  margin-left: -55px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.liquid-thermo {
+  position: relative;
+  width: 200px;
+  height: 360px;
+  margin: 0;
+  flex-shrink: 0;
+  /* Flask silhouette — narrow neck top/bottom, full-width body — provided by
+     the SVG clipPath so the tube grows out of the timeline spine. */
+  border: none;
+  border-radius: 0;
+  clip-path: url(#liquid-tube-clip);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 28%, transparent 72%, rgba(0, 0, 0, 0.08)),
+    var(--bg-secondary);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.liquid-thermo:active {
+  cursor: grabbing;
+}
+
+/* Crisp glass edge that follows the flask outline at any size. */
+.liquid-thermo-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+  overflow: visible;
+  color: color-mix(in srgb, var(--thermo-color, var(--accent-cyan)) 45%, var(--border));
+}
+
+.liquid-thermo-ticks {
+  position: absolute;
+  inset: 11% 30%;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 21px,
+    color-mix(in srgb, var(--text-dim) 60%, transparent) 21px,
+    color-mix(in srgb, var(--text-dim) 60%, transparent) 22px
+  );
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+.liquid-active-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-left: 40px;
+  /* Lets the enter/exit keyframes collapse the panel via max-height. */
+  overflow: hidden;
+}
+
+.liquid-active-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.liquid-active-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.liquid-active-emoji {
+  font-size: 1.3rem;
+}
+
+.liquid-progress {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+}
+
+.liquid-progress strong {
+  font-size: 1.35rem;
+  color: var(--thermo-color, var(--accent-cyan));
+}
+
+.liquid-active-end {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.liquid-complete {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.liquid-cat {
+  width: 280px;
+  height: 280px;
+  flex-shrink: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  background: var(--bg-secondary);
+}
+
+.liquid-cat-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Mock placeholder shown until the backend serves a picture (see MOTIVATION_DIR). */
+.liquid-cat-mock {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4.8rem;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.4), transparent 55%),
+    linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+}
+
+@media (max-width: 820px) {
+  .liquid-list {
+    padding-left: 88px;
+  }
+
+  .liquid-thermo-wrap {
+    width: 150px;
+    margin-left: -30px;
+  }
+
+  .liquid-thermo {
+    width: 150px;
+    height: 300px;
+  }
+
+  .liquid-cat {
+    width: 150px;
+    height: 150px;
+  }
+}

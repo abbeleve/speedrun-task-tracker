@@ -35,6 +35,14 @@ export const DEFAULT_COLOR = '#3498db';
 export const TASK_COLORS = ['#3498db', '#2ecc71', '#e74c3c', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#00d4ff'];
 export const TASK_EMOJIS = ['📋', '🛠️', '🧪', '👀', '🚀', '📦', '🐛', '💡', '🎯', '⚡'];
 
+// Choosing the default square avatar means "surprise me": substitute a random task avatar.
+export function resolveTaskEmoji(emoji: string): string {
+  if (!emoji || emoji === DEFAULT_EMOJI) {
+    return TASK_EMOJIS[Math.floor(Math.random() * TASK_EMOJIS.length)];
+  }
+  return emoji;
+}
+
 export interface TaskTemplate {
   id: string;
   name: string;

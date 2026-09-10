@@ -20,6 +20,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Thermometer timeline** — vertical fill bar that grows as time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
 - **Snake grid** — tasks are scattered across a square grid like meals; a snake crawls from meal to meal and eats each one exactly when its planned time arrives
+- **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the run has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
 - **Dark & light themes** — both the spiral and the snake view adapt to the active theme
 - **Space background** — layered depth: far starfield and constellation clusters stay fixed, near stars endlessly stream outward from the spiral's center
 - **Task splits** — each task has a planned time, actual segment time, and live delta (ahead/behind)
@@ -52,6 +53,10 @@ proxies every `/api/*` request to the backend, so no CORS config is needed.
 
 Use the **register** tab on the login screen to create an account (a token is
 stored in `localStorage` and sent as `Authorization: Bearer ...`).
+
+Motivational pictures for the List view are served by the backend from
+`backend/data/motivation/` (override with the `MOTIVATION_DIR` env var). Drop
+images there — they are picked up automatically and are not committed to git.
 
 ## Scripts
 

@@ -15,10 +15,12 @@ def db_file():
 
 
 @pytest.fixture
-def client(db_file):
+def client(db_file, tmp_path):
     """A fresh TestClient backed by a private, temporary SQLite file."""
     old = os.environ.get('DATABASE_PATH')
+    old_motivation = os.environ.get('MOTIVATION_DIR')
     os.environ['DATABASE_PATH'] = db_file
+    os.environ['MOTIVATION_DIR'] = str(tmp_path)
     from app.main import app
 
     with TestClient(app) as c:
@@ -28,6 +30,10 @@ def client(db_file):
         os.environ.pop('DATABASE_PATH', None)
     else:
         os.environ['DATABASE_PATH'] = old
+    if old_motivation is None:
+        os.environ.pop('MOTIVATION_DIR', None)
+    else:
+        os.environ['MOTIVATION_DIR'] = old_motivation
 
 
 @pytest.fixture

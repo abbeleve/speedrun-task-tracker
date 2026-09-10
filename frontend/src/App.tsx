@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, Template, TaskTemplate, TaskType, DayState } from './types';
-import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA } from './types';
+import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA, resolveTaskEmoji } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { SnakeView } from './SnakeView';
+import { ListView } from './ListView';
 import StatsPage from './StatsPage';
 import DaysPage from './DaysPage';
 import { splitSessionByType, todayKey, shiftDayKey } from './history';
@@ -86,9 +87,9 @@ function App() {
     return saved !== null ? saved === 'dark' : true;
   });
 
-  const [view, setView] = useState<'timeline' | 'spiral' | 'snake'>(() => {
+  const [view, setView] = useState<'timeline' | 'spiral' | 'snake' | 'list'>(() => {
     const saved = localStorage.getItem('speedrun_view');
-    return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : 'timeline';
+    return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : saved === 'list' ? 'list' : 'timeline';
   });
 
   // 'main' = tracker, 'stats' = daily activity + sleep statistics page.
@@ -502,8 +503,9 @@ function App() {
       const container = timelineRef.current;
       if (!container) return;
       const target = e.target as HTMLElement;
-      // Only scrub when clicking on the thermo column
-      if (!target.closest('.timeline-thermo')) return;
+      // Only scrub when clicking on the timeline view's thermo column (the
+      // List view reuses the glass tube look but is not scrubbable).
+      if (!target.closest('.timeline-inner .timeline-thermo')) return;
       if (sessionStateRef.current === 'idle') return;
 
       scrubbing = true;
@@ -546,7 +548,7 @@ function App() {
         plannedTime,
         completedAt: null,
         order: tasks.length,
-        emoji: emoji || DEFAULT_EMOJI,
+        emoji: resolveTaskEmoji(emoji),
         color: color || DEFAULT_COLOR,
         type,
       };
@@ -616,7 +618,7 @@ function App() {
       plannedTime: t.plannedTime,
       completedAt: null,
       order: i,
-      emoji: t.emoji || DEFAULT_EMOJI,
+      emoji: resolveTaskEmoji(t.emoji),
       color: t.color || DEFAULT_COLOR,
       type: t.type ?? 'task',
     }));
@@ -784,7 +786,8 @@ function App() {
   }, [editNameStr]);
 
   const changeTaskEmoji = useCallback((id: string, emoji: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, emoji } : t));
+    const resolved = resolveTaskEmoji(emoji);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, emoji: resolved } : t));
     setEditingEmojiId(null);
     setEmojiEditSearch('');
   }, []);
@@ -1133,6 +1136,14 @@ function App() {
             title="Змейка, которая поедает задачи"
           >
             🐍<span className="view-toggle-label">Snake</span>
+          </button>
+          <button
+            type="button"
+            className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
+            onClick={() => setView('list')}
+            title="Список задач с разворачивающимся термометром"
+          >
+            📜<span className="view-toggle-label">List</span>
           </button>
         </div>
         <button
@@ -1503,6 +1514,18 @@ function App() {
             <p>Add tasks to create your speedrun splits</p>
             <p className="hint">Each task = one split with a planned time. Height = sqrt-scaled for visual balance.</p>
           </div>
+        ) : view === 'list' ? (
+          <ListView
+            tasks={sortedTasks}
+            cumulativeTimes={cumulativeTimes}
+            elapsedSec={sessionElapsedSec}
+            sessionState={sessionState}
+            currentTaskIdx={currentTaskIdx}
+            deltaMs={currentDeltaMs}
+            onCompleteTask={(id) => completeTask(id)}
+            onSeek={(ms) => seek(ms)}
+            formatEnd={formatRealTime}
+          />
         ) : view === 'snake' ? (
           <div className="snake-view-wrap">
             <SnakeView

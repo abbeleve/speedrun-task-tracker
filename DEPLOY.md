@@ -206,6 +206,27 @@ sudo -u speedrun npm run build
 Схема БД создаётся автоматически при старте (`CREATE TABLE IF NOT EXISTS`),
 отдельных миграций для простых обновлений не требуется.
 
+## Мотивационные картинки (вид «List»)
+
+Картинки для вида «List» отдаёт бэкенд — в git они не попадают. По умолчанию
+он раздаёт их из `backend/data/motivation` (каталог `backend/data` уже
+игнорируется git'ом). На сервере просто создайте папку и закиньте туда котиков:
+
+```bash
+mkdir -p /home/speedrun/app/backend/data/motivation
+# скопируйте туда файлы: png / jpg / jpeg / gif / webp / svg
+```
+
+Файлы подхватываются на лету, перезапускать сервис не нужно:
+
+```bash
+curl http://127.0.0.1:8000/api/motivation   # ["/api/motivation/cat1.png", ...]
+```
+
+Если каталог нужен другой — задайте `MOTIVATION_DIR` в systemd-юните
+(`Environment=MOTIVATION_DIR=/path/to/pics`) и перезапустите сервис. Деплой из
+CI трогает только код и `frontend/dist`, так что картинки из папки не пропадут.
+
 ## Проверка после деплоя
 
 ```bash

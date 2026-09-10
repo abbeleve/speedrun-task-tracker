@@ -5,10 +5,13 @@ tokens; every read/write endpoint is scoped to the authenticated user.
 """
 
 import json
+import os
 import sqlite3
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
 from . import db, security
@@ -29,6 +32,8 @@ from .schemas import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init_db()
+    # Ensure the pictures directory exists so it is a clear drop-in target.
+    os.makedirs(motivation_dir(), exist_ok=True)
     yield
 
 
@@ -38,6 +43,57 @@ app = FastAPI(title='SpeedRun Task Tracker API', lifespan=lifespan)
 @app.get('/api/health')
 def health() -> dict:
     return {'status': 'ok'}
+
+
+# ── Motivational pictures ───────────────────────────────────────────
+# Served from a plain directory so pictures live outside git and can be dropped
+# in on the server. The endpoints are public: an `<img>` tag cannot send the
+# bearer token, and the pictures are not user data.
+
+_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'}
+
+
+def motivation_dir() -> str:
+    """Directory the motivational pictures are served from.
+
+    Configurable via ``MOTIVATION_DIR``; defaults to ``data/motivation`` next to
+    the backend package.
+    """
+    path = os.environ.get('MOTIVATION_DIR')
+    if path:
+        return os.path.abspath(path)
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..', 'data', 'motivation')
+    )
+
+
+def _list_motivation() -> list[str]:
+    directory = motivation_dir()
+    try:
+        names = sorted(os.listdir(directory))
+    except FileNotFoundError:
+        return []
+    return [
+        name
+        for name in names
+        if os.path.splitext(name)[1].lower() in _IMAGE_EXTS
+        and os.path.isfile(os.path.join(directory, name))
+    ]
+
+
+@app.get('/api/motivation')
+def get_motivation() -> list[str]:
+    """URLs of the available motivational pictures."""
+    return [f'/api/motivation/{quote(name)}' for name in _list_motivation()]
+
+
+@app.get('/api/motivation/{filename}')
+def get_motivation_image(filename: str):
+    name = os.path.basename(filename)
+    path = os.path.join(motivation_dir(), name)
+    if os.path.splitext(name)[1].lower() not in _IMAGE_EXTS or not os.path.isfile(path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, 'Image not found')
+    return FileResponse(path)
 
 
 # ── Auth ────────────────────────────────────────────────────────────
