@@ -221,3 +221,70 @@ curl -I https://tracker.example.com/                # HTTP 200
   браузера (Network) и права на `backend/data`.
 - **500 при записи** — нет прав на каталог БД у пользователя `speedrun`:
   `chown -R speedrun:speedrun /home/speedrun/app/backend/data`.
+
+## 9. Автодеплой (CI/CD через GitHub Actions)
+
+Workflow `.github/workflows/deploy.yml` на каждый push в ветку `master`:
+прогоняет тесты бэкенда и фронтенда, собирает фронт **на раннере GitHub**
+(сервер не тратит на это CPU/RAM), затем по SSH заливает готовый `dist/` на
+сервер, обновляет бэкенд и перезапускает сервис.
+
+Ветка/пути в workflow рассчитаны на этот деплой
+(`/home/deploy/speedrun-task-tracker`, venv `.venv`, сервис
+`speedrun-task-tracker`) — поправьте их под себя, если раскладка другая.
+
+### 9.1. SSH-ключ для деплоя
+
+На локальной машине:
+
+```bash
+ssh-keygen -t ed25519 -f deploy_key -C "github-actions" -N ""
+```
+
+Публичный ключ добавьте на сервер пользователю `deploy`:
+
+```bash
+# содержимое deploy_key.pub:
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+cat >> ~/.ssh/authorized_keys <<'KEY'
+<вставьте сюда deploy_key.pub>
+KEY
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Приватный ключ (`deploy_key`) целиком — в секрет GitHub (см. ниже). В git его
+**не коммитить** (`deploy_key` и `deploy_key.pub` уже в `.gitignore`).
+
+### 9.2. Секреты GitHub
+
+Repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Имя секрета | Значение |
+| ----------- | -------- |
+| `SSH_HOST`  | IP или домен сервера (напр. `194.87.111.40`) |
+| `SSH_USER`  | `deploy` |
+| `SSH_PRIVATE_KEY` | содержимое файла `deploy_key` (весь текст, от `-----BEGIN` до `-----END`) |
+
+### 9.3. sudo без пароля (для перезапуска сервиса)
+
+Деплой выполняет `sudo systemctl restart speedrun-task-tracker`. Чтобы это
+работало по SSH без пароля, на **сервере** добавьте правило:
+
+```bash
+echo 'deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart speedrun-task-tracker, /bin/systemctl status speedrun-task-tracker' \
+  | sudo tee /etc/sudoers.d/speedrun-deploy
+sudo chmod 440 /etc/sudoers.d/speedrun-deploy
+sudo visudo -c    # проверка синтаксиса
+```
+
+### 9.4. Как теперь деплоить
+
+```bash
+git add -A
+git commit -m "..."
+git push origin master
+```
+
+Дальше всё само: тесты → сборка → выкладка → рестарт. Прогресс видно во вкладке
+**Actions** репозитория.
+

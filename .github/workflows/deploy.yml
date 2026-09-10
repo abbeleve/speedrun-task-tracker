@@ -1,28 +1,114 @@
-name: Deploy
+name: CI/CD
 
 on:
   push:
     branches: [master]
+  pull_request:
 
 jobs:
+  # ── 1. Backend tests ────────────────────────────────────────────
+  backend-test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -v
+
+  # ── 2. Frontend lint, test, build (artefact) ────────────────────
+  frontend-build:
+    name: Frontend lint + test + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The server never builds the frontend — it only receives this artefact.
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  # ── 3. Deploy to the server (only on push to master) ────────────
   deploy:
+    name: Deploy
+    needs: [backend-test, frontend-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      # 3a. Update backend, install deps, clear old static files first.
+      - name: Update backend on server
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             cd /home/deploy/speedrun-task-tracker
             git pull origin master
-
             cd backend
-            source venv/bin/activate
-            pip install -r requirements.txt
-            sudo systemctl restart speedrun-task-tracker
+            .venv/bin/pip install -r requirements.txt
+            rm -rf ../frontend/dist
 
-            cd ../frontend
-            npm ci
-            npm run build
+      # 3b. Copy the pre-built frontend into place.
+      - name: Upload frontend build to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "dist/*"
+          target: "/home/deploy/speedrun-task-tracker/frontend/dist"
+          strip_components: 1
+          overwrite: true
+
+      # 3c. Restart the backend service and verify it is healthy.
+      - name: Restart backend service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo systemctl restart speedrun-task-tracker
+            sleep 2
+            curl -fsS http://127.0.0.1:8000/api/health
