@@ -26,9 +26,8 @@ const VIEW = 800;
 const HALF = VIEW / 2;
 const PAD = 26;
 
-// FNV-1a — tiny string hash. Positions and route turns are seeded from the
-// task ids so the board NEVER reshuffles between renders (the run must not
-// jitter), yet looks random for every run.
+// FNV-1a — tiny string hash, used to steer each leg's turn direction so the
+// route looks organic while staying identical for a given task list.
 const hashStr = (s: string): number => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -95,28 +94,24 @@ export function SnakeView({
   const layout = useMemo<SnakeLayout | null>(() => {
     const n = tasks.length;
     if (n === 0) return null;
-    const side = Math.max(5, Math.min(12, Math.ceil(Math.sqrt(n + 2) * 1.8)));
+    const side = Math.max(5, Math.min(14, Math.ceil(Math.sqrt(n + 2) * 1.8)));
     const inner = VIEW - PAD * 2;
     const cell = inner / side;
 
-    // Fill empty cells in a deterministic probe order (hash + linear probing).
-    const occupied = new Map<string, string>();
-    const place = (seed: string, kind: string): Cell => {
-      const h = hashStr(seed);
-      for (let i = 0; i < side * side; i++) {
-        const x = (h + i * 67) % side;
-        const y = ((h >>> 6) + i * 31) % side;
-        const k = `${x},${y}`;
-        if (!occupied.has(k)) {
-          occupied.set(k, kind);
-          return { x, y };
-        }
-      }
-      return { x: 0, y: 0 };
+    // Tasks are laid out in a boustrophedon ("snake") sweep over the grid:
+    // row 0 goes left → right, row 1 right → left, and so on. Index 0 is the
+    // start cell, the next n cells are the meals in task order, and the cell
+    // after them is the finish — so board position == task order. The board
+    // is fully deterministic (it must not jitter between renders) and the
+    // user can predict exactly where every meal is.
+    const zigIndex = (k: number): Cell => {
+      const row = Math.floor(k / side);
+      const col = row % 2 === 0 ? k % side : side - 1 - (k % side);
+      return { x: col, y: row };
     };
-    const start = place('snake-start', 'start');
-    const finish = place('snake-finish', 'finish');
-    const taskCells = tasks.map((t) => place(`snake-${t.id}`, t.id));
+    const start = zigIndex(0);
+    const finish = zigIndex(n + 1);
+    const taskCells = tasks.map((_, i) => zigIndex(i + 1));
 
     const toPx = (c: Cell) => ({
       x: -HALF + PAD + (c.x + 0.5) * cell,
@@ -565,20 +560,13 @@ export function SnakeView({
               onPointerDown={handleMealPointerDown}
               onClick={() => handleMealClick(task)}
             >
-              <rect
-                x={-layout.cell * 0.36}
-                y={-layout.cell * 0.36}
-                width={layout.cell * 0.72}
-                height={layout.cell * 0.72}
-                rx={10}
-                className="snake-meal-card"
-              />
+              <circle r={layout.cell * 0.36} className="snake-meal-disc" />
               {isCurrent && sessionState === 'running' && <circle r={layout.cell * 0.42} className="snake-meal-pulse" />}
               <text y={layout.cell >= 46 ? -layout.cell * 0.14 : 3} textAnchor="middle" dominantBaseline="central" className="snake-meal-emoji">
                 {task.emoji}
               </text>
               {layout.cell >= 46 && (
-                <text y={layout.cell * 0.36 - 4} textAnchor="middle" dominantBaseline="central" className="snake-meal-name">
+                <text y={layout.cell * 0.36 + 8} textAnchor="middle" dominantBaseline="central" className="snake-meal-name">
                   {task.name}
                 </text>
               )}

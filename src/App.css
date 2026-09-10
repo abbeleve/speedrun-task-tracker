@@ -25,6 +25,11 @@
   --border: #3f4147;
   --radius: 6px;
   --shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --heat-0: #303236;
+  --heat-1: #0e4429;
+  --heat-2: #006d32;
+  --heat-3: #26a641;
+  --heat-4: #39d353;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   --font-sans: 'Evolventa', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -53,6 +58,11 @@
   --accent-teal: #16a085;
   --border: #d0d3d9;
   --shadow: 0 2px 8px rgba(0,0,0,0.1);
+  --heat-0: #ebedf0;
+  --heat-1: #9be9a8;
+  --heat-2: #40c463;
+  --heat-3: #30a14e;
+  --heat-4: #216e39;
 }
 
 * {
@@ -2044,58 +2054,27 @@
 
 
 /* ===== Snake view — сетка, змейка и её еда ===== */
-/* Игровое поле: в тёмной теме — глубокий «космос», в светлой — светлый
-   «настольный» фон. Тема переключается через переменные ниже. */
-:root,
-[data-theme="dark"] {
-  --snake-bg-1: #0b0e17;
-  --snake-bg-2: #02030a;
-  --snake-accent-1: rgba(96, 60, 180, 0.16);
-  --snake-accent-2: rgba(20, 120, 200, 0.12);
-  --snake-grid: rgba(170, 180, 205, 0.13);
-  --snake-route: rgba(170, 180, 205, 0.3);
-  --snake-card-bg: rgba(24, 28, 42, 0.85);
-  --snake-card-border: rgba(255, 255, 255, 0.13);
-  --snake-card-text: #e9ecf2;
-  --snake-meat: #aeb6c6;
-  --snake-start-ring: rgba(120, 220, 160, 0.85);
+/* Игровое поле — светлая «доска» (#f3efe5) в обеих темах; контрастные
+   детали (сетка, маршрут, тексты) подобраны под светлый фон. */
+:root {
+  --snake-bg: #f3efe5;
+  --snake-grid: rgba(58, 42, 4, 0.18);
+  --snake-route: rgba(58, 42, 4, 0.3);
+  --snake-card-bg: rgba(255, 251, 235, 0.92);
+  --snake-meat: #4a3a10;
+  --snake-start-ring: #167a3a;
   --snake-check-bg: #0f7c3f;
   --snake-check-fill: #ffffff;
-  --snake-head-body: #141a28;
-  --snake-head-stroke: var(--accent-cyan);
-  --snake-eye: #f4f6fb;
-  --snake-pupil: #0c0f16;
-  --snake-label-fill: rgba(255, 255, 255, 0.92);
-  --snake-label-stroke: rgba(0, 0, 0, 0.85);
-  --snake-pill-bg: rgba(10, 16, 26, 0.7);
-  --snake-pill-stroke: rgba(255, 255, 255, 0.35);
-  --snake-finish: color-mix(in srgb, var(--accent-gold) 10%, var(--bg-secondary));
-}
-
-[data-theme="light"] {
-  --snake-bg-1: #eef0e6;
-  --snake-bg-2: #fbfaf4;
-  --snake-accent-1: rgba(120, 90, 200, 0.1);
-  --snake-accent-2: rgba(20, 130, 210, 0.08);
-  --snake-grid: rgba(60, 70, 90, 0.12);
-  --snake-route: rgba(60, 70, 90, 0.3);
-  --snake-card-bg: rgba(255, 255, 255, 0.88);
-  --snake-card-border: rgba(30, 40, 60, 0.15);
-  --snake-card-text: #232a38;
-  --snake-meat: #39445a;
-  --snake-start-ring: #1a9e5c;
-  --snake-check-bg: #13a05a;
-  --snake-check-fill: #ffffff;
-  --snake-head-body: #edf1f7;
-  --snake-head-stroke: #232a38;
+  --snake-head-body: #f6f8ff;
+  --snake-head-stroke: #20262f;
   --snake-eye: #10131a;
   --snake-pupil: #ffffff;
-  --snake-label-fill: rgba(18, 24, 36, 0.94);
-  --snake-label-stroke: rgba(255, 255, 255, 0.85);
-  --snake-pill-bg: rgba(255, 255, 255, 0.75);
-  --snake-pill-stroke: rgba(20, 30, 50, 0.35);
-  --snake-pill-fill: rgba(18, 24, 36, 0.94);
-  --snake-finish: color-mix(in srgb, var(--accent-gold) 30%, #ffffff);
+  --snake-label-fill: rgba(36, 29, 2, 0.96);
+  --snake-label-stroke: rgba(255, 255, 255, 0.9);
+  --snake-pill-bg: rgba(255, 252, 235, 0.85);
+  --snake-pill-stroke: rgba(58, 42, 4, 0.45);
+  --snake-pill-fill: rgba(36, 29, 2, 0.96);
+  --snake-finish: color-mix(in srgb, var(--accent-gold) 30%, #241b02);
 }
 
 .snake-view-wrap {
@@ -2116,10 +2095,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(ellipse at 18% 26%, var(--snake-accent-1), transparent 55%),
-    radial-gradient(ellipse at 82% 72%, var(--snake-accent-2), transparent 55%),
-    linear-gradient(180deg, var(--snake-bg-1) 0%, var(--snake-bg-2) 100%);
+  background: var(--snake-bg);
 }
 
 .snake-empty {
@@ -2201,20 +2177,20 @@
   font-size: 14px;
 }
 
-/* Meals — печеньки для змейки */
+/* Meals — круглые аватарки задач по центру клетки */
 .snake-meal {
   cursor: pointer;
   --meal-color: var(--accent-cyan);
 }
-.snake-meal-card {
-  fill: var(--snake-card-bg);
-  stroke: var(--snake-card-border);
-  stroke-width: 1.4;
-  transition: stroke 0.2s, fill 0.25s;
-}
-.snake-meal:hover .snake-meal-card {
+.snake-meal-disc {
+  fill: color-mix(in srgb, var(--meal-color) 18%, var(--snake-card-bg));
   stroke: var(--meal-color);
-  fill: color-mix(in srgb, var(--meal-color) 14%, var(--snake-card-bg));
+  stroke-width: 3;
+  transition: stroke-width 0.2s, fill 0.25s;
+}
+.snake-meal:hover .snake-meal-disc {
+  fill: color-mix(in srgb, var(--meal-color) 32%, var(--snake-card-bg));
+  stroke-width: 4;
 }
 .snake-meal-emoji {
   font-size: 26px;
@@ -2225,10 +2201,9 @@
   font-weight: 600;
   pointer-events: none;
 }
-.snake-meal.current .snake-meal-card {
-  stroke: var(--meal-color);
-  stroke-width: 2;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--meal-color) 70%, transparent));
+.snake-meal.current .snake-meal-disc {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--meal-color) 65%, transparent));
 }
 .snake-meal.eaten {
   opacity: 0.55;
@@ -2423,4 +2398,412 @@
 
 .snake-edit-save:hover {
   filter: brightness(1.1);
+}
+
+/* ===== Stats page: daily activity heatmap + sleep tracker ===== */
+
+.stats-page {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  --heat-cell: 13px;
+  --heat-gap: 3px;
+  --sleep-cell: 22px;
+}
+
+.stats-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+/* --- Heatmap --- */
+
+.heat-scroll {
+  overflow-x: auto;
+}
+
+.heat-months {
+  display: grid;
+  gap: var(--heat-gap);
+  margin-left: calc(var(--heat-cell) + 22px + var(--heat-gap));
+  height: 16px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.heat-body {
+  display: flex;
+  gap: 6px;
+}
+
+.heat-days {
+  display: grid;
+  grid-template-rows: repeat(7, var(--heat-cell));
+  gap: var(--heat-gap);
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+  min-width: 20px;
+}
+
+.heatmap {
+  display: grid;
+  grid-template-rows: repeat(7, var(--heat-cell));
+  grid-auto-flow: column;
+  grid-auto-columns: var(--heat-cell);
+  gap: var(--heat-gap);
+}
+
+.heat-cell {
+  width: var(--heat-cell);
+  height: var(--heat-cell);
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.heatmap .heat-cell {
+  width: 100%;
+  height: 100%;
+}
+
+.heat-cell.l0 { background: var(--heat-0); }
+.heat-cell.l1 { background: var(--heat-1); }
+.heat-cell.l2 { background: var(--heat-2); }
+.heat-cell.l3 { background: var(--heat-3); }
+.heat-cell.l4 { background: var(--heat-4); }
+
+.heatmap .heat-cell.future {
+  visibility: hidden;
+}
+
+.heat-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* --- Sleep tracker --- */
+
+.sleep-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sleep-header h3,
+.heat-header h3 {
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.heat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sleep-controls-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.year-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.year-select:hover {
+  border-color: var(--accent-green);
+}
+
+.sleep-month-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sleep-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-sleep-nav {
+  padding: 4px 12px;
+  line-height: 1;
+}
+
+.sleep-date {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 90px;
+  text-align: center;
+}
+
+/* ── Monthly 24h scroll grid ───────────────────────────── */
+
+/* The scrollable window — one month fits comfortably, more are buffered above
+   and below and filled in as the user scrolls. */
+.sleep-month-scroll {
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  padding: 12px;
+}
+
+.sleep-month {
+  min-width: max-content;
+}
+
+/* Hour labels appear in a separate track above a month's rows, so they only
+   scroll vertically with their month, not horizontally with the cells. */
+.sleep-hour-header,
+.sleep-day-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.sleep-hour-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
+  padding: 4px 0 6px;
+}
+
+.sleep-hour-label {
+  width: var(--sleep-cell);
+  flex: 0 0 var(--sleep-cell);
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.sleep-month-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 6px 0 4px;
+}
+
+/* The fixed number column ("1 я", "2 я" …) aligned before the cells. */
+.sleep-day-num {
+  width: 34px;
+  flex: 0 0 34px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-left: 2px;
+}
+
+.sleep-day-mon {
+  display: inline;
+  font-size: 8px;
+  color: var(--text-dim);
+  margin-left: 2px;
+}
+
+/* One day = 24 square cells. Each cell is a flex squarish button. */
+.sleep-day-row {
+  padding: 1.5px 0;
+  border-radius: 4px;
+}
+
+.sleep-day-row:hover:not(.future) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sleep-day-row.future {
+  opacity: 0.45;
+}
+
+.sleep-cell {
+  width: var(--sleep-cell);
+  height: var(--sleep-cell);
+  flex: 0 0 var(--sleep-cell);
+  border: none;
+  border-radius: 3px;
+  background: var(--heat-0);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: background 120ms ease;
+}
+
+.sleep-cell:hover:not(:disabled) {
+  filter: brightness(1.25);
+}
+
+.sleep-cell:disabled {
+  cursor: default;
+}
+
+.sleep-cell.checked {
+  background: #e26ba0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+/* Quality dot (colored circle) */
+.qual-cell {
+  width: 30px;
+  flex: 0 0 30px;
+  text-align: center;
+}
+
+.quality-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.quality-dot:hover:not(.empty) {
+  transform: scale(1.3);
+  box-shadow: 0 0 6px currentColor;
+}
+
+.quality-dot.empty {
+  cursor: default;
+  background: transparent;
+}
+
+.quality-dot.filled {
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.q1.filled { background: #e74c3c; }
+.q2.filled { background: #e67e22; }
+.q3.filled { background: #f1c40f; color: #333; }
+.q4.filled { background: #2ecc71; }
+.q5.filled { background: #1abc9c; }
+
+/* ── Controls bar (below grids) ─────────────────────────── */
+
+.sleep-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  flex-wrap: wrap;
+}
+
+.sleep-info b {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent-green);
+}
+
+.btn-sleep-clear {
+  padding: 4px 10px;
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .stats-page {
+    --heat-cell: 10px;
+    --heat-gap: 2px;
+    --sleep-cell: 16px;
+    padding: 12px 10px 24px;
+  }
+
+  .sleep-month-scroll {
+    max-height: 420px;
+  }
+
+  .sleep-day-num {
+    width: 28px;
+    flex: 0 0 28px;
+  }
+
+  .quality-dot {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .qual-cell {
+    width: 24px;
+    flex: 0 0 24px;
+  }
 }

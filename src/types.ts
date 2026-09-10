@@ -33,6 +33,18 @@ export interface TaskTemplate {
   type: TaskType;
 }
 
+export interface DayStats {
+  date: string; // 'YYYY-MM-DD' (local)
+  workSec: number; // total time spent on regular tasks
+  restSec: number; // time spent on 'rest'-type tasks
+  sessions: number; // how many sessions were logged that day
+}
+
+export interface SleepEntry {
+  bed: number | null; // minutes from midnight when the person went to bed
+  wake: number | null; // minutes from midnight when the person woke up
+}
+
 export interface EmojiEntry {
   emoji: string;
   keywords: string[];

@@ -4,6 +4,8 @@ import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMO
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { SnakeView } from './SnakeView';
+import StatsPage from './StatsPage';
+import { addSessionToHistory, splitSessionByType } from './history';
 import './App.css';
 
 let nextId = 1;
@@ -59,6 +61,8 @@ function App() {
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const pauseStartRef = useRef<number | null>(null);
+  // Guards against recording the same session into day history twice
+  const recordedRef = useRef(false);
   const [congrats, setCongrats] = useState<{ id: string; name: string } | null>(null);
   const congratsTimerRef = useRef<number | null>(null);
   const [glow, setGlow] = useState<{ id: string; color: string } | null>(null);
@@ -81,6 +85,9 @@ function App() {
     const saved = localStorage.getItem('speedrun_view');
     return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : 'timeline';
   });
+
+  // 'main' = tracker, 'stats' = daily activity + sleep statistics page
+  const [page, setPage] = useState<'main' | 'stats'>('main');
 
   useEffect(() => {
     localStorage.setItem('speedrun_view', view);
@@ -830,16 +837,25 @@ function App() {
   }, []);
 
   const handleReset = useCallback(() => {
+    // Abandoned mid-session (paused, not finished) — still log the progress
+    if (!recordedRef.current && sessionState !== 'idle') {
+      recordedRef.current = true;
+      const split = splitSessionByType(sortedTasks, sessionElapsedSec);
+      if (split.workSec + split.restSec >= 60) {
+        addSessionToHistory(split.workSec, split.restSec);
+      }
+    }
     reset();
     setTasks((prev) => prev.map((t) => ({ ...t, completedAt: null })));
     setSessionStartTime(null);
     setTimeCredit(0);
     pauseStartRef.current = null;
-  }, [reset]);
+  }, [reset, sessionState, sortedTasks, sessionElapsedSec]);
 
   const handleSessionAction = useCallback(() => {
     if (sessionState === 'idle') {
       if (sortedTasks.length === 0) return;
+      recordedRef.current = false;
       setSessionStartTime(Date.now());
       setTimeCredit(0);
       pauseStartRef.current = null;
@@ -857,9 +873,17 @@ function App() {
 
   useEffect(() => {
     if (allCompleted && sessionState === 'running') {
+      // Session is over — log its work/rest time into the day history
+      if (!recordedRef.current) {
+        recordedRef.current = true;
+        const split = splitSessionByType(sortedTasks, elapsed / 1000);
+        if (split.workSec + split.restSec >= 60) {
+          addSessionToHistory(split.workSec, split.restSec);
+        }
+      }
       finish();
     }
-  }, [allCompleted, sessionState, finish]);
+  }, [allCompleted, sessionState, finish, sortedTasks, elapsed]);
 
   const onDragStart = (idx: number) => setDragIdx(idx);
   const onDragOver = (e: React.DragEvent, idx: number) => {
@@ -967,6 +991,13 @@ function App() {
           </button>
         </div>
         <button
+          className={`btn btn-stats-nav ${page === 'stats' ? 'active' : ''}`}
+          onClick={() => setPage(page === 'stats' ? 'main' : 'stats')}
+          title="Статистика активности по дням"
+        >
+          📊<span className="view-toggle-label">{page === 'stats' ? 'К трекеру' : 'Статистика'}</span>
+        </button>
+        <button
           className="btn btn-sidebar"
           onClick={() => setShowSidebar(!showSidebar)}
           title="Task Templates"
@@ -1042,6 +1073,10 @@ function App() {
         </div>
       </header>
 
+      {page === 'stats' ? (
+        <StatsPage />
+      ) : (
+        <>
       {(sessionState === 'idle' || sessionState === 'paused') && (
         <div className="add-section">
           <form className="add-form" onSubmit={handleSubmit}>
@@ -1204,10 +1239,10 @@ function App() {
           <span className="timer-label">🕐 Текущее время</span>
           <span className="timer-value timer-clock-value">
             {(() => {
-              const utc8 = new Date(currentTime.getTime() + 8 * 60 * 60 * 1000);
-              const hh = String(utc8.getUTCHours()).padStart(2, '0');
-              const mm = String(utc8.getUTCMinutes()).padStart(2, '0');
-              const ss = String(utc8.getUTCSeconds()).padStart(2, '0');
+              const utc3 = new Date(currentTime.getTime() + 3 * 60 * 60 * 1000);
+              const hh = String(utc3.getUTCHours()).padStart(2, '0');
+              const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
+              const ss = String(utc3.getUTCSeconds()).padStart(2, '0');
               return `${hh}:${mm}:${ss}`;
             })()}
           </span>
@@ -1216,12 +1251,12 @@ function App() {
           <span className="timer-label">🎯 Вы закончите в</span>
           <span className="timer-value timer-finish-value">
             {(() => {
-              const utc8 = new Date(
-                currentTime.getTime() + 8 * 60 * 60 * 1000 + remainingWorkSec * 1000
+              const utc3 = new Date(
+                currentTime.getTime() + 3 * 60 * 60 * 1000 + remainingWorkSec * 1000
               );
-              const hh = String(utc8.getUTCHours()).padStart(2, '0');
-              const mm = String(utc8.getUTCMinutes()).padStart(2, '0');
-              const ss = String(utc8.getUTCSeconds()).padStart(2, '0');
+              const hh = String(utc3.getUTCHours()).padStart(2, '0');
+              const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
+              const ss = String(utc3.getUTCSeconds()).padStart(2, '0');
               return `${hh}:${mm}:${ss}`;
             })()}
           </span>
@@ -1584,6 +1619,8 @@ function App() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {showSidebar && (
         <div className="sidebar">
