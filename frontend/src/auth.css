@@ -1,0 +1,117 @@
+/* Login / registration page. Rendered before <App>, so it uses the CSS custom
+   properties set on <html data-theme="..."> (see main.tsx). */
+
+.auth-page {
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: var(--bg-page, var(--bg-primary, #1a1a2e));
+  color: var(--text-primary, #dbdee1);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px;
+  border-radius: 16px;
+  border: 1px solid var(--border, #3f4147);
+  background: color-mix(in srgb, var(--bg-primary, #1a1a2e) 90%, var(--text-primary, #dbdee1) 10%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.auth-card-loading {
+  text-align: center;
+  color: var(--text-secondary, #97999f);
+}
+
+.auth-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-title .icon {
+  font-size: 24px;
+}
+
+.auth-subtitle {
+  margin: 0 0 20px;
+  color: var(--text-secondary, #97999f);
+  font-size: 14px;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: var(--bg-primary, #1a1a2e);
+  border: 1px solid var(--border, #3f4147);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary, #97999f);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.auth-tab.active {
+  background: color-mix(in srgb, var(--bg-primary, #1a1a2e) 92%, var(--text-primary, #dbdee1) 8%);
+  color: var(--text-primary, #dbdee1);
+  font-weight: 600;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary, #97999f);
+}
+
+.auth-field input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #3f4147);
+  background: var(--bg-primary, #1a1a2e);
+  color: var(--text-primary, #dbdee1);
+  font: inherit;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.auth-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #e74c3c 15%, transparent);
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+  font-size: 13px;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 4px;
+}

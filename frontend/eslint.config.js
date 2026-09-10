@@ -12,11 +12,17 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
-    languageOptions: {
-      globals: globals.browser,
+    plugins: {
+      // Classic, reliable hooks rules. The react-hooks v7 "recommended" set
+      // bundles the experimental React Compiler tier, which flags ordinary
+      // memoized code across this codebase; we keep the stable rules instead.
+      'react-hooks': reactHooks,
+    },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
 ])

@@ -5,7 +5,9 @@ import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { SnakeView } from './SnakeView';
 import StatsPage from './StatsPage';
-import { addSessionToHistory, splitSessionByType } from './history';
+import { splitSessionByType } from './history';
+import * as api from './api';
+import { useAuth } from './auth';
 import './App.css';
 
 let nextId = 1;
@@ -24,6 +26,8 @@ const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
 
 function App() {
+  const { user, logout } = useAuth();
+
   // ── Pick ruler interval so labels don't overlap ──
   // targetPx: minimum pixel gap between consecutive marks
   function pickInterval(totalSec: number, totalPx: number, targetPx = 32): number {
@@ -130,18 +134,20 @@ function App() {
   pauseRef.current = pause;
 
   useEffect(() => {
-    const stored = localStorage.getItem('speedrun_templates');
-    if (stored) {
+    let active = true;
+    (async () => {
       try {
-        setSavedTemplates(JSON.parse(stored));
+        const [tpls, taskTpls] = await Promise.all([api.loadTemplates(), api.loadTaskTemplates()]);
+        if (!active) return;
+        setSavedTemplates(tpls);
+        setTaskTemplates(taskTpls);
       } catch (e) {
         console.error('Failed to load templates', e);
       }
-    }
-    const storedTpl = localStorage.getItem('speedrun_task_templates');
-    if (storedTpl) {
-      try { setTaskTemplates(JSON.parse(storedTpl)); } catch {}
-    }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const [now, setNow] = useState(Date.now());
@@ -463,7 +469,7 @@ function App() {
 
     const updated = [...savedTemplates, newTemplate];
     setSavedTemplates(updated);
-    localStorage.setItem('speedrun_templates', JSON.stringify(updated));
+    void api.saveTemplate(newTemplate).catch((e) => console.error('Failed to save template', e));
   }, [saveTplName, savedTemplates, sortedTasks]);
 
   const loadTemplate = useCallback((template: Template) => {
@@ -487,7 +493,7 @@ function App() {
   const deleteTemplate = useCallback((id: string) => {
     const updated = savedTemplates.filter(t => t.id !== id);
     setSavedTemplates(updated);
-    localStorage.setItem('speedrun_templates', JSON.stringify(updated));
+    void api.deleteTemplate(id).catch((e) => console.error('Failed to delete template', e));
   }, [savedTemplates]);
 
   const exportTemplates = useCallback(() => {
@@ -511,15 +517,17 @@ function App() {
       try {
         const imported = JSON.parse(e.target?.result as string);
         if (Array.isArray(imported) && imported.every(t => t.name && t.tasks)) {
-          const updated = [...savedTemplates, ...imported];
-          // Deduplicate by name or ID if necessary, but for now simple merge
+          const incoming = imported.map((tpl) => ({ id: tpl.id ?? uid(), ...tpl }));
+          const updated = [...savedTemplates, ...incoming];
           setSavedTemplates(updated);
-          localStorage.setItem('speedrun_templates', JSON.stringify(updated));
+          for (const tpl of incoming) {
+            void api.saveTemplate(tpl).catch((e) => console.error('Failed to save imported template', e));
+          }
           alert('Templates imported successfully!');
         } else {
           alert('Invalid template file format.');
         }
-      } catch (err) {
+      } catch {
         alert('Error reading template file.');
       }
     };
@@ -706,17 +714,13 @@ function App() {
   const handleJump = useCallback(() => {
     const val = jumpStr.trim();
     if (!val) return;
-    let offsetMin = parseFloat(val);
+    const offsetMin = parseFloat(val);
     if (!isNaN(offsetMin)) {
       const offsetMs = Math.round(offsetMin * 60 * 1000);
       seek(Math.max(0, elapsed + offsetMs));
     }
     setJumpStr('');
   }, [jumpStr, seek, elapsed]);
-
-  const saveTaskTemplates = useCallback((tpls: TaskTemplate[]) => {
-    localStorage.setItem('speedrun_task_templates', JSON.stringify(tpls));
-  }, []);
 
   const addTaskTemplate = useCallback(() => {
     if (!tplName.trim()) return;
@@ -727,15 +731,15 @@ function App() {
     };
     const updated = [...taskTemplates, tpl];
     setTaskTemplates(updated);
-    saveTaskTemplates(updated);
+    void api.saveTaskTemplate(tpl).catch((e) => console.error('Failed to save task template', e));
     setTplName(''); setTplMinutes('5'); setTplEmoji(DEFAULT_EMOJI); setTplColor(DEFAULT_COLOR); setTplType('task');
-  }, [tplName, tplMinutes, tplEmoji, tplColor, tplType, taskTemplates, saveTaskTemplates]);
+  }, [tplName, tplMinutes, tplEmoji, tplColor, tplType, taskTemplates]);
 
   const deleteTaskTemplate = useCallback((id: string) => {
     const updated = taskTemplates.filter(t => t.id !== id);
     setTaskTemplates(updated);
-    saveTaskTemplates(updated);
-  }, [taskTemplates, saveTaskTemplates]);
+    void api.deleteTaskTemplate(id).catch((e) => console.error('Failed to delete task template', e));
+  }, [taskTemplates]);
 
   const addTaskFromTemplate = useCallback((tpl: TaskTemplate) => {
     const task: Task = {
@@ -842,7 +846,7 @@ function App() {
       recordedRef.current = true;
       const split = splitSessionByType(sortedTasks, sessionElapsedSec);
       if (split.workSec + split.restSec >= 60) {
-        addSessionToHistory(split.workSec, split.restSec);
+        void api.addSessionToHistory(split.workSec, split.restSec).catch((e) => console.error('Failed to log session', e));
       }
     }
     reset();
@@ -878,7 +882,7 @@ function App() {
         recordedRef.current = true;
         const split = splitSessionByType(sortedTasks, elapsed / 1000);
         if (split.workSec + split.restSec >= 60) {
-          addSessionToHistory(split.workSec, split.restSec);
+          void api.addSessionToHistory(split.workSec, split.restSec).catch((e) => console.error('Failed to log session', e));
         }
       }
       finish();
@@ -946,7 +950,7 @@ function App() {
       pxAccum += bH;
     }
     return marks;
-  }, [sortedTasks, totalPlannedSec, blockHeight]);
+  }, [sortedTasks, totalPlannedSec, blockHeight, timelineHeight]);
 
   const showPlayhead = sessionState === 'running' || sessionState === 'paused';
 
@@ -963,6 +967,13 @@ function App() {
         >
           {darkMode ? '☀️' : '🌙'}
           <span className="theme-toggle-label">{darkMode ? 'Light' : 'Dark'}</span>
+        </button>
+        <button
+          className="btn btn-logout"
+          onClick={() => void logout()}
+          title={`Выйти (${user ?? ''})`}
+        >
+          🚪 Выйти
         </button>
         <div className="view-toggle" role="group" aria-label="View mode">
           <button

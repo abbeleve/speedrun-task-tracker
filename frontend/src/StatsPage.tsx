@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DayStats } from './types';
-import {
-  dateKey,
-  heatLevel,
-  loadHistory,
-  loadSleepLog,
-  saveSleepLog,
-} from './history';
+import { dateKey, heatLevel } from './history';
+import * as api from './api';
 
 const WEEKS_TO_SHOW = 53; // ~1 year
 const HOURS_PER_DAY = 24;
@@ -224,9 +219,27 @@ function YearSelector({ value, onChange, years }: {
 // ── Main page ──────────────────────────────────────────────────────
 
 function StatsPage() {
-  const [history] = useState<Record<string, DayStats>>(() => loadHistory());
-  const [sleepLog, setSleepLog] = useState<Record<string, SleepData>>(() => loadSleepLog());
+  const [history, setHistory] = useState<Record<string, DayStats>>({});
+  const [sleepLog, setSleepLog] = useState<Record<string, SleepData>>({});
   const [selYear, setSelYear] = useState(() => new Date().getFullYear());
+
+  // Load the user's history + sleep log from the backend on mount.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [h, s] = await Promise.all([api.loadHistory(), api.loadSleepLog()]);
+        if (!active) return;
+        setHistory(h);
+        setSleepLog(s as Record<string, SleepData>);
+      } catch (e) {
+        console.error('Failed to load stats', e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -356,19 +369,19 @@ function StatsPage() {
       const newHrs = existing.slice(0, pos);
       const next = { ...cur, hours: newHrs };
       if (newHrs.length === 0 && next.quality === null) {
-        saveSleepLog(dayKey, null);
+        void api.saveSleepLog(dayKey, null);
         setSleepLog((prev) => {
           const n = { ...prev };
           delete n[dayKey];
           return n;
         });
       } else {
-        saveSleepLog(dayKey, next);
+        void api.saveSleepLog(dayKey, next);
         setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
       }
     } else if (existing.length === 0) {
       // First click
-      saveSleepLog(dayKey, { hours: [hour], quality: null });
+      void api.saveSleepLog(dayKey, { hours: [hour], quality: null });
       setSleepLog((prev) => ({ ...prev, [dayKey]: { hours: [hour], quality: null } }));
     } else {
       const lo = existing[0];
@@ -378,13 +391,13 @@ function StatsPage() {
         const extend: number[] = [];
         for (let h = hi + 1; h <= hour; h++) extend.push(h);
         const next = { ...cur, hours: [...existing, ...extend] };
-        saveSleepLog(dayKey, next);
+        void api.saveSleepLog(dayKey, next);
         setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
       } else if (hour < lo) {
         const extend: number[] = [];
         for (let h = hour; h < lo; h++) extend.push(h);
         const next = { ...cur, hours: [...extend, ...existing] };
-        saveSleepLog(dayKey, next);
+        void api.saveSleepLog(dayKey, next);
         setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
       }
       // inside range → no change
@@ -395,7 +408,7 @@ function StatsPage() {
     const cur = sleepLog[dayKey] ?? { hours: [], quality: null };
     const nq = cur.quality === null ? 1 : cur.quality >= QUALITY_LEVELS - 1 ? null : cur.quality + 1;
     const next = { ...cur, quality: nq };
-    saveSleepLog(dayKey, next);
+    void api.saveSleepLog(dayKey, next);
     setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
   };
 
