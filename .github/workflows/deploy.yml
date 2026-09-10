@@ -89,16 +89,16 @@ jobs:
             .venv/bin/pip install -r requirements.txt
             rm -rf ../frontend/dist
 
-      # 3b. Copy the pre-built frontend into place.
+      # 3b. Copy the pre-built frontend into place. `source: dist` preserves the
+      # directory name, so contents land in <target>/dist/.
       - name: Upload frontend build to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist/*"
-          target: "/home/deploy/speedrun-task-tracker/frontend/dist"
-          strip_components: 1
+          source: "dist"
+          target: "/home/deploy/speedrun-task-tracker/frontend"
           overwrite: true
 
       # 3c. Restart the backend service and verify it is healthy.
