@@ -21,6 +21,7 @@ from .schemas import (
     DayStatsIn,
     LoginIn,
     RegisterIn,
+    RunIn,
     SleepIn,
     TaskTemplateIn,
     TemplateIn,
@@ -205,6 +206,74 @@ def delete_history(
     conn.execute('DELETE FROM history WHERE user_id = ? AND date = ?', (user['id'], date))
     conn.commit()
     return {'ok': True}
+
+
+# ── Runs (individual completed sessions) ────────────────────────────
+# Temporary debug logging to trace whether runs actually reach the server.
+def _debug_log(line: str) -> None:
+    try:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'api_debug.log'), 'a') as f:
+            f.write(line + '\n')
+    except Exception:
+        pass
+
+
+@app.get('/api/runs')
+def get_runs(
+    user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
+):
+    _debug_log(f'GET /api/runs by user_id={user["id"]}')
+    rows = conn.execute(
+        """
+        SELECT id, date, started_at, ended_at, work_sec, rest_sec, planned_sec, tasks
+        FROM run_sessions WHERE user_id = ? ORDER BY date, started_at
+        """,
+        (user['id'],),
+    ).fetchall()
+    return [
+        {
+            'id': r['id'],
+            'date': r['date'],
+            'startedAt': r['started_at'],
+            'endedAt': r['ended_at'],
+            'workSec': r['work_sec'],
+            'restSec': r['rest_sec'],
+            'plannedSec': r['planned_sec'],
+            'tasks': json.loads(r['tasks']),
+        }
+        for r in rows
+    ]
+
+
+@app.post('/api/runs', status_code=204)
+def add_run(
+    body: RunIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _debug_log(
+        f'POST /api/runs user_id={user["id"]} date={body.date} '
+        f'work={body.workSec} rest={body.restSec} dur={(body.endedAt-body.startedAt)/1000:.0f}s'
+    )
+    conn.execute(
+        """
+        INSERT INTO run_sessions
+            (user_id, date, started_at, ended_at, work_sec, rest_sec, planned_sec, tasks)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user['id'],
+            body.date,
+            body.startedAt,
+            body.endedAt,
+            body.workSec,
+            body.restSec,
+            body.plannedSec,
+            json.dumps([t.model_dump() for t in body.tasks]),
+        ),
+    )
+    conn.commit()
+    return None
 
 
 # ── Per-day tracker state (tasks + timeline progress) ───────────────

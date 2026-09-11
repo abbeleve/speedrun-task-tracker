@@ -59,6 +59,18 @@ export interface DayStats {
   sessions: number; // how many sessions were logged that day
 }
 
+// A single completed run (session), tied to the day it started.
+export interface RunRecord {
+  id: number;
+  date: string; // 'YYYY-MM-DD' (local) — the day the run started
+  startedAt: number; // epoch ms when the run started
+  endedAt: number; // epoch ms when the run ended
+  workSec: number; // seconds spent on regular tasks
+  restSec: number; // seconds spent on 'rest'-type tasks
+  plannedSec: number; // total planned seconds of the session's tasks
+  tasks: Task[]; // snapshot of the session's plan (survives tracker reset)
+}
+
 export interface SleepEntry {
   bed: number | null; // minutes from midnight when the person went to bed
   wake: number | null; // minutes from midnight when the person woke up

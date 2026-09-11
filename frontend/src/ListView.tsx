@@ -4,7 +4,7 @@ import type { Task, SessionState } from './types';
 import { formatTime, formatDelta } from './useTimer';
 import { progressPct } from './listProgress';
 import { taskDeltaMs } from './listDelta';
-import { motivationImage, useMotivationImages } from './motivation';
+import { useMotivationImages } from './motivation';
 
 interface ListViewProps {
   tasks: Task[];
@@ -63,6 +63,19 @@ export function ListView({
   const pct = activeTask ? progressPct(activeTask, activeStart, elapsedSec) : 0;
   const images = useMotivationImages();
 
+  // Each task gets one random picture, remembered for its whole display lifetime
+  // so re-renders (every timer frame) don't make it flicker between images.
+  // Pictures are keyed by task id, so switching days picks a fresh random one.
+  const picById = useRef(new Map<string, string>());
+  const pictureFor = (taskId: string): string | null => {
+    if (images.length === 0) return null;
+    const cached = picById.current.get(taskId);
+    if (cached) return cached;
+    const picked = images[Math.floor(Math.random() * images.length)];
+    picById.current.set(taskId, picked);
+    return picked;
+  };
+
   // When the run moves on to the next task, keep rendering the previous task's
   // tube for a moment so it can collapse back into the spine before it swaps to
   // its compact "done" row. The fresh task's tube grows out on mount.
@@ -107,7 +120,7 @@ export function ListView({
         </defs>
       </svg>
 
-      <div className="liquid-list">
+      <div className={`liquid-list${active ? ' liquid-list--focused' : ''}`}>
         {tasks.map((task, idx) => {
           const startSec = cumulativeTimes[idx] ?? 0;
           const endSec = startSec + task.plannedTime;
@@ -127,7 +140,7 @@ export function ListView({
             delta !== null && delta < 0 ? 'ahead' : delta !== null && delta > 0 ? 'behind' : '';
 
           if (isActive || isExit) {
-            const cat = motivationImage(images, idx);
+            const cat = pictureFor(task.id);
             const rowPct = isActive ? pct : 100;
             return (
               <div
@@ -198,7 +211,14 @@ export function ListView({
 
                   <div className="liquid-cat">
                     {cat ? (
-                      <img className="liquid-cat-img" src={cat} alt="Мотивация" />
+                      <img
+                        className="liquid-cat-img"
+                        src={cat}
+                        alt="Мотивация"
+                        loading="lazy"
+                        decoding="async"
+                        fetchPriority="low"
+                      />
                     ) : (
                       <div className="liquid-cat-mock" title="Добавьте картинки в MOTIVATION_DIR на бэкенде">
                         🐱

@@ -31,6 +31,20 @@ CREATE TABLE IF NOT EXISTS history (
     PRIMARY KEY (user_id, date)
 );
 
+-- One row per completed run (session), so a day can hold multiple runs and the
+-- UI can show them individually. Tied to the day the run started (`date`).
+CREATE TABLE IF NOT EXISTS run_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    work_sec INTEGER NOT NULL DEFAULT 0,
+    rest_sec INTEGER NOT NULL DEFAULT 0,
+    planned_sec INTEGER NOT NULL DEFAULT 0,
+    tasks TEXT NOT NULL DEFAULT '[]'
+);
+
 CREATE TABLE IF NOT EXISTS day_state (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     date TEXT NOT NULL,
@@ -74,7 +88,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 def init_db() -> None:
@@ -97,15 +111,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """
     version = conn.execute('PRAGMA user_version').fetchone()[0]
     conn.executescript(_SCHEMA)
-    # Example of a future column migration:
-    #   if version < 2:
-    #       conn.execute('ALTER TABLE history ADD COLUMN note TEXT')
+    if version < 2:
+        # Existing databases already have run_sessions from the previous
+        # version, so ``_SCHEMA`` cannot add the new columns to them. Guard
+        # each ADD COLUMN so a freshly created table (which already has them)
+        # is left untouched.
+        _add_column_if_missing(
+            conn, 'run_sessions', 'planned_sec', 'INTEGER NOT NULL DEFAULT 0'
+        )
+        _add_column_if_missing(
+            conn, 'run_sessions', 'tasks', "TEXT NOT NULL DEFAULT '[]'"
+        )
     if version < _SCHEMA_VERSION:
         conn.execute(f'PRAGMA user_version = {_SCHEMA_VERSION}')
 
 
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    existing = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+    if column not in existing:
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+
+
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path())
+    # FastAPI runs sync dependencies (get_db) through a threadpool, so setup and
+    # teardown may happen in different threads. Each connection still belongs to
+    # a single request and is never shared concurrently, so disabling the
+    # same-thread check is safe and avoids the periodic "created in a thread"
+    # error when the connection is closed.
+    conn = sqlite3.connect(_db_path(), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
     return conn

@@ -72,6 +72,18 @@ export function useTimer() {
     }
   }, []);
 
+  // Show a completed, read-only run (a saved session's snapshot) at `ms`
+  // elapsed. Marked finished so the playhead is drawn but no run can be
+  // started, paused or ended from it.
+  const loadFinished = useCallback((ms: number) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const clamped = Math.max(0, ms);
+    elapsedRef.current = clamped;
+    setElapsed(clamped);
+    stateRef.current = 'finished';
+    setSessionState('finished');
+  }, []);
+
   const seek = useCallback((ms: number) => {
     const clamped = Math.max(0, ms);
     if (stateRef.current === 'running') {
@@ -86,7 +98,7 @@ export function useTimer() {
     }
   }, [tick]);
 
-  return { elapsed, sessionState, start, pause, resume, reset, finish, restore, seek };
+  return { elapsed, sessionState, start, pause, resume, reset, finish, restore, loadFinished, seek };
 }
 
 export function formatTime(ms: number, showMs = true): string {

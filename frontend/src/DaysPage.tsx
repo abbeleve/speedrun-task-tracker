@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { DayState, Task } from './types';
+import type { DayState, RunRecord, Task } from './types';
 import * as api from './api';
 
 function parseKey(key: string): Date {
@@ -24,6 +24,11 @@ function fmtDur(totalSec: number): string {
   return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
 }
 
+function fmtWall(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 interface DayInfo {
   state: DayState;
   tasks: Task[];
@@ -45,9 +50,31 @@ function buildInfo(state: DayState): DayInfo {
   return { state, tasks, totalPlannedSec, doneCount, elapsedSec, pct };
 }
 
-function DayCard({ info, onOpen }: { info: DayInfo; onOpen: (date: string) => void }) {
-  const { state, tasks, totalPlannedSec, doneCount, elapsedSec, pct } = info;
+function DayCard({
+  info,
+  sessions,
+  onOpen,
+  onOpenRun,
+}: {
+  info: DayInfo;
+  sessions: RunRecord[];
+  onOpen: (date: string) => void;
+  onOpenRun: (run: RunRecord) => void;
+}) {
+  const { state } = info;
   const open = () => onOpen(state.date);
+
+  // A day can hold several sessions. Each saved run carries its own task
+  // snapshot, so the card is built from those; the raw day state is only a
+  // fallback for a plan that has not produced a run yet (still in progress).
+  const hasSessions = sessions.length > 0;
+  const sessionSec = sessions.reduce((s, r) => s + (r.endedAt - r.startedAt) / 1000, 0);
+  const elapsedSec = hasSessions ? sessionSec : info.elapsedSec;
+  const allTasks = hasSessions ? sessions.flatMap((s) => s.tasks ?? []) : info.tasks;
+  const totalPlannedSec = allTasks.reduce((s, t) => s + t.plannedTime, 0);
+  const doneCount = allTasks.filter((t) => t.completedAt !== null).length;
+  const pct =
+    totalPlannedSec > 0 ? Math.min(100, Math.round((elapsedSec / totalPlannedSec) * 100)) : 0;
 
   return (
     <div
@@ -68,39 +95,111 @@ function DayCard({ info, onOpen }: { info: DayInfo; onOpen: (date: string) => vo
         <span className="day-card-pct">{pct}%</span>
       </div>
       <div className="day-card-meta">
-        <span>✅ {doneCount}/{tasks.length} задач</span>
+        <span>✅ {doneCount}/{allTasks.length} задач</span>
         <span>⏱ {fmtDur(elapsedSec)}</span>
         {totalPlannedSec > 0 && <span>План: {fmtDur(totalPlannedSec)}</span>}
       </div>
       <div className="day-progress">
         <div className="day-progress-fill" style={{ width: `${pct}%` }} />
       </div>
-      {tasks.length > 0 && (
-        <ul className="day-card-tasks">
-          {tasks.map((t) => (
-            <li key={t.id} className={t.completedAt !== null ? 'done' : ''}>
-              <span className="dc-emoji">{t.emoji}</span>
-              <span className="dc-name">{t.name}</span>
-              <span className="dc-time">{fmtDur(t.plannedTime)}</span>
-              <span className="dc-status">{t.completedAt !== null ? '✓' : '○'}</span>
-            </li>
-          ))}
-        </ul>
+      {hasSessions ? (
+        <div className="day-card-sessions" onClick={(e) => e.stopPropagation()}>
+          <div className="day-card-sessions-title">🔄 Сессии ({sessions.length})</div>
+          <ul className="day-card-sessions-list">
+            {sessions.map((s) => {
+              const dur = (s.endedAt - s.startedAt) / 1000;
+              const planned = (s.tasks ?? []).reduce((a, t) => a + t.plannedTime, 0);
+              const sPct =
+                planned > 0 ? Math.min(100, Math.round((dur / planned) * 100)) : 0;
+              const hasTasks = (s.tasks?.length ?? 0) > 0;
+              return (
+                <li
+                  key={s.id}
+                  className={`day-card-session${hasTasks ? ' clickable' : ''}`}
+                  role={hasTasks ? 'button' : undefined}
+                  tabIndex={hasTasks ? 0 : undefined}
+                  title={hasTasks ? 'Открыть эту сессию в трекере' : 'Нет сохранённых задач'}
+                  onClick={
+                    hasTasks
+                      ? (e) => {
+                          e.stopPropagation();
+                          onOpenRun(s);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    hasTasks
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onOpenRun(s);
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="dc-sess-head">
+                    <span className="dc-sess-range">
+                      {fmtWall(s.startedAt)}–{fmtWall(s.endedAt)}
+                    </span>
+                    <span className="dc-sess-dur">⏱ {fmtDur(dur)}</span>
+                    <span className="dc-sess-work">💪 {fmtDur(s.workSec)}</span>
+                    <span className="dc-sess-pct">{sPct}%</span>
+                  </div>
+                  {(s.tasks?.length ?? 0) > 0 && (
+                    <ul className="day-card-tasks">
+                      {s.tasks.map((t) => (
+                        <li key={t.id} className={t.completedAt !== null ? 'done' : ''}>
+                          <span className="dc-emoji">{t.emoji}</span>
+                          <span className="dc-name">{t.name}</span>
+                          <span className="dc-time">{fmtDur(t.plannedTime)}</span>
+                          <span className="dc-status">{t.completedAt !== null ? '✓' : '○'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : (
+        info.tasks.length > 0 && (
+          <ul className="day-card-tasks">
+            {info.tasks.map((t) => (
+              <li key={t.id} className={t.completedAt !== null ? 'done' : ''}>
+                <span className="dc-emoji">{t.emoji}</span>
+                <span className="dc-name">{t.name}</span>
+                <span className="dc-time">{fmtDur(t.plannedTime)}</span>
+                <span className="dc-status">{t.completedAt !== null ? '✓' : '○'}</span>
+              </li>
+            ))}
+          </ul>
+        )
       )}
     </div>
   );
 }
 
-function DaysPage({ onOpenDay }: { onOpenDay: (date: string) => void }) {
+function DaysPage({
+  onOpenDay,
+  onOpenRun,
+}: {
+  onOpenDay: (date: string) => void;
+  onOpenRun: (run: RunRecord) => void;
+}) {
   const [days, setDays] = useState<Record<string, DayState> | null>(null);
+  const [runs, setRuns] = useState<RunRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    api
-      .loadDays()
-      .then((d) => {
-        if (active) setDays(d);
+    Promise.all([api.loadDays(), api.loadRuns()])
+      .then(([d, r]) => {
+        if (!active) return;
+        setDays(d);
+        setRuns(r);
       })
       .catch((e) => {
         console.error('Failed to load days', e);
@@ -111,13 +210,38 @@ function DaysPage({ onOpenDay }: { onOpenDay: (date: string) => void }) {
     };
   }, []);
 
+  // Runs grouped by the day they started, in chronological order per day.
+  const runsByDate = useMemo(() => {
+    const map: Record<string, RunRecord[]> = {};
+    for (const r of runs) (map[r.date] ??= []).push(r);
+    for (const list of Object.values(map)) list.sort((a, b) => a.startedAt - b.startedAt);
+    return map;
+  }, [runs]);
+
   const infos = useMemo(() => {
-    if (!days) return [];
-    return Object.values(days)
+    const all: Record<string, DayState> = { ...(days ?? {}) };
+    // A day that only has completed sessions (e.g. its task list was cleared
+    // after finishing) must still show its sessions in the timeline.
+    for (const date of Object.keys(runsByDate)) {
+      if (!all[date]) {
+        all[date] = {
+          date,
+          tasks: [],
+          elapsedMs: 0,
+          timeCredit: 0,
+          sessionState: 'idle',
+          startedAt: null,
+        };
+      }
+    }
+    return Object.values(all)
       .map(buildInfo)
-      .filter((i) => i.tasks.length > 0 || i.elapsedSec > 0)
+      .filter(
+        (i) =>
+          i.tasks.length > 0 || i.elapsedSec > 0 || (runsByDate[i.state.date]?.length ?? 0) > 0
+      )
       .sort((a, b) => (a.state.date < b.state.date ? 1 : -1));
-  }, [days]);
+  }, [days, runsByDate]);
 
   return (
     <div className="days-page">
@@ -133,7 +257,13 @@ function DaysPage({ onOpenDay }: { onOpenDay: (date: string) => void }) {
 
       <div className="days-timeline">
         {infos.map((info) => (
-          <DayCard key={info.state.date} info={info} onOpen={onOpenDay} />
+          <DayCard
+            key={info.state.date}
+            info={info}
+            sessions={runsByDate[info.state.date] ?? []}
+            onOpen={onOpenDay}
+            onOpenRun={onOpenRun}
+          />
         ))}
       </div>
     </div>

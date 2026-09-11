@@ -30,8 +30,8 @@
   --heat-2: #006d32;
   --heat-3: #26a641;
   --heat-4: #39d353;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-  --font-sans: 'Evolventa', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 [data-theme="light"] {
@@ -1143,6 +1143,36 @@
   color: var(--accent-purple);
   text-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
   font-size: 2.8rem;
+}
+
+/* Yellow square "end run" button in the footer — ends the current run and lets
+   a new run start in the same day. */
+.end-run-btn {
+  align-self: center;
+  margin: 16px 20px;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-gold);
+  color: #000;
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(241, 196, 15, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.end-run-btn:hover {
+  transform: scale(1.07);
+  box-shadow: 0 0 20px rgba(241, 196, 15, 0.85);
+}
+.end-run-btn:active {
+  transform: scale(0.96);
 }
 
 /* ===== Responsive ===== */
@@ -3052,6 +3082,97 @@
   color: var(--text-dim);
 }
 
+/* Per-day session list — each completed run shown individually */
+.day-card-sessions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.day-card-sessions-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.day-card-sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* A day can hold many sessions — keep the card compact and scroll them. */
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.day-card-sessions-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.dc-sess-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dc-sess-pct {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent-cyan, #00d4ff);
+}
+
+.day-card-session .day-card-tasks {
+  margin-top: 2px;
+  padding-left: 8px;
+}
+
+.day-card-session.clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  transition: background 0.15s ease;
+}
+
+.day-card-session.clickable:hover,
+.day-card-session.clickable:focus-visible {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
+  outline: none;
+}
+
+/* Header chip shown while a saved session is open read-only in the tracker. */
+.viewing-run-label {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--accent-cyan, #00d4ff);
+  white-space: nowrap;
+}
+
+.dc-sess-range {
+  font-family: var(--font-mono);
+  color: var(--accent-cyan, #00d4ff);
+  min-width: 92px;
+}
+
+.dc-sess-dur,
+.dc-sess-work {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+.dc-sess-work {
+  color: var(--accent-green);
+}
+
 /* ===== List View — plain task list with an expanding thermometer =====
    The spine runs vertically; each task is a node on it, and the task the run
    has reached expands into a glass tube that tapers back into the spine at
@@ -3111,6 +3232,27 @@
   display: flex;
   align-items: center;
   min-height: 62px;
+  /* Lets a row ease into / out of the focused state when the run moves on. */
+  transition: filter 0.4s ease, opacity 0.4s ease;
+}
+
+/* Depth of field: while a run is active the current task stays sharp, while the
+   tasks around it soften and recede a little. */
+.liquid-list--focused .liquid-row:not(.liquid-row--active) {
+  filter: blur(1.2px);
+  opacity: 0.72;
+}
+
+/* Thin split boundary between every pair of tasks. Starts past the node so it
+   never crosses the timeline spine. */
+.liquid-row + .liquid-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 66px;
+  right: 0;
+  height: 1px;
+  background: var(--border);
 }
 
 .liquid-marker {

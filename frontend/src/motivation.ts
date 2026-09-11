@@ -20,26 +20,31 @@ export function motivationImage(images: string[], seed: number): string | null {
 let cache: string[] | null = null;
 let inflight: Promise<string[]> | null = null;
 
+// Start the background fetch. Idempotent: the first call kicks it off, every
+// later call just observes the same shared promise/cache. Marked `void` so the
+// request runs fire-and-forget and never blocks the calling render/effect.
+export function primeMotivationImages(): void {
+  if (cache) return;
+  if (!inflight) {
+    inflight = fetchMotivationImages()
+      .then((loaded) => {
+        cache = loaded;
+        return loaded;
+      })
+      .catch(() => {
+        // Let a later call retry rather than caching the failure.
+        inflight = null;
+        return [] as string[];
+      });
+  }
+}
+
 export function useMotivationImages(): string[] {
   const [images, setImages] = useState<string[]>(cache ?? []);
 
   useEffect(() => {
-    if (cache) {
-      setImages(cache);
-      return;
-    }
-    if (!inflight) {
-      inflight = fetchMotivationImages()
-        .then((loaded) => {
-          cache = loaded;
-          return loaded;
-        })
-        .catch(() => {
-          // Let a later mount retry rather than caching the failure.
-          inflight = null;
-          return [] as string[];
-        });
-    }
+    primeMotivationImages();
+    if (!inflight) return;
     let active = true;
     inflight.then((loaded) => {
       if (active) setImages(loaded);

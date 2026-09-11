@@ -47,6 +47,20 @@ class DayTask(BaseModel):
     type: str = 'task'
 
 
+class RunIn(BaseModel):
+    date: str
+    # Epoch milliseconds. Modelled as float so a fractional timestamp from the
+    # client is coerced instead of failing validation with a 422.
+    startedAt: float
+    endedAt: float
+    workSec: int = 0
+    restSec: int = 0
+    # Snapshot of the session's plan, so a day can show several sessions and
+    # each one keeps its own tasks/percent after the tracker is cleared.
+    plannedSec: float = 0
+    tasks: List[DayTask] = []
+
+
 class DayStateIn(BaseModel):
     tasks: List[DayTask] = []
     elapsedMs: float = 0

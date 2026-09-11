@@ -4,7 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
-import type { DayState, DayStats, TaskTemplate, Template } from './types';
+import type { DayState, DayStats, RunRecord, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
 
@@ -67,7 +67,7 @@ export interface SleepLogData {
 }
 
 // Re-export the shared entities so callers can import them uniformly from ./api.
-export type { DayState, DayStats, Template, TaskTemplate } from './types';
+export type { DayState, DayStats, RunRecord, Template, TaskTemplate } from './types';
 
 // ── Auth ───────────────────────────────────────────────────────────
 
@@ -104,11 +104,11 @@ export async function saveDayStats(date: string, stats: DayStats): Promise<void>
   });
 }
 
-// Mirrors the old localStorage behaviour: accumulate today's work/rest and session
-// count on the server (the backend upserts the whole day entry).
-export async function addSessionToHistory(workSec: number, restSec: number): Promise<void> {
+// Mirrors the old localStorage behaviour: accumulate a run's work/rest and session
+// count on the server (the backend upserts the whole day entry). A run is tied to
+// the day it started (passed in), not the day it happens to end.
+export async function addSessionToHistory(workSec: number, restSec: number, date: string = todayKey()): Promise<void> {
   const hist = await loadHistory();
-  const date = todayKey();
   const cur = hist[date];
   const next: DayStats = {
     date,
@@ -117,6 +117,18 @@ export async function addSessionToHistory(workSec: number, restSec: number): Pro
     sessions: (cur?.sessions ?? 0) + 1,
   };
   await saveDayStats(date, next);
+}
+
+// Individual completed runs (one row per session), so a day can list them.
+export async function loadRuns(): Promise<RunRecord[]> {
+  return apiFetch('/runs');
+}
+
+export async function addRun(run: Omit<RunRecord, 'id'>): Promise<void> {
+  await apiFetch('/runs', {
+    method: 'POST',
+    body: JSON.stringify(run),
+  });
 }
 
 // ── Per-day tracker state (tasks + timeline progress) ──────────────

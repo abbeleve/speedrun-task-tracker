@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Task, Template, TaskTemplate, TaskType, DayState } from './types';
+import type { Task, Template, TaskTemplate, TaskType, DayState, RunRecord } from './types';
 import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA, resolveTaskEmoji } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { SnakeView } from './SnakeView';
 import { ListView } from './ListView';
+import { primeMotivationImages } from './motivation';
 import StatsPage from './StatsPage';
 import DaysPage from './DaysPage';
 import { splitSessionByType, todayKey, shiftDayKey } from './history';
@@ -96,6 +97,11 @@ function App() {
   // 'days' = vertical timeline of saved days.
   const [page, setPage] = useState<'main' | 'stats' | 'days'>('main');
 
+  // A saved run opened read-only in the tracker (from the Days page). While set,
+  // the tracker shows the run's task snapshot and autosave stays disabled so the
+  // historical plan is never written back as the day's live state.
+  const [viewingRun, setViewingRun] = useState<RunRecord | null>(null);
+
   // Currently shown day and whether its saved state has been loaded yet. Until
   // readyDate === dayDate the autosave stays off, so a freshly selected day is
   // never overwritten by the previous day's (still-hydrated) state.
@@ -117,6 +123,12 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Prefetch the motivational pictures in the background at startup so the
+  // List view is never blocked waiting on the request when the day changes.
+  useEffect(() => {
+    primeMotivationImages();
+  }, []);
+
   // Escape always closes any open dialog/overlay so the app can't get stuck
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,7 +136,6 @@ function App() {
       setEditingEmojiId(null);
       setEmojiEditSearch('');
       setEditingColorId(null);
-      setShowSaveTpl(false);
       setShowEmojiPopup(false);
       setShowTplEmojiPopup(false);
     };
@@ -135,7 +146,7 @@ function App() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
-  const { elapsed, sessionState, start, pause, resume, reset, finish, restore, seek } = useTimer();
+  const { elapsed, sessionState, start, pause, resume, reset, finish, restore, loadFinished, seek } = useTimer();
   const sessionStateRef = useRef(sessionState);
   sessionStateRef.current = sessionState;
   const seekRef = useRef(seek);
@@ -173,7 +184,18 @@ function App() {
   }, []);
 
   // Load the selected day (today by default) and hydrate the tracker from it.
+  // When a saved run is open, its snapshot is shown instead and autosave stays
+  // off (readyDate stays null) so the historical plan is never persisted.
   useEffect(() => {
+    if (viewingRun) {
+      setTasks(viewingRun.tasks ?? []);
+      setTimeCredit(0);
+      setSessionStartTime(viewingRun.startedAt);
+      loadFinished(Math.max(0, viewingRun.endedAt - viewingRun.startedAt));
+      setShowPresets(false);
+      setReadyDate(null);
+      return;
+    }
     let active = true;
     setReadyDate(null);
     (async () => {
@@ -201,7 +223,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [dayDate, restore]);
+  }, [dayDate, restore, loadFinished, viewingRun]);
 
   // Known saved days, for the quick-jump selector.
   useEffect(() => {
@@ -256,12 +278,21 @@ function App() {
   // Switch days, flushing the current one first so no progress is lost.
   const goToDay = useCallback(
     (next: string) => {
-      if (next === dayDate) return;
+      if (next === dayDate && !viewingRun) return;
       if (readyDate === dayDate) persistDay(buildDayState(dayDate));
+      setViewingRun(null);
       setDayDate(next);
     },
-    [dayDate, readyDate, persistDay, buildDayState]
+    [dayDate, readyDate, persistDay, buildDayState, viewingRun]
   );
+
+  const openRun = useCallback((run: RunRecord) => {
+    setViewingRun(run);
+    setDayDate(run.date);
+    setPage('main');
+  }, []);
+
+  const closeRun = useCallback(() => setViewingRun(null), []);
 
   useEffect(() => {
     let active = true;
@@ -454,12 +485,12 @@ function App() {
   // Pixel position of the playhead — used for both the playhead marker
   // and for determining which ruler marks are "filled" (passed).
   const playheadPx = useMemo(() => {
-    if (sessionState !== 'running' && sessionState !== 'paused') return 0;
+    if (sessionState === 'idle') return 0;
     return calcPlayheadPx();
   }, [sessionState, calcPlayheadPx]);
 
   useEffect(() => {
-    if (sessionState !== 'running' && sessionState !== 'paused') return;
+    if (sessionState === 'idle') return;
     if (playheadRef.current) {
       playheadRef.current.style.transform = `translateY(${playheadPx}px)`;
     }
@@ -583,31 +614,6 @@ function App() {
     setTimeCredit(0);
   }, [reset]);
 
-  const [showSaveTpl, setShowSaveTpl] = useState(false);
-  const [saveTplName, setSaveTplName] = useState('');
-
-  const saveTemplate = useCallback(() => {
-    if (sortedTasks.length === 0) return;
-    setSaveTplName('');
-    setShowSaveTpl(true);
-  }, [sortedTasks.length]);
-
-  const confirmSaveTemplate = useCallback(() => {
-    const templateName = saveTplName.trim();
-    setShowSaveTpl(false);
-    if (!templateName || sortedTasks.length === 0) return;
-
-    const newTemplate: Template = {
-      id: uid(),
-      name: templateName,
-      tasks: sortedTasks.map(t => ({ name: t.name, plannedTime: t.plannedTime, emoji: t.emoji, color: t.color, type: t.type })),
-    };
-
-    const updated = [...savedTemplates, newTemplate];
-    setSavedTemplates(updated);
-    void api.saveTemplate(newTemplate).catch((e) => console.error('Failed to save template', e));
-  }, [saveTplName, savedTemplates, sortedTasks]);
-
   const loadTemplate = useCallback((template: Template) => {
     reset();
     setSessionStartTime(null);
@@ -630,44 +636,6 @@ function App() {
     const updated = savedTemplates.filter(t => t.id !== id);
     setSavedTemplates(updated);
     void api.deleteTemplate(id).catch((e) => console.error('Failed to delete template', e));
-  }, [savedTemplates]);
-
-  const exportTemplates = useCallback(() => {
-    if (savedTemplates.length === 0) return;
-    const dataStr = JSON.stringify(savedTemplates, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    const exportFileDefaultName = 'speedrun-templates.json';
-
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
-  }, [savedTemplates]);
-
-  const importTemplates = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target?.result as string);
-        if (Array.isArray(imported) && imported.every(t => t.name && t.tasks)) {
-          const incoming = imported.map((tpl) => ({ id: tpl.id ?? uid(), ...tpl }));
-          const updated = [...savedTemplates, ...incoming];
-          setSavedTemplates(updated);
-          for (const tpl of incoming) {
-            void api.saveTemplate(tpl).catch((e) => console.error('Failed to save imported template', e));
-          }
-          alert('Templates imported successfully!');
-        } else {
-          alert('Invalid template file format.');
-        }
-      } catch {
-        alert('Error reading template file.');
-      }
-    };
-    reader.readAsText(file);
   }, [savedTemplates]);
 
   const showCongrats = useCallback((name: string) => {
@@ -977,21 +945,48 @@ function App() {
     setShowPresets(false);
   }, []);
 
+  // Log an ended run into both the day history aggregation and the per-run
+  // list, so a day can show each session individually. Runs under a minute are
+  // too short to matter and are skipped entirely (mirrors the day history rule).
+  const recordRun = useCallback(
+    (date: string, workSec: number, restSec: number) => {
+      if (workSec + restSec < 60) return;
+      // Epoch ms must be whole numbers: `elapsed` comes from performance.now()
+      // and is fractional, and the API rejects a fractional timestamp with 422.
+      const startedAt = Math.round(sessionStartTime ?? Date.now());
+      const endedAt = Math.round(startedAt + elapsed);
+      void api.addSessionToHistory(workSec, restSec, date).catch((e) => console.error('Failed to log session', e));
+      void api
+        .addRun({
+          date,
+          startedAt,
+          endedAt,
+          workSec,
+          restSec,
+          plannedSec: Math.round(totalPlannedSec),
+          tasks: sortedTasks,
+        })
+        .catch((e) => console.error('Failed to log run', e));
+    },
+    [sessionStartTime, elapsed, totalPlannedSec, sortedTasks]
+  );
+
   const handleReset = useCallback(() => {
-    // Abandoned mid-session (paused, not finished) — still log the progress
+    // Abandoned (paused) or finished mid-session — still log the progress as a
+    // run. The task list is then cleared so the next session can be built from
+    // a clean plan (the finished runs stay saved in run_sessions/history).
     if (!recordedRef.current && sessionState !== 'idle') {
       recordedRef.current = true;
       const split = splitSessionByType(sortedTasks, sessionElapsedSec);
-      if (split.workSec + split.restSec >= 60) {
-        void api.addSessionToHistory(split.workSec, split.restSec).catch((e) => console.error('Failed to log session', e));
-      }
+      recordRun(dayDate, split.workSec, split.restSec);
     }
     reset();
-    setTasks((prev) => prev.map((t) => ({ ...t, completedAt: null })));
+    setTasks([]);
+    setShowPresets(true);
     setSessionStartTime(null);
     setTimeCredit(0);
     pauseStartRef.current = null;
-  }, [reset, sessionState, sortedTasks, sessionElapsedSec]);
+  }, [reset, sessionState, sortedTasks, sessionElapsedSec, dayDate, recordRun]);
 
   const handleSessionAction = useCallback(() => {
     if (sessionState === 'idle') {
@@ -1018,13 +1013,11 @@ function App() {
       if (!recordedRef.current) {
         recordedRef.current = true;
         const split = splitSessionByType(sortedTasks, elapsed / 1000);
-        if (split.workSec + split.restSec >= 60) {
-          void api.addSessionToHistory(split.workSec, split.restSec).catch((e) => console.error('Failed to log session', e));
-        }
+        recordRun(dayDate, split.workSec, split.restSec);
       }
       finish();
     }
-  }, [allCompleted, sessionState, finish, sortedTasks, elapsed]);
+  }, [allCompleted, sessionState, finish, sortedTasks, elapsed, dayDate, recordRun]);
 
   const onDragStart = (idx: number) => setDragIdx(idx);
   const onDragOver = (e: React.DragEvent, idx: number) => {
@@ -1089,7 +1082,7 @@ function App() {
     return marks;
   }, [sortedTasks, totalPlannedSec, blockHeight, timelineHeight]);
 
-  const showPlayhead = sessionState === 'running' || sessionState === 'paused';
+  const showPlayhead = sessionState !== 'idle';
 
   return (
     <div className="app">
@@ -1167,6 +1160,16 @@ function App() {
         >
           📋 {showSidebar ? 'Hide' : 'Templates'}
         </button>
+        {viewingRun ? (
+          <div className="session-controls">
+            <span className="viewing-run-label">
+              👁 Сессия {formatWallTime(viewingRun.startedAt)}–{formatWallTime(viewingRun.endedAt)}
+            </span>
+            <button className="btn btn-reset" onClick={closeRun} title="Выйти из просмотра сессии">
+              ✕ Выйти
+            </button>
+          </div>
+        ) : (
         <div className="session-controls">
           {sessionState === 'idle' && (
             <>
@@ -1179,13 +1182,6 @@ function App() {
               </button>
               {sortedTasks.length > 0 && (
                 <>
-                  <button
-                    className="btn btn-save-template"
-                    onClick={saveTemplate}
-                    title="Save current tasks as template"
-                  >
-                    💾 Save Template
-                  </button>
                   <button className="btn btn-clear" onClick={clearAllTasks} title="Remove all tasks">
                     🗑 Clear All
                   </button>
@@ -1206,15 +1202,6 @@ function App() {
               <button className="btn btn-reset" onClick={handleReset}>
                 ↺ Reset
               </button>
-              {sortedTasks.length > 0 && (
-                <button
-                  className="btn btn-save-template"
-                  onClick={saveTemplate}
-                  title="Save current tasks as template"
-                >
-                  💾 Save Template
-                </button>
-              )}
             </>
           )}
           {sessionState === 'finished' && (
@@ -1222,18 +1209,10 @@ function App() {
               <button className="btn btn-reset" onClick={handleReset}>
                 ↺ New Run
               </button>
-              {sortedTasks.length > 0 && (
-                <button
-                  className="btn btn-save-template"
-                  onClick={saveTemplate}
-                  title="Save current tasks as template"
-                >
-                  💾 Save Template
-                </button>
-              )}
             </>
           )}
         </div>
+        )}
       </header>
 
       {page === 'stats' ? (
@@ -1244,6 +1223,7 @@ function App() {
             goToDay(d);
             setPage('main');
           }}
+          onOpenRun={openRun}
         />
       ) : (
         <>
@@ -1398,22 +1378,6 @@ function App() {
             <div className="templates-header">
               <span className="templates-title">Templates</span>
               <div className="templates-global-actions">
-                <button
-                  className="btn btn-export-tpl"
-                  onClick={exportTemplates}
-                  title="Export all templates to JSON file"
-                >
-                  📤 Export
-                </button>
-                <label className="btn btn-import-tpl">
-                  📥 Import
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importTemplates}
-                    style={{ display: 'none' }}
-                  />
-                </label>
                 {showPresets && sortedTasks.length === 0 && (
                   <button className="btn btn-presets" onClick={loadPresets}>
                     🎮 Load Example Splits
@@ -1506,6 +1470,16 @@ function App() {
             Planned: {formatTime(totalPlannedSec * 1000, false)}
           </span>
         </div>
+        {(sessionState === 'running' || sessionState === 'paused') && (
+          <button
+            className="end-run-btn"
+            onClick={handleReset}
+            title="Окончить ран и начать новый в этот же день"
+            aria-label="End run"
+          >
+            ✓
+          </button>
+        )}
       </footer>
 
       <div className="timeline-container" ref={timelineRef} onDragOver={handleTimelineDragOver} onDrop={handleTimelineDrop}>
@@ -2006,41 +1980,6 @@ function App() {
             <div>
               <div className="congrats-title">Great job!</div>
               <div className="congrats-sub">"{congrats.name}" completed</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save template dialog */}
-      {showSaveTpl && (
-        <div className="emoji-overlay" onClick={() => setShowSaveTpl(false)}>
-          <div className="emoji-overlay-popup" onClick={e => e.stopPropagation()}>
-            <div className="emoji-overlay-header">
-              <span>Save template</span>
-              <button
-                className="emoji-overlay-close"
-                onClick={() => setShowSaveTpl(false)}
-                title="Cancel"
-              >
-                ✕
-              </button>
-            </div>
-            <input
-              className="emoji-search-input"
-              type="text"
-              placeholder="Template name..."
-              value={saveTplName}
-              onChange={(e) => setSaveTplName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') confirmSaveTemplate(); if (e.key === 'Escape') setShowSaveTpl(false); }}
-              autoFocus
-            />
-            <div className="tpl-save-actions">
-              <button className="btn btn-cancel" onClick={() => setShowSaveTpl(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-add" onClick={confirmSaveTemplate} disabled={!saveTplName.trim()}>
-                💾 Save
-              </button>
             </div>
           </div>
         </div>
