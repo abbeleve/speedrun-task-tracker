@@ -145,6 +145,43 @@ def test_day_state_persists_task_status_and_day(client, auth_headers):
     assert got['tasks'][0]['day'] == ''
 
 
+def test_day_state_persists_recurrence(client, auth_headers):
+    body = {
+        'tasks': [
+            {
+                'id': 'r',
+                'name': 'Review',
+                'plannedTime': 600,
+                'completedAt': None,
+                'order': 0,
+                'emoji': '📚',
+                'color': '#9b59b6',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'open',
+                'repeat': {'mode': 'increasing', 'baseDays': 1},
+                'repeatIndex': 2,
+                'repeatOf': 'parent',
+            },
+        ],
+        'elapsedMs': 0,
+    }
+    assert client.put('/api/day/2026-09-10', headers=auth_headers, json=body).status_code == 200
+
+    got = client.get('/api/day/2026-09-10', headers=auth_headers).json()
+    task = got['tasks'][0]
+    assert task['repeat'] == {'mode': 'increasing', 'baseDays': 1}
+    assert task['repeatIndex'] == 2
+    assert task['repeatOf'] == 'parent'
+
+    # A one-off task keeps repeat=null and the default index.
+    plain = {'tasks': [{'id': 'p', 'name': 'One-off', 'plannedTime': 60}], 'elapsedMs': 0}
+    assert client.put('/api/day/2026-09-12', headers=auth_headers, json=plain).status_code == 200
+    got = client.get('/api/day/2026-09-12', headers=auth_headers).json()
+    assert got['tasks'][0]['repeat'] is None
+    assert got['tasks'][0]['repeatIndex'] == 0
+
+
 def test_day_state_user_isolation(client):
     alice = register(client, username='alice', password='secret123')['token']
     bob = register(client, username='bob', password='secret123')['token']

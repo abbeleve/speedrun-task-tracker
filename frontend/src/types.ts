@@ -4,6 +4,16 @@ export type TaskType = 'task' | 'rest'; // 'task' = regular, 'rest' = service br
 // timeline, 'done' = completed.
 export type TaskStatus = 'open' | 'in-progress' | 'done';
 
+// How a task repeats: 'fixed' repeats every `baseDays` days; 'increasing' walks
+// a ready spaced-repetition series (the forgetting curve), each step scaled by
+// `baseDays`, and stops once the series runs out.
+export type RepeatMode = 'fixed' | 'increasing';
+
+export interface RepeatConfig {
+  mode: RepeatMode;
+  baseDays: number;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -15,6 +25,9 @@ export interface Task {
   type: TaskType;
   day: string; // 'YYYY-MM-DD' the task is planned for
   status: TaskStatus;
+  repeat?: RepeatConfig | null; // recurrence rule; absent/null = one-off task
+  repeatIndex?: number; // 0-based step in the recurrence series
+  repeatOf?: string; // id of the occurrence this one was spawned from
 }
 
 export interface Template {

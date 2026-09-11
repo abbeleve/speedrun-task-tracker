@@ -36,6 +36,13 @@ class DayStatsOut(BaseModel):
     sessions: int
 
 
+class RepeatConfig(BaseModel):
+    # Recurrence rule. 'fixed' repeats every `baseDays` days; 'increasing' walks
+    # a ready forgetting-curve series, each step scaled by `baseDays`.
+    mode: str = 'fixed'
+    baseDays: float = 1
+
+
 class DayTask(BaseModel):
     id: str
     name: str
@@ -51,6 +58,11 @@ class DayTask(BaseModel):
     # defaults below fill them in.
     day: str = ''
     status: str = 'open'
+    # Optional recurrence; absent for one-off tasks. `repeatIndex` is the step in
+    # the series and `repeatOf` links an auto-scheduled occurrence to its source.
+    repeat: Optional[RepeatConfig] = None
+    repeatIndex: int = 0
+    repeatOf: Optional[str] = None
 
 
 class RunIn(BaseModel):

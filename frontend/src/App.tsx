@@ -5,11 +5,9 @@ import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
 import { ListView } from './ListView';
 import { primeMotivationImages } from './motivation';
-import StatsPage from './StatsPage';
-import DaysPage from './DaysPage';
-import KanbanPage from './KanbanPage';
+import HomePage from './HomePage';
 import { splitSessionByType, todayKey } from './history';
-import { getOpenTasks, getTimelineTasks, newTaskId, normalizeTasks } from './tasks';
+import { getOpenTasks, getTimelineTasks, newTaskId, normalizeTasks, scheduledDayFor, spawnNextOccurrence } from './tasks';
 import * as api from './api';
 import { useAuth } from './auth';
 import './App.css';
@@ -93,9 +91,9 @@ function App() {
     return saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
   });
 
-  // 'main' = tracker, 'stats' = daily activity + sleep statistics page.
-  // 'days' = vertical timeline of saved days. 'kanban' = planned-tasks board.
-  const [page, setPage] = useState<'main' | 'stats' | 'days' | 'kanban'>('main');
+  // 'home' = dashboard (kanban + days + stats on one page), 'tracker' = the
+  // timeline/spiral/list workspace where runs happen.
+  const [page, setPage] = useState<'home' | 'tracker'>('home');
 
   // A saved run opened read-only in the tracker (from the Days page). While set,
   // the tracker shows the run's task snapshot and autosave stays disabled so the
@@ -260,7 +258,7 @@ function App() {
   const openRun = useCallback((run: RunRecord) => {
     setViewingRun(run);
     setDayDate(run.date);
-    setPage('main');
+    setPage('tracker');
   }, []);
 
   const closeRun = useCallback(() => {
@@ -273,6 +271,47 @@ function App() {
   const mutateActiveTasks = useCallback((updater: (tasks: Task[]) => Task[]) => {
     setTasks(updater);
   }, []);
+
+  // A recurring task's next occurrence lives in its own scheduled day's blob.
+  // When that day is the currently open one, the in-memory state + autosave
+  // covers it; otherwise it is written straight into that day.
+  const scheduleOccurrence = useCallback(
+    (child: Task) => {
+      if (child.day === dayDate) return;
+      void (async () => {
+        try {
+          const state = await api.loadDay(child.day);
+          const existing = normalizeTasks(state.tasks, child.day);
+          await api.saveDay(child.day, {
+            ...state,
+            date: child.day,
+            tasks: [...existing, child],
+          });
+        } catch (e) {
+          console.error('Failed to schedule recurring task', e);
+        }
+      })();
+    },
+    [dayDate]
+  );
+
+  const unscheduleOccurrence = useCallback(
+    (parentId: string, childDay: string) => {
+      if (childDay === dayDate) return; // removed from the in-memory state instead
+      void (async () => {
+        try {
+          const state = await api.loadDay(childDay);
+          const tasks = normalizeTasks(state.tasks, childDay).filter(
+            (t) => !(t.repeatOf === parentId && t.status === 'open')
+          );
+          await api.saveDay(childDay, { ...state, date: childDay, tasks });
+        } catch (e) {
+          console.error('Failed to unschedule recurring task', e);
+        }
+      })();
+    },
+    [dayDate]
+  );
 
   useEffect(() => {
     let active = true;
@@ -655,9 +694,14 @@ function App() {
         const plannedEnd = plannedStart + sorted[taskIdx].plannedTime;
         const timeSaved = plannedEnd - sessionElapsedSec;
 
-        setTasks((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t))
-        );
+        const child = spawnNextOccurrence(task, uid, dayDate);
+        setTasks((prev) => {
+          const next = prev.map((t): Task =>
+            t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t
+          );
+          return child && child.day === dayDate ? [...next, child] : next;
+        });
+        if (child && child.day !== dayDate) scheduleOccurrence(child);
 
         if (timeSaved > 0) {
           setTimeCredit((prev) => prev + timeSaved);
@@ -667,15 +711,26 @@ function App() {
       }
 
       // Normal completion
-      setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t))
-      );
+      const child = spawnNextOccurrence(task, uid, dayDate);
+      setTasks((prev) => {
+        const next = prev.map((t): Task =>
+          t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t
+        );
+        return child && child.day === dayDate ? [...next, child] : next;
+      });
+      if (child && child.day !== dayDate) scheduleOccurrence(child);
       if (task.type !== 'rest') showCongrats(task.name);
     },
-    [sessionState, sessionElapsedSec, tasks, showCongrats]
+    [sessionState, sessionElapsedSec, tasks, showCongrats, dayDate, scheduleOccurrence]
   );
 
   const uncompleteTask = useCallback((id: string) => {
+    // Reopening a recurring task drops the occurrence it auto-scheduled, which
+    // may live in another day's blob (the in-memory filter only covers today).
+    const parent = tasks.find((t) => t.id === id);
+    const childDay = parent ? scheduledDayFor(parent, dayDate) : null;
+    if (childDay) unscheduleOccurrence(id, childDay);
+
     setTasks((prev) => {
       const task = prev.find((t) => t.id === id);
       if (!task || task.completedAt === null) return prev;
@@ -697,9 +752,12 @@ function App() {
         }
       }
 
-      return prev.map((t) => (t.id === id ? { ...t, completedAt: null, status: 'in-progress' } : t));
+      // Drop the occurrence from today's state too (covers childDay === dayDate).
+      return prev
+        .map((t): Task => (t.id === id ? { ...t, completedAt: null, status: 'in-progress' } : t))
+        .filter((t) => !(t.repeatOf === id && t.status === 'open'));
     });
-  }, []);
+  }, [tasks, dayDate, unscheduleOccurrence]);
 
   const copyTask = useCallback((id: string) => {
     setTasks((prev) => {
@@ -1116,25 +1174,18 @@ function App() {
           </button>
         </div>
         <button
-          className={`btn btn-stats-nav ${page === 'stats' ? 'active' : ''}`}
-          onClick={() => setPage(page === 'stats' ? 'main' : 'stats')}
-          title="Статистика активности по дням"
+          className={`btn btn-stats-nav ${page === 'home' ? 'active' : ''}`}
+          onClick={() => setPage('home')}
+          title="Главная: канбан, дни и статистика"
         >
-          📊<span className="view-toggle-label">{page === 'stats' ? 'К трекеру' : 'Статистика'}</span>
+          🏠<span className="view-toggle-label">Главная</span>
         </button>
         <button
-          className={`btn btn-stats-nav ${page === 'days' ? 'active' : ''}`}
-          onClick={() => setPage(page === 'days' ? 'main' : 'days')}
-          title="Таймлайн сохранённых дней"
+          className={`btn btn-stats-nav ${page === 'tracker' ? 'active' : ''}`}
+          onClick={() => setPage('tracker')}
+          title="Трекер: таймлайн и запуск сессий"
         >
-          🗓<span className="view-toggle-label">{page === 'days' ? 'К трекеру' : 'Дни'}</span>
-        </button>
-        <button
-          className={`btn btn-stats-nav ${page === 'kanban' ? 'active' : ''}`}
-          onClick={() => setPage(page === 'kanban' ? 'main' : 'kanban')}
-          title="Канбан-доска запланированных задач"
-        >
-          🗂<span className="view-toggle-label">{page === 'kanban' ? 'К трекеру' : 'Канбан'}</span>
+          ⏱<span className="view-toggle-label">Трекер</span>
         </button>
         <button
           className="btn btn-sidebar"
@@ -1198,16 +1249,13 @@ function App() {
         )}
       </header>
 
-      {page === 'stats' ? (
-        <StatsPage />
-      ) : page === 'days' ? (
-        <DaysPage onOpenRun={openRun} />
-      ) : page === 'kanban' ? (
-        <KanbanPage
+      {page === 'home' ? (
+        <HomePage
           activeDay={dayDate}
           liveActiveTasks={viewingRun ? null : tasks}
           mutateActive={mutateActiveTasks}
-          onOpenTimeline={() => setPage('main')}
+          onOpenTimeline={() => setPage('tracker')}
+          onOpenRun={openRun}
         />
       ) : (
         <>

@@ -3309,29 +3309,182 @@
   color: var(--accent-red);
 }
 
-.kanban-add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  margin-bottom: 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.kanban-add-emoji {
-  font-size: 1.4rem;
-}
-
-.kanban-emoji-row,
-.kanban-color-row {
+.kanban-emoji-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   max-width: 100%;
+}
+
+/* Create-task dialog */
+.kanban-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  animation: kanban-fade 0.18s ease-out;
+}
+
+.kanban-modal {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  color: var(--text-primary);
+  animation: kanban-pop 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.kanban-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.kanban-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.kanban-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kanban-input-full {
+  width: 100%;
+  min-width: 0;
+}
+
+.kanban-modal-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: -6px;
+}
+
+.kanban-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.kanban-modal-grid .kanban-filter {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.kanban-modal-grid .kanban-input-sm {
+  width: 100%;
+}
+
+.kanban-modal-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.kanban-color-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.kanban-color-circle:hover {
+  transform: scale(1.1);
+  border-color: var(--accent-cyan);
+}
+
+.kanban-repeat-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.kanban-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.kanban-color-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: kanban-fade 0.15s ease-out;
+}
+
+.kanban-color-modal {
+  width: 320px;
+  animation: kanban-pop 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.kanban-color-custom {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.kanban-color-custom:hover {
+  border-color: var(--accent-cyan);
+}
+
+.kanban-color-custom .color-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@keyframes kanban-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kanban-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .kanban-input {
@@ -3411,6 +3564,28 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Cap the column at roughly 5–6 cards; the rest scroll inside it so the
+     board stops stretching and pushing the rest of the page down. */
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.kanban-cards::-webkit-scrollbar {
+  width: 6px;
+}
+
+.kanban-cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kanban-cards::-webkit-scrollbar-thumb {
+  background: var(--bg-surface);
+  border-radius: 3px;
+}
+
+.kanban-cards::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue);
 }
 
 .kanban-col-empty {
@@ -3510,8 +3685,85 @@
   opacity: 0.7;
 }
 
+.kanban-select {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.kanban-repeat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.kanban-repeat-toggle input {
+  cursor: pointer;
+}
+
+.kanban-repeat-preview {
+  font-size: 0.75rem;
+  color: var(--accent-gold);
+}
+
+.kanban-repeat {
+  background: var(--bg-surface);
+  border-radius: 8px;
+  padding: 0 6px;
+  color: var(--accent-gold);
+}
+
 @media (max-width: 720px) {
   .kanban-board {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Home dashboard: kanban + days + stats on one page ===== */
+.home-page {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.home-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.home-panel {
+  min-width: 0;
+}
+
+/* The embedded pages must not manage their own width/scroll — the dashboard
+   owns the scroll, so each panel is a plain block inside it. */
+.home-page .kanban-page,
+.home-page .days-page,
+.home-page .stats-page {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  flex: none;
+}
+
+@media (max-width: 900px) {
+  .home-top {
     grid-template-columns: 1fr;
   }
 }
