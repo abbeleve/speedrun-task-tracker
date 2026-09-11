@@ -3,7 +3,6 @@ import type { Task, Template, TaskTemplate, TaskType, DayState, RunRecord } from
 import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA, resolveTaskEmoji } from './types';
 import { useTimer, formatTime, formatDelta } from './useTimer';
 import { SpiralThermometer } from './SpiralThermometer';
-import { SnakeView } from './SnakeView';
 import { ListView } from './ListView';
 import { primeMotivationImages } from './motivation';
 import StatsPage from './StatsPage';
@@ -89,9 +88,9 @@ function App() {
     return saved !== null ? saved === 'dark' : true;
   });
 
-  const [view, setView] = useState<'timeline' | 'spiral' | 'snake' | 'list'>(() => {
+  const [view, setView] = useState<'timeline' | 'spiral' | 'list'>(() => {
     const saved = localStorage.getItem('speedrun_view');
-    return saved === 'spiral' ? 'spiral' : saved === 'snake' ? 'snake' : saved === 'list' ? 'list' : 'timeline';
+    return saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
   });
 
   // 'main' = tracker, 'stats' = daily activity + sleep statistics page.
@@ -1109,14 +1108,6 @@ function App() {
           </button>
           <button
             type="button"
-            className={`view-toggle-btn ${view === 'snake' ? 'active' : ''}`}
-            onClick={() => setView('snake')}
-            title="Змейка, которая поедает задачи"
-          >
-            🐍<span className="view-toggle-label">Snake</span>
-          </button>
-          <button
-            type="button"
             className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
             onClick={() => setView('list')}
             title="Список задач с разворачивающимся термометром"
@@ -1461,24 +1452,6 @@ function App() {
             onSeek={(ms) => seek(ms)}
             formatEnd={formatRealTime}
           />
-        ) : view === 'snake' ? (
-          <div className="snake-view-wrap">
-            <SnakeView
-              tasks={sortedTasks}
-              cumulativeTimes={cumulativeTimes}
-              totalPlannedSec={totalPlannedSec}
-              elapsedSec={sessionElapsedSec}
-              sessionState={sessionState}
-              currentTaskColor={currentTask?.color ?? DEFAULT_COLOR}
-              deltaMs={currentDeltaMs}
-              onCompleteTask={(id) => completeTask(id)}
-              onUncompleteTask={(id) => uncompleteTask(id)}
-              onRenameTask={renameTask}
-              onChangeTaskTime={changeTaskTime}
-              onChangeTaskColor={changeTaskColor}
-              onSeek={(ms) => seek(ms)}
-            />
-          </div>
         ) : view === 'spiral' ? (
           <div className="spiral-view">
             <SpiralThermometer
