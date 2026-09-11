@@ -8,13 +8,14 @@ import { ListView } from './ListView';
 import { primeMotivationImages } from './motivation';
 import StatsPage from './StatsPage';
 import DaysPage from './DaysPage';
+import KanbanPage from './KanbanPage';
 import { splitSessionByType, todayKey } from './history';
+import { getOpenTasks, getTimelineTasks, newTaskId, normalizeTasks } from './tasks';
 import * as api from './api';
 import { useAuth } from './auth';
 import './App.css';
 
-let nextId = 1;
-const uid = () => `t-${nextId++}-${Date.now()}`;
+const uid = newTaskId;
 
 const PRESETS: { name: string; plannedTime: number }[] = [
   { name: 'Setup', plannedTime: 120 },
@@ -94,8 +95,8 @@ function App() {
   });
 
   // 'main' = tracker, 'stats' = daily activity + sleep statistics page.
-  // 'days' = vertical timeline of saved days.
-  const [page, setPage] = useState<'main' | 'stats' | 'days'>('main');
+  // 'days' = vertical timeline of saved days. 'kanban' = planned-tasks board.
+  const [page, setPage] = useState<'main' | 'stats' | 'days' | 'kanban'>('main');
 
   // A saved run opened read-only in the tracker (from the Days page). While set,
   // the tracker shows the run's task snapshot and autosave stays disabled so the
@@ -182,11 +183,12 @@ function App() {
   // off (readyDate stays null) so the historical plan is never persisted.
   useEffect(() => {
     if (viewingRun) {
-      setTasks(viewingRun.tasks ?? []);
+      const runTasks = normalizeTasks(viewingRun.tasks, viewingRun.date);
+      setTasks(runTasks);
       setTimeCredit(0);
       setSessionStartTime(viewingRun.startedAt);
       loadFinished(Math.max(0, viewingRun.endedAt - viewingRun.startedAt));
-      setShowPresets(false);
+      setShowPresets(getTimelineTasks(runTasks).length === 0);
       setReadyDate(null);
       return;
     }
@@ -196,11 +198,12 @@ function App() {
       try {
         const state = await api.loadDay(dayDate);
         if (!active) return;
-        setTasks(state.tasks ?? []);
+        const loaded = normalizeTasks(state.tasks, dayDate);
+        setTasks(loaded);
         setTimeCredit(state.timeCredit ?? 0);
         setSessionStartTime(state.startedAt ?? null);
         restore(state.elapsedMs ?? 0);
-        setShowPresets((state.tasks?.length ?? 0) === 0);
+        setShowPresets(getTimelineTasks(loaded).length === 0);
         setReadyDate(dayDate);
       } catch (e) {
         console.error('Failed to load day', e);
@@ -266,6 +269,12 @@ function App() {
     setDayDate(todayKey());
   }, []);
 
+  // Lets the kanban board edit the active day's tasks through the same state the
+  // timeline uses, so both stay in sync and the change is autosaved.
+  const mutateActiveTasks = useCallback((updater: (tasks: Task[]) => Task[]) => {
+    setTasks(updater);
+  }, []);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -290,7 +299,9 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
-  const sortedTasks = useMemo(() => [...tasks].sort((a, b) => a.order - b.order), [tasks]);
+  // Only placed tasks (in-progress/done) belong on the timeline; the Open
+  // backlog lives in the kanban board.
+  const sortedTasks = useMemo(() => getTimelineTasks(tasks), [tasks]);
   const sessionElapsedSec = elapsed / 1000;
 
   const filteredEmojis = useMemo(() => {
@@ -554,10 +565,13 @@ function App() {
         emoji: resolveTaskEmoji(emoji),
         color: color || DEFAULT_COLOR,
         type,
+        // A task added straight to the timeline is already placed.
+        day: dayDate,
+        status: 'in-progress',
       };
       setTasks((prev) => [...prev, task]);
     },
-    [tasks.length]
+    [tasks.length, dayDate]
   );
 
   const handleSubmit = useCallback(
@@ -580,7 +594,8 @@ function App() {
   }, []);
 
   const clearAllTasks = useCallback(() => {
-    setTasks([]);
+    // Clear the timeline plan but keep the Open backlog for the board.
+    setTasks((prev) => getOpenTasks(prev).map((t, i) => ({ ...t, order: i })));
     reset();
     setShowPresets(true);
     setTimeCredit(0);
@@ -599,10 +614,13 @@ function App() {
       emoji: resolveTaskEmoji(t.emoji),
       color: t.color || DEFAULT_COLOR,
       type: t.type ?? 'task',
+      day: dayDate,
+      status: 'in-progress',
     }));
-    setTasks(newTasks);
+    // Loading a template rebuilds the timeline but keeps the Open backlog.
+    setTasks((prev) => [...newTasks, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i })));
     setShowPresets(false);
-  }, [reset]);
+  }, [reset, dayDate]);
 
   const deleteTemplate = useCallback((id: string) => {
     const updated = savedTemplates.filter(t => t.id !== id);
@@ -623,7 +641,7 @@ function App() {
       if (sessionState !== 'running') return;
 
       // Check if completing a future task (there are uncompleted tasks before it)
-      const sorted = [...tasks].sort((a, b) => a.order - b.order);
+      const sorted = getTimelineTasks(tasks);
       const taskIdx = sorted.findIndex((t) => t.id === id);
       if (taskIdx === -1) return;
       const task = sorted[taskIdx];
@@ -639,7 +657,7 @@ function App() {
         const timeSaved = plannedEnd - sessionElapsedSec;
 
         setTasks((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec } : t))
+          prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t))
         );
 
         if (timeSaved > 0) {
@@ -651,7 +669,7 @@ function App() {
 
       // Normal completion
       setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec } : t))
+        prev.map((t) => (t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t))
       );
       if (task.type !== 'rest') showCongrats(task.name);
     },
@@ -664,7 +682,7 @@ function App() {
       if (!task || task.completedAt === null) return prev;
 
       // If this was a future completion, subtract its timeSaved from credit
-      const sorted = [...prev].sort((a, b) => a.order - b.order);
+      const sorted = getTimelineTasks(prev);
       const taskIdx = sorted.findIndex((t) => t.id === id);
       const hasUncompletedBefore = sorted.slice(0, taskIdx).some((t) => t.completedAt === null);
 
@@ -680,13 +698,13 @@ function App() {
         }
       }
 
-      return prev.map((t) => (t.id === id ? { ...t, completedAt: null } : t));
+      return prev.map((t) => (t.id === id ? { ...t, completedAt: null, status: 'in-progress' } : t));
     });
   }, []);
 
   const copyTask = useCallback((id: string) => {
     setTasks((prev) => {
-      const sorted = [...prev].sort((a, b) => a.order - b.order);
+      const sorted = getTimelineTasks(prev);
       const sourceIdx = sorted.findIndex((t) => t.id === id);
       if (sourceIdx < 0) return prev;
       const source = sorted[sourceIdx];
@@ -699,6 +717,8 @@ function App() {
         emoji: source.emoji,
         color: source.color,
         type: source.type,
+        day: source.day || dayDate,
+        status: 'in-progress',
       };
       const result: Task[] = [];
       for (let i = 0; i < sorted.length; i++) {
@@ -707,9 +727,9 @@ function App() {
           result.push(copy);
         }
       }
-      return result.map((t, i) => ({ ...t, order: i }));
+      return [...result, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
     });
-  }, []);
+  }, [dayDate]);
 
   const startEditName = useCallback((id: string, name: string) => {
     setEditingNameId(id);
@@ -749,10 +769,10 @@ function App() {
 
   const moveTask = useCallback((fromIdx: number, toIdx: number) => {
     setTasks((prev) => {
-      const sorted = [...prev].sort((a, b) => a.order - b.order);
-      const [moved] = sorted.splice(fromIdx, 1);
-      sorted.splice(toIdx, 0, moved);
-      return sorted.map((t, i) => ({ ...t, order: i }));
+      const timeline = getTimelineTasks(prev);
+      const [moved] = timeline.splice(fromIdx, 1);
+      timeline.splice(toIdx, 0, moved);
+      return [...timeline, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
     });
   }, []);
 
@@ -822,10 +842,10 @@ function App() {
     const task: Task = {
       id: uid(), name: tpl.name, plannedTime: tpl.plannedTime,
       completedAt: null, order: tasks.length, emoji: tpl.emoji, color: tpl.color,
-      type: tpl.type ?? 'task',
+      type: tpl.type ?? 'task', day: dayDate, status: 'in-progress',
     };
     setTasks(prev => [...prev, task]);
-  }, [tasks.length]);
+  }, [tasks.length, dayDate]);
 
   const handleTimelineDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -850,27 +870,26 @@ function App() {
     if (remaining <= 0 || elapsed <= 0) return;
 
     setTasks(prev => {
-      const sorted = [...prev].sort((a, b) => a.order - b.order);
+      const timeline = getTimelineTasks(prev);
       // Create first half (completed)
       const firstHalf: Task = {
         id: uid(), name: task.name + ' (1/2)',
-        plannedTime: elapsed, completedAt: sessionElapsedSec, order: task.order,
+        plannedTime: elapsed, completedAt: sessionElapsedSec, order: 0,
         emoji: task.emoji, color: task.color, type: task.type,
+        day: task.day || dayDate, status: 'in-progress',
       };
       // Update second half (remaining, stays current)
-      const newTasks = sorted.map(t => {
-        if (t.id === task.id) {
-          return { ...t, name: task.name + ' (2/2)', plannedTime: remaining, completedAt: null };
-        }
-        // Shift subsequent tasks' order up by 1
-        if (t.order > task.order) return { ...t, order: t.order + 1 };
-        return t;
-      });
+      const timelineNext = timeline.map(t =>
+        t.id === task.id
+          ? { ...t, name: task.name + ' (2/2)', plannedTime: remaining, completedAt: null, status: 'in-progress' as const }
+          : t
+      );
       // Insert first half before second half
-      newTasks.splice(idx, 0, firstHalf);
-      return newTasks.map((t, i) => ({ ...t, order: i }));
+      const at = timelineNext.findIndex(t => t.id === task.id);
+      timelineNext.splice(at, 0, firstHalf);
+      return [...timelineNext, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
     });
-  }, [sortedTasks, sessionElapsedSec, sessionState]);
+  }, [sortedTasks, sessionElapsedSec, sessionState, dayDate]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent, id: string, currentHeight: number) => {
     e.preventDefault();
@@ -901,7 +920,6 @@ function App() {
   }, []);
 
   const loadPresets = useCallback(() => {
-    setTasks([]);
     setTimeCredit(0);
     const pts = PRESETS.map((p, i) => ({
       id: uid(),
@@ -912,10 +930,12 @@ function App() {
       emoji: TASK_EMOJIS[i % TASK_EMOJIS.length],
       color: TASK_COLORS[i % TASK_COLORS.length],
       type: 'task' as TaskType,
+      day: dayDate,
+      status: 'in-progress' as const,
     }));
-    setTasks(pts);
+    setTasks(prev => [...pts, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i })));
     setShowPresets(false);
-  }, []);
+  }, [dayDate]);
 
   // Log an ended run into both the day history aggregation and the per-run
   // list, so a day can show each session individually. Runs under a minute are
@@ -953,7 +973,8 @@ function App() {
       recordRun(dayDate, split.workSec, split.restSec);
     }
     reset();
-    setTasks([]);
+    // Keep the Open backlog so planned tasks survive ending a run.
+    setTasks((prev) => getOpenTasks(prev).map((t, i) => ({ ...t, order: i })));
     setShowPresets(true);
     setSessionStartTime(null);
     setTimeCredit(0);
@@ -1118,6 +1139,13 @@ function App() {
           🗓<span className="view-toggle-label">{page === 'days' ? 'К трекеру' : 'Дни'}</span>
         </button>
         <button
+          className={`btn btn-stats-nav ${page === 'kanban' ? 'active' : ''}`}
+          onClick={() => setPage(page === 'kanban' ? 'main' : 'kanban')}
+          title="Канбан-доска запланированных задач"
+        >
+          🗂<span className="view-toggle-label">{page === 'kanban' ? 'К трекеру' : 'Канбан'}</span>
+        </button>
+        <button
           className="btn btn-sidebar"
           onClick={() => setShowSidebar(!showSidebar)}
           title="Task Templates"
@@ -1183,6 +1211,13 @@ function App() {
         <StatsPage />
       ) : page === 'days' ? (
         <DaysPage onOpenRun={openRun} />
+      ) : page === 'kanban' ? (
+        <KanbanPage
+          activeDay={dayDate}
+          liveActiveTasks={viewingRun ? null : tasks}
+          mutateActive={mutateActiveTasks}
+          onOpenTimeline={() => setPage('main')}
+        />
       ) : (
         <>
       {(sessionState === 'idle' || sessionState === 'paused') && (

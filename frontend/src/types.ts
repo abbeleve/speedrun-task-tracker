@@ -1,5 +1,9 @@
 export type TaskType = 'task' | 'rest'; // 'task' = regular, 'rest' = service break (no congrats)
 
+// Kanban column of a task: 'open' = planned backlog, 'in-progress' = sits on a
+// timeline, 'done' = completed.
+export type TaskStatus = 'open' | 'in-progress' | 'done';
+
 export interface Task {
   id: string;
   name: string;
@@ -9,6 +13,8 @@ export interface Task {
   emoji: string; // single emoji icon
   color: string; // hex color
   type: TaskType;
+  day: string; // 'YYYY-MM-DD' the task is planned for
+  status: TaskStatus;
 }
 
 export interface Template {

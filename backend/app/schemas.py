@@ -45,6 +45,12 @@ class DayTask(BaseModel):
     emoji: str = ''
     color: str = ''
     type: str = 'task'
+    # Kanban planning: the day the task is scheduled for ('YYYY-MM-DD') and its
+    # column — 'open' (backlog), 'in-progress' (on a timeline) or 'done'. Tasks
+    # kept in a per-day JSON blob, so legacy rows simply lack these keys and the
+    # defaults below fill them in.
+    day: str = ''
+    status: str = 'open'
 
 
 class RunIn(BaseModel):

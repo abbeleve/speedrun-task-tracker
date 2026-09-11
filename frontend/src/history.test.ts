@@ -12,6 +12,8 @@ function task(partial: Partial<Task>): Task {
     emoji: '📋',
     color: '#3498db',
     type: 'task',
+    day: '2026-09-10',
+    status: 'in-progress',
     ...partial,
   };
 }

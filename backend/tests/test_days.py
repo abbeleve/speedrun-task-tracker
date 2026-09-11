@@ -98,6 +98,53 @@ def test_days_list(client, auth_headers):
     assert got['2026-09-09']['tasks'] == []
 
 
+def test_day_state_persists_task_status_and_day(client, auth_headers):
+    body = {
+        'tasks': [
+            {
+                'id': 'a',
+                'name': 'Planned',
+                'plannedTime': 900,
+                'completedAt': None,
+                'order': 0,
+                'emoji': '📋',
+                'color': '#3498db',
+                'type': 'task',
+                'day': '2026-09-12',
+                'status': 'open',
+            },
+            {
+                'id': 'b',
+                'name': 'Doing',
+                'plannedTime': 600,
+                'completedAt': None,
+                'order': 1,
+                'emoji': '🛠️',
+                'color': '#2ecc71',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'in-progress',
+            },
+        ],
+        'elapsedMs': 0,
+    }
+    assert client.put('/api/day/2026-09-10', headers=auth_headers, json=body).status_code == 200
+
+    got = client.get('/api/day/2026-09-10', headers=auth_headers).json()
+    assert got['tasks'][0]['status'] == 'open'
+    assert got['tasks'][0]['day'] == '2026-09-12'
+    assert got['tasks'][1]['status'] == 'in-progress'
+    assert got['tasks'][1]['day'] == '2026-09-10'
+
+    # Legacy tasks stored before kanban lack the new keys; the schema defaults
+    # fill them in so old data keeps loading.
+    legacy = {'tasks': [{'id': 'c', 'name': 'Old', 'plannedTime': 60}], 'elapsedMs': 0}
+    assert client.put('/api/day/2026-09-11', headers=auth_headers, json=legacy).status_code == 200
+    got = client.get('/api/day/2026-09-11', headers=auth_headers).json()
+    assert got['tasks'][0]['status'] == 'open'
+    assert got['tasks'][0]['day'] == ''
+
+
 def test_day_state_user_isolation(client):
     alice = register(client, username='alice', password='secret123')['token']
     bob = register(client, username='bob', password='secret123')['token']
