@@ -1175,6 +1175,72 @@
   transform: scale(0.96);
 }
 
+/* When every task is done the run isn't auto-finished: the ✓ pulses to invite
+   the user to end (and save) the session explicitly. */
+.end-run-btn.all-done {
+  animation: end-run-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes end-run-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 14px rgba(241, 196, 15, 0.5);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 26px rgba(241, 196, 15, 0.95);
+  }
+}
+
+/* Prompt shown once all tasks are completed, pointing at the ✓ button. */
+.all-done-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 20px 16px;
+  padding: 12px 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-gold);
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(241, 196, 15, 0.35);
+}
+
+.all-done-emoji {
+  font-size: 1.6rem;
+}
+
+.all-done-text {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.all-done-text strong {
+  color: var(--accent-gold);
+}
+
+.btn-all-done {
+  flex: none;
+  background: var(--accent-gold);
+  color: #000;
+  font-weight: 700;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-all-done:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 16px rgba(241, 196, 15, 0.8);
+}
+
+.btn-all-done:active {
+  transform: scale(0.97);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
   .header {
@@ -2861,63 +2927,6 @@
   }
 }
 
-/* ===== Day navigation (per-day tracker state) ===== */
-.day-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 24px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-}
-
-.btn-day-nav {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  padding: 6px 12px;
-}
-.btn-day-nav:hover:not(:disabled) {
-  background: var(--accent-blue);
-  color: #fff;
-}
-
-.day-date-input {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 10px;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color-scheme: dark;
-}
-
-[data-theme="light"] .day-date-input {
-  color-scheme: light;
-}
-
-.day-saved-select {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 10px;
-  font-family: var(--font-sans);
-  font-size: 0.85rem;
-}
-
-.day-nav-badge {
-  margin-left: auto;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--accent-gold);
-  background: var(--bg-current);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-}
-
 /* ===== Days timeline page ===== */
 .days-page {
   max-width: 900px;
@@ -2955,79 +2964,65 @@
   background: var(--border);
 }
 
-.day-card {
+/* A session node: one plain, gray line of text sitting on the spine — no card,
+   no frame, no separate background. */
+.run-row {
   position: relative;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.day-card:hover {
-  border-color: var(--accent-blue);
-  box-shadow: var(--shadow);
-}
-
-.day-card:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-
-.day-card::before {
+.run-row::before {
   content: '';
   position: absolute;
-  left: -24px;
-  top: 18px;
-  width: 12px;
-  height: 12px;
+  /* The marker's centre must sit on the spine (x=10px from the timeline's
+     padding box). The timeline adds 28px of left padding, so -18px with
+     translate(-50%) lands the dot dead-centre on the line. */
+  left: -18px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--accent-blue);
-  border: 2px solid var(--bg-primary);
+  background: var(--text-dim);
+  transform: translate(-50%, -50%);
 }
 
-.day-card-head {
+.run-line {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.day-card-date {
-  font-weight: 700;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-}
-
-.day-card-pct {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--accent-green);
-  font-size: 0.95rem;
-}
-
-.day-card-meta {
-  display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 6px;
-  font-size: 0.82rem;
+  gap: 8px;
+  min-height: 20px;
+  font-size: 0.85rem;
   color: var(--text-secondary);
 }
 
-.day-progress {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg-surface);
-  overflow: hidden;
-  margin: 10px 0 4px;
+.run-row.has-tasks {
+  cursor: pointer;
 }
 
-.day-progress-fill {
-  height: 100%;
-  background: var(--accent-green);
-  transition: width 0.3s ease;
+.run-row:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.run-day,
+.run-time,
+.run-dur,
+.run-delta {
+  color: var(--text-secondary);
+}
+
+.run-time,
+.run-dur {
+  font-family: var(--font-mono);
+}
+
+.run-sep {
+  color: var(--text-dim);
+}
+
+.run-line .dc-sess-chevron {
+  margin-left: auto;
 }
 
 .day-card-tasks {
@@ -3073,7 +3068,7 @@
 }
 
 .dc-status {
-  color: var(--accent-green);
+  color: var(--text-secondary);
   width: 1em;
   text-align: center;
 }
@@ -3082,71 +3077,69 @@
   color: var(--text-dim);
 }
 
-/* Per-day session list — each completed run shown individually */
-.day-card-sessions {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border);
-}
-
-.day-card-sessions-title {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.day-card-sessions-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  /* A day can hold many sessions — keep the card compact and scroll them. */
-  max-height: 40vh;
-  overflow-y: auto;
-}
-
-.day-card-sessions-list li {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-}
-
-.dc-sess-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dc-sess-pct {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--accent-cyan, #00d4ff);
-}
-
-.day-card-session .day-card-tasks {
-  margin-top: 2px;
+/* Task snapshot shown when a session card is expanded. */
+.run-row .day-card-tasks {
+  margin-top: 6px;
   padding-left: 8px;
 }
 
-.day-card-session.clickable {
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 4px 6px;
-  margin: 0 -6px;
-  transition: background 0.15s ease;
+/* The task breakdown stays collapsed to the card header by default. Hovering,
+   focusing or tapping slides it open via an animated grid row. */
+.dc-sess-chevron {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
 }
 
-.day-card-session.clickable:hover,
-.day-card-session.clickable:focus-visible {
-  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
-  outline: none;
+.run-row.has-tasks:hover .dc-sess-chevron,
+.run-row.has-tasks:focus-within .dc-sess-chevron,
+.run-row.expanded .dc-sess-chevron {
+  transform: rotate(180deg);
+}
+
+.dc-sess-details {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease,
+    visibility 0s linear 0.25s;
+}
+
+.dc-sess-details-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.run-row.has-tasks:hover .dc-sess-details,
+.run-row.has-tasks:focus-within .dc-sess-details,
+.run-row.expanded .dc-sess-details {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease, visibility 0s;
+}
+
+.dc-sess-open {
+  margin-top: 8px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dc-sess-open:hover {
+  text-decoration: underline;
+}
+
+/* Invisible trigger that appends the next batch of days when scrolled into view. */
+.days-sentinel {
+  height: 1px;
 }
 
 /* Header chip shown while a saved session is open read-only in the tracker. */
@@ -3155,22 +3148,6 @@
   font-size: 0.82rem;
   color: var(--accent-cyan, #00d4ff);
   white-space: nowrap;
-}
-
-.dc-sess-range {
-  font-family: var(--font-mono);
-  color: var(--accent-cyan, #00d4ff);
-  min-width: 92px;
-}
-
-.dc-sess-dur,
-.dc-sess-work {
-  font-family: var(--font-mono);
-  color: var(--text-dim);
-  font-size: 0.78rem;
-}
-.dc-sess-work {
-  color: var(--accent-green);
 }
 
 /* ===== List View — plain task list with an expanding thermometer =====

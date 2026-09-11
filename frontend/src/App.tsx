@@ -8,7 +8,7 @@ import { ListView } from './ListView';
 import { primeMotivationImages } from './motivation';
 import StatsPage from './StatsPage';
 import DaysPage from './DaysPage';
-import { splitSessionByType, todayKey, shiftDayKey } from './history';
+import { splitSessionByType, todayKey } from './history';
 import * as api from './api';
 import { useAuth } from './auth';
 import './App.css';
@@ -107,7 +107,6 @@ function App() {
   // never overwritten by the previous day's (still-hydrated) state.
   const [dayDate, setDayDate] = useState<string>(() => todayKey());
   const [readyDate, setReadyDate] = useState<string | null>(null);
-  const [savedDates, setSavedDates] = useState<string[]>([]);
 
   useEffect(() => {
     localStorage.setItem('speedrun_view', view);
@@ -146,7 +145,7 @@ function App() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
-  const { elapsed, sessionState, start, pause, resume, reset, finish, restore, loadFinished, seek } = useTimer();
+  const { elapsed, sessionState, start, pause, resume, reset, restore, loadFinished, seek } = useTimer();
   const sessionStateRef = useRef(sessionState);
   sessionStateRef.current = sessionState;
   const seekRef = useRef(seek);
@@ -175,11 +174,6 @@ function App() {
   const persistDay = useCallback((state: DayState) => {
     void api
       .saveDay(state.date, state)
-      .then(() =>
-        setSavedDates((prev) =>
-          prev.includes(state.date) ? prev : [...prev, state.date].sort()
-        )
-      )
       .catch((e) => console.error('Failed to save day', e));
   }, []);
 
@@ -225,20 +219,6 @@ function App() {
     };
   }, [dayDate, restore, loadFinished, viewingRun]);
 
-  // Known saved days, for the quick-jump selector.
-  useEffect(() => {
-    let active = true;
-    api
-      .loadDayDates()
-      .then((dates) => {
-        if (active) setSavedDates(dates);
-      })
-      .catch((e) => console.error('Failed to load day dates', e));
-    return () => {
-      active = false;
-    };
-  }, []);
-
   // Debounced save whenever the day's plan or progress state changes.
   const saveTimerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -275,24 +255,16 @@ function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [readyDate, dayDate, persistDay, buildDayState]);
 
-  // Switch days, flushing the current one first so no progress is lost.
-  const goToDay = useCallback(
-    (next: string) => {
-      if (next === dayDate && !viewingRun) return;
-      if (readyDate === dayDate) persistDay(buildDayState(dayDate));
-      setViewingRun(null);
-      setDayDate(next);
-    },
-    [dayDate, readyDate, persistDay, buildDayState, viewingRun]
-  );
-
   const openRun = useCallback((run: RunRecord) => {
     setViewingRun(run);
     setDayDate(run.date);
     setPage('main');
   }, []);
 
-  const closeRun = useCallback(() => setViewingRun(null), []);
+  const closeRun = useCallback(() => {
+    setViewingRun(null);
+    setDayDate(todayKey());
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1005,19 +977,11 @@ function App() {
     }
   }, [sessionState, sortedTasks.length, start, pause, resume]);
 
+  // Every task is closed. The run is NOT finished automatically: the user ends
+  // the session (and saves the day) explicitly via the ✓ button, so the save
+  // stays deliberate. This flag drives the prompt banner and the ✓ highlight.
   const allCompleted = sortedTasks.length > 0 && sortedTasks.every((t) => t.completedAt !== null);
-
-  useEffect(() => {
-    if (allCompleted && sessionState === 'running') {
-      // Session is over — log its work/rest time into the day history
-      if (!recordedRef.current) {
-        recordedRef.current = true;
-        const split = splitSessionByType(sortedTasks, elapsed / 1000);
-        recordRun(dayDate, split.workSec, split.restSec);
-      }
-      finish();
-    }
-  }, [allCompleted, sessionState, finish, sortedTasks, elapsed, dayDate, recordRun]);
+  const showAllDone = allCompleted && (sessionState === 'running' || sessionState === 'paused');
 
   const onDragStart = (idx: number) => setDragIdx(idx);
   const onDragOver = (e: React.DragEvent, idx: number) => {
@@ -1218,63 +1182,9 @@ function App() {
       {page === 'stats' ? (
         <StatsPage />
       ) : page === 'days' ? (
-        <DaysPage
-          onOpenDay={(d) => {
-            goToDay(d);
-            setPage('main');
-          }}
-          onOpenRun={openRun}
-        />
+        <DaysPage onOpenRun={openRun} />
       ) : (
         <>
-      <div className="day-nav">
-        <button
-          type="button"
-          className="btn btn-day-nav"
-          onClick={() => goToDay(shiftDayKey(dayDate, -1))}
-          title="Предыдущий день"
-        >
-          ←
-        </button>
-        <input
-          type="date"
-          className="day-date-input"
-          value={dayDate}
-          max={todayKey()}
-          onChange={(e) => { if (e.target.value) goToDay(e.target.value); }}
-          title="Выбрать день"
-        />
-        <button
-          type="button"
-          className="btn btn-day-nav"
-          onClick={() => goToDay(shiftDayKey(dayDate, 1))}
-          disabled={dayDate >= todayKey()}
-          title="Следующий день"
-        >
-          →
-        </button>
-        {dayDate !== todayKey() && (
-          <button type="button" className="btn btn-day-nav" onClick={() => goToDay(todayKey())}>
-            Сегодня
-          </button>
-        )}
-        {savedDates.length > 0 && (
-          <select
-            className="day-saved-select"
-            value={savedDates.includes(dayDate) ? dayDate : ''}
-            onChange={(e) => { if (e.target.value) goToDay(e.target.value); }}
-            title="Сохранённые дни"
-          >
-            <option value="">Сохранённые дни…</option>
-            {savedDates.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        )}
-        {dayDate !== todayKey() && (
-          <span className="day-nav-badge">📅 Прошлый день</span>
-        )}
-      </div>
       {(sessionState === 'idle' || sessionState === 'paused') && (
         <div className="add-section">
           <form className="add-form" onSubmit={handleSubmit}>
@@ -1472,15 +1382,31 @@ function App() {
         </div>
         {(sessionState === 'running' || sessionState === 'paused') && (
           <button
-            className="end-run-btn"
+            className={`end-run-btn${showAllDone ? ' all-done' : ''}`}
             onClick={handleReset}
-            title="Окончить ран и начать новый в этот же день"
+            title={
+              showAllDone
+                ? 'Все задачи выполнены — сохранить день и начать новый ран'
+                : 'Окончить ран и начать новый в этот же день'
+            }
             aria-label="End run"
           >
             ✓
           </button>
         )}
       </footer>
+
+      {showAllDone && (
+        <div className="all-done-banner" role="status">
+          <span className="all-done-emoji">🏁</span>
+          <span className="all-done-text">
+            Все задачи выполнены! Нажмите <strong>✓</strong>, чтобы сохранить день.
+          </span>
+          <button className="btn btn-all-done" onClick={handleReset}>
+            ✓ Сохранить день
+          </button>
+        </div>
+      )}
 
       <div className="timeline-container" ref={timelineRef} onDragOver={handleTimelineDragOver} onDrop={handleTimelineDrop}>
         {sortedTasks.length === 0 && sessionState === 'idle' ? (
