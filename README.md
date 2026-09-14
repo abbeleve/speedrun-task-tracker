@@ -20,7 +20,9 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag its bottom edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time.
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
-- **Sequences** — blocks that follow each other with no gap form a sequence, marked by a spine on the left of the day column. Click it to open the sequence in the tracker views.
+- **Sequences** — blocks that follow each other with no gap form a sequence, marked by a spine on the left of the day column. Click the spine to open the session editor, drag it to move the whole run at once.
+- **Sessions** — blocks that nearly touch (a gap of 5 minutes or less) get a 🔗 handle in the gap: press it and they are pulled together into one named session. A session holds together however its blocks are later moved, can be renamed, dragged as a whole (gaps intact, across midnight too) and pulled apart again.
+- **Start a session early** — the session editor (and the tracker header) offers ▶ *Начать сейчас*: the whole run slides to the current moment and opens in the tracker views.
 - **Thermometer timeline** — vertical fill bar that grows as the sequence's time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
 - **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the sequence has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
@@ -45,10 +47,11 @@ so reloading mid-day never changes the number
 | --- | --- |
 | A block is closed before its slot ends | The lead becomes `planned end − now`: the rest of the plan may start that much earlier |
 | The next block starts immediately | The lead keeps running against it — finish inside the shifted slot and it is kept, overrun and it melts away |
-| The next block is an hour off | The lead is frozen and waits. When you get there you may start that much earlier, so the lead is kept rather than spent |
+| The next block is hours off | The lead is frozen and waits. When you get there you may start that much earlier, so the lead is kept rather than spent |
 | Blocks run in parallel | They are one group: the lead is measured from the latest planned end in the group to the moment its last task was closed |
 | A block was already closed before its slot begins | Its whole duration is added to the lead when the plan reaches it |
-| Midnight passes while the blocks keep coming | The lead carries over — it is dropped only at the first gap of an hour or more that falls on a later date |
+| Midnight passes while the blocks keep coming | The lead carries over — a "day" is the working session, not the date |
+| The session is put down for 10 minutes and picked up after midnight | That is a new working day: the lead starts from zero. Inside one date even a long gap keeps it |
 
 The calendar shows the lead three ways: the HUD number (frozen or running), a
 green band between the now-line and where the plan effectively stands, and a

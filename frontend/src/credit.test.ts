@@ -130,11 +130,22 @@ describe('overtake (обгон)', () => {
   });
 
   it('keeps the lead past midnight while the blocks keep coming', () => {
-    const late = task({ start: hm(23), minutes: 30, done: at(DAY, hm(23, 20)) });
+    // 23:30 → 00:00 is a five-minute seam by 23:55, well inside EPOCH_GAP_MS.
+    const late = task({ start: hm(23), minutes: 55, done: at(DAY, hm(23, 45)) });
     const after = task({ day: NEXT, start: hm(0), minutes: 60 });
     const snap = credit([late, after], at(NEXT, hm(0, 10)));
     expect(min(snap.banked)).toBe(10);
     expect(snap.active?.tasks[0].id).toBe(after.id);
+  });
+
+  it('drops the lead at a ten-minute gap on the new date', () => {
+    // The session is put down at 23:30 and picked up at 00:15 — that is a new
+    // working day, so the evening's lead does not carry into it.
+    const late = task({ start: hm(23), minutes: 30, done: at(DAY, hm(23, 20)) });
+    const after = task({ day: NEXT, start: hm(0, 15), minutes: 60 });
+    const snap = credit([late, after], at(NEXT, hm(0, 20)));
+    expect(snap.banked).toBe(0);
+    expect(snap.epochStartMs).toBe(at(NEXT, hm(0, 15)));
   });
 
   it('still shows the day\'s lead in the evening, before the new day starts', () => {
@@ -147,7 +158,7 @@ describe('overtake (обгон)', () => {
     expect(snap.remaining).toHaveLength(0);
   });
 
-  it('drops the lead at the first hour-long gap on a new date', () => {
+  it('drops the lead at the first long gap on a new date', () => {
     const late = task({ start: hm(22), minutes: 60, done: at(DAY, hm(22, 45)) });
     const tomorrow = task({ day: NEXT, start: hm(9), minutes: 60 });
     const snap = credit([late, tomorrow], at(NEXT, hm(9, 30)));

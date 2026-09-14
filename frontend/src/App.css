@@ -72,7 +72,14 @@
 }
 
 .app {
-  max-width: 1200px;
+  /* Full-bleed like Google Calendar: the page spreads over the whole window and
+     only keeps a thin side gutter where there is room to spare. The gutter
+     grows to at most 50px and collapses before the content itself is squeezed,
+     so the working area never drops below its old 1200px. */
+  --app-min-width: 1200px;
+  --app-gutter: clamp(0px, calc((100% - var(--app-min-width)) / 2), 50px);
+  width: 100%;
+  padding-inline: var(--app-gutter);
   margin: 0 auto;
   height: 100vh !important;
   display: flex;

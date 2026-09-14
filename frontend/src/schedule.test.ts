@@ -5,7 +5,10 @@ import {
   buildGroups,
   dayStartMs,
   layoutTasks,
+  mergeSuggestions,
   migrateDayTasks,
+  shiftPatches,
+  shiftedSlot,
   taskEndMs,
 } from './schedule';
 
@@ -103,6 +106,112 @@ describe('buildChains', () => {
       ])
     );
     expect(chains).toHaveLength(2);
+  });
+
+  it('holds an explicit session together across a gap', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+        task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+      ])
+    );
+    expect(chains).toHaveLength(1);
+    expect(chains[0].sessionId).toBe('s1');
+    expect(chains[0].name).toBe('Утро');
+  });
+
+  it('keeps two sessions apart even back to back', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+        task({ start: hm(10), plannedTime: 3600, sessionId: 's2' }),
+      ])
+    );
+    expect(chains.map((c) => c.sessionId)).toEqual(['s1', 's2']);
+  });
+
+  it('is not split by a loose block dropped into its gap', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+        task({ start: hm(11), plannedTime: 1800 }),
+        task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+      ])
+    );
+    expect(chains).toHaveLength(2);
+    const session = chains.find((c) => c.sessionId === 's1')!;
+    expect(session.tasks).toHaveLength(2);
+    expect(session.endMs).toBe(dayStartMs(DAY) + hm(15) * 60_000);
+  });
+
+  it('does not let a loose block join a session', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+        task({ start: hm(10), plannedTime: 3600 }),
+      ])
+    );
+    expect(chains).toHaveLength(2);
+  });
+});
+
+describe('mergeSuggestions', () => {
+  const chainsOf = (tasks: Task[]) => buildChains(buildGroups(tasks));
+
+  it('offers to glue sequences that miss each other by a few minutes', () => {
+    const suggestions = mergeSuggestions(
+      chainsOf([
+        task({ start: hm(9), plannedTime: 3600 }),
+        task({ start: hm(10, 5), plannedTime: 3600 }),
+      ])
+    );
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].gapMs).toBe(5 * 60_000);
+  });
+
+  it('says nothing about a gap that is a real break', () => {
+    expect(
+      mergeSuggestions(
+        chainsOf([
+          task({ start: hm(9), plannedTime: 3600 }),
+          task({ start: hm(10, 20), plannedTime: 3600 }),
+        ])
+      )
+    ).toHaveLength(0);
+  });
+
+  it('says nothing when the blocks are already one sequence', () => {
+    expect(
+      mergeSuggestions(
+        chainsOf([
+          task({ start: hm(9), plannedTime: 3600 }),
+          task({ start: hm(10), plannedTime: 3600 }),
+        ])
+      )
+    ).toHaveLength(0);
+  });
+});
+
+describe('shifting a sequence', () => {
+  it('moves a block by a delta, keeping its duration', () => {
+    expect(shiftedSlot(task({ start: hm(10) }), 90 * 60_000)).toEqual({
+      day: DAY,
+      start: hm(11, 30),
+    });
+  });
+
+  it('carries a block over midnight onto the next date', () => {
+    expect(shiftedSlot(task({ start: hm(23) }), 2 * 60 * 60_000)).toEqual({
+      day: '2026-03-11',
+      start: hm(1),
+    });
+  });
+
+  it('keeps the gaps inside the sequence it moves', () => {
+    const a = task({ start: hm(9), plannedTime: 3600 });
+    const b = task({ start: hm(10, 30), plannedTime: 3600 });
+    const patches = shiftPatches([a, b], -60 * 60_000);
+    expect(patches.map((p) => p.patch.start)).toEqual([hm(8), hm(9, 30)]);
   });
 });
 

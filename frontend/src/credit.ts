@@ -8,7 +8,7 @@
 //     sooner from here on.
 //  2. The next block starts immediately (a *sequence*) → the lead simply keeps
 //     running against that block, exactly like the old sequential tracker.
-//  3. The next block is an hour away → nothing happens in between: the lead is
+//  3. The next block is far away → nothing happens in between: the lead is
 //     frozen and waits, the way a `rest` block used to hold it. When the block
 //     is reached it may be started `lead` earlier, so the lead is kept rather
 //     than spent.
@@ -16,19 +16,23 @@
 //     task, and the lead is measured against the latest planned end in it.
 //  5. Closing a group before its (shifted) slot even begins wins the whole
 //     block: the lead grows by the group's duration instead.
-//  6. A lead belongs to a day, but it survives past midnight while the blocks
-//     keep coming — it is only dropped at the first gap of an hour or more that
-//     falls on a later date than the one the lead was earned on.
+//  6. A lead belongs to a "day" — a working session, not a date. It survives
+//     past midnight while the blocks keep coming, and is only dropped at the
+//     first gap of EPOCH_GAP_MS or more that falls on a later date than the one
+//     the lead was earned on. Inside one date even a long gap keeps it: an
+//     evening block still answers to the morning's plan.
 //
 // Everything here is derived from the plan + the current time, so nothing has
 // to be stored: reload the page mid-day and the lead is exactly what it was.
 
 import type { TaskGroup } from './schedule';
-import { HOUR_MS, dayKeyOf } from './schedule';
+import { MIN_MS, dayKeyOf } from './schedule';
 
 // A gap of this size or more, once the date has changed, closes the lead's
-// epoch: the next block starts a fresh day with a clean sheet.
-export const EPOCH_GAP_MS = HOUR_MS;
+// epoch: the next block starts a fresh "day" with a clean sheet. Ten minutes is
+// about as long as a session survives being put down — anything longer on a new
+// date is a new working day, however late the previous one ran.
+export const EPOCH_GAP_MS = 10 * MIN_MS;
 
 export interface CreditSnapshot {
   // Seconds of lead carried out of the last closed group (negative = behind).

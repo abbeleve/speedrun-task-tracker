@@ -7,18 +7,27 @@ import {
   DAY_MIN,
   MIN_MS,
   buildGroups,
+  chainOfTask,
   clampStartMin,
   dayStartMs,
   daySegments,
   isDone,
+  isSession,
+  mergeSuggestions,
+  newSessionId,
+  shiftPatches,
+  shiftedSlot,
   taskEndMs,
   taskStartMs,
 } from './schedule';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, projectedFinishMs } from './credit';
+import { clockTime, compactDur } from './format';
 import { dateKey, shiftDayKey, todayKey } from './history';
 import { newTaskId, spawnNextOccurrence } from './tasks';
+import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
+import SessionPopover from './SessionPopover';
 
 export type CalView = 'day' | 'week' | 'month';
 
@@ -50,20 +59,8 @@ function hhmm(minFromMidnight: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-function wallTime(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-// "1 ч 05 м" / "25 м" / "40 с" — compact, for durations and leads.
-function dur(totalSec: number): string {
-  const s = Math.max(0, Math.round(Math.abs(totalSec)));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return m > 0 ? `${h} ч ${String(m).padStart(2, '0')} м` : `${h} ч`;
-  if (m > 0) return `${m} м`;
-  return `${s} с`;
-}
+const wallTime = clockTime;
+const dur = compactDur;
 
 function signedDur(sec: number): string {
   if (Math.abs(sec) < 30) return 'ровно';
@@ -88,6 +85,10 @@ function snap(min: number): number {
   return Math.round(min / SNAP_MIN) * SNAP_MIN;
 }
 
+function snapMs(ms: number): number {
+  return Math.round(ms / (SNAP_MIN * MIN_MS)) * SNAP_MIN * MIN_MS;
+}
+
 // ── drag gestures ──────────────────────────────────────────────────
 
 type Gesture =
@@ -100,7 +101,10 @@ type Gesture =
       startMin: number;
       moved: boolean;
     }
-  | { kind: 'resize'; task: Task; day: string; lengthMin: number };
+  | { kind: 'resize'; task: Task; day: string; lengthMin: number }
+  // Dragging a session by its spine: every block of it moves by the same
+  // delta, so the gaps inside the session are kept.
+  | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean };
 
 function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageProps) {
   const [view, setView] = useState<CalView>(() => {
@@ -108,7 +112,20 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
     return saved === 'day' || saved === 'month' ? saved : 'week';
   });
   const [anchor, setAnchor] = useState<string>(() => todayKey());
-  const [dialog, setDialog] = useState<{ task: Task; isNew: boolean } | null>(null);
+  // The block editor. `anchor` is where on the screen it was opened from: with
+  // one it floats next to the block (and the block stays drawn on the grid),
+  // without one it is a centred modal.
+  const [dialog, setDialog] = useState<
+    { task: Task; isNew: boolean; anchor: DialogAnchor | null } | null
+  >(null);
+  // What the editor currently describes — the grid draws this instead of the
+  // saved block, so the rectangle follows the fields as they are typed.
+  const [preview, setPreview] = useState<Task | null>(null);
+  // The open session editor, addressed by one of its tasks so that renaming or
+  // moving the session cannot lose it.
+  const [sessionPop, setSessionPop] = useState<{ taskId: string; anchor: DialogAnchor } | null>(
+    null
+  );
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
@@ -170,19 +187,99 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
     [store]
   );
 
+  const closeDialog = useCallback(() => {
+    setDialog(null);
+    setPreview(null);
+  }, []);
+
+  const openDialog = useCallback(
+    (task: Task, isNew: boolean, at?: { clientX: number; clientY: number } | null) => {
+      setPreview(task);
+      setDialog({ task, isNew, anchor: at ? { x: at.clientX, y: at.clientY } : null });
+    },
+    []
+  );
+
   const saveFromDialog = useCallback(
     (task: Task) => {
       store.upsertTask(task);
-      setDialog(null);
+      closeDialog();
     },
-    [store]
+    [store, closeDialog]
   );
 
   const deleteFromDialog = useCallback(() => {
     if (!dialog) return;
     store.removeTask(dialog.task.id);
-    setDialog(null);
-  }, [dialog, store]);
+    closeDialog();
+  }, [dialog, store, closeDialog]);
+
+  // ── sessions ─────────────────────────────────────────────────────
+
+  const openSession = useCallback((chain: Chain, at: { clientX: number; clientY: number }) => {
+    setSessionPop({ taskId: chain.tasks[0].id, anchor: { x: at.clientX, y: at.clientY } });
+  }, []);
+
+  // Glue a sequence together: every block of it gets the same session id, so it
+  // stays one sequence however its blocks are moved later.
+  const makeSession = useCallback(
+    (chain: Chain, name?: string | null) => {
+      const sessionId = chain.sessionId ?? newSessionId();
+      const sessionName = name !== undefined ? name || null : (chain.name ?? null);
+      store.patchTasks(
+        chain.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName } }))
+      );
+    },
+    [store]
+  );
+
+  const dissolveSession = useCallback(
+    (chain: Chain) => {
+      store.patchTasks(
+        chain.tasks.map((t) => ({ id: t.id, patch: { sessionId: null, sessionName: null } }))
+      );
+    },
+    [store]
+  );
+
+  // Close the gap between two neighbouring sequences and make them one session:
+  // the later one is pulled up to the moment the earlier one ends.
+  const glueChains = useCallback(
+    (before: Chain, after: Chain) => {
+      const sessionId = before.sessionId ?? after.sessionId ?? newSessionId();
+      const sessionName = before.name ?? after.name ?? null;
+      const deltaMs = before.endMs - after.startMs;
+      store.patchTasks([
+        ...before.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName } })),
+        ...after.tasks.map((t) => ({
+          id: t.id,
+          patch: { ...shiftedSlot(t, deltaMs), sessionId, sessionName },
+        })),
+      ]);
+      setSessionPop(null);
+    },
+    [store]
+  );
+
+  // Start a session early: the whole thing slides to the current moment, gaps
+  // intact, and opens in the tracker.
+  const startChainNow = useCallback(
+    (chain: Chain) => {
+      const deltaMs = Math.round((now - chain.startMs) / MIN_MS) * MIN_MS;
+      if (deltaMs !== 0) store.patchTasks(shiftPatches(chain.tasks, deltaMs));
+      setSessionPop(null);
+      onOpenChain(chain);
+    },
+    [now, store, onOpenChain]
+  );
+
+  const leaveSession = useCallback(
+    (task: Task) => {
+      store.patchTask(task.id, { sessionId: null, sessionName: null });
+      closeDialog();
+    },
+    [store, closeDialog]
+  );
 
   const draftTask = useCallback((day: string, startMin: number, lengthMin: number): Task => {
     const i = Math.floor(Math.random() * TASK_COLORS.length);
@@ -248,25 +345,33 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
           startMin: clampStartMin(startMin, g.task.plannedTime),
           moved: true,
         });
+      } else if (g.kind === 'chain') {
+        const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
+        setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
       } else {
         const lengthMin = Math.max(MIN_LENGTH_MIN, snap(slot.min - (g.task.start ?? 0)));
         setGestureState({ ...g, lengthMin });
       }
     };
 
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
       setGestureState(null);
       if (g.kind === 'create') {
         const length = Math.max(MIN_LENGTH_MIN, g.endMin - g.startMin);
-        setDialog({ task: draftTask(g.day, g.startMin, length), isNew: true });
+        // The block stays on the grid and the editor opens beside it, so the
+        // shape just drawn is never lost behind a dialog.
+        openDialog(draftTask(g.day, g.startMin, length), true, e);
       } else if (g.kind === 'move') {
         if (!g.moved) {
-          setDialog({ task: g.task, isNew: false });
+          openDialog(g.task, false, e);
         } else if (g.day !== g.task.day || g.startMin !== g.task.start) {
           store.patchTask(g.task.id, { day: g.day, start: g.startMin });
         }
+      } else if (g.kind === 'chain') {
+        if (!g.moved) openSession(g.chain, e);
+        else if (g.deltaMs !== 0) store.patchTasks(shiftPatches(g.chain.tasks, g.deltaMs));
       } else if (g.lengthMin * 60 !== g.task.plannedTime) {
         store.patchTask(g.task.id, { plannedTime: g.lengthMin * 60 });
       }
@@ -280,7 +385,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [slotAt, setGestureState, draftTask, store]);
+  }, [slotAt, setGestureState, draftTask, store, openDialog, openSession]);
 
   const startCreate = useCallback(
     (e: React.PointerEvent, day: string) => {
@@ -313,6 +418,24 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
         grabMin: slot.min - (task.day === slot.day ? (task.start ?? 0) : 0),
         day: task.day,
         startMin: task.start ?? 0,
+        moved: false,
+      });
+    },
+    [slotAt, setGestureState]
+  );
+
+  const startChainDrag = useCallback(
+    (e: React.PointerEvent, chain: Chain) => {
+      if (e.button !== 0) return;
+      const slot = slotAt(e.clientX, e.clientY);
+      if (!slot) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setGestureState({
+        kind: 'chain',
+        chain,
+        anchorMs: dayStartMs(slot.day) + slot.min * MIN_MS,
+        deltaMs: 0,
         moved: false,
       });
     },
@@ -394,6 +517,21 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
     [credit.active]
   );
 
+  // Pairs of sequences close enough to be one session — the grid offers to glue
+  // each of them, and the session editor offers the same on its neighbours.
+  const suggestions = useMemo(() => mergeSuggestions(chains), [chains]);
+
+  const popChain = useMemo(
+    () => (sessionPop ? chainOfTask(chains, sessionPop.taskId) : null),
+    [chains, sessionPop]
+  );
+
+  // The session editor closes by itself once its sequence is gone (dissolved,
+  // emptied or merged away).
+  useEffect(() => {
+    if (sessionPop && !popChain) setSessionPop(null);
+  }, [sessionPop, popChain]);
+
   // ── grid ─────────────────────────────────────────────────────────
 
   const renderGrid = () => (
@@ -419,14 +557,84 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
   );
 
   const renderColumn = (day: string) => {
-    const segments = daySegments(tasks, day);
     const dayFrom = dayStartMs(day);
     const dayTo = dayFrom + DAY_MIN * MIN_MS;
-    const dayChains = chains.filter(
-      (c) => c.groups.length > 1 && c.endMs > dayFrom && c.startMs < dayTo
-    );
     const isToday = day === today;
     const g = gesture;
+    const dragChain = g?.kind === 'chain' ? g : null;
+
+    // A block the editor is open on is drawn from the fields being typed, so
+    // long as it has a slot at all (a backlog task has none).
+    const livePreview =
+      preview && preview.status !== 'open' && preview.start !== null ? preview : null;
+
+    // Blocks that are being dragged (or edited in the popover) are drawn from
+    // the gesture / the editor instead of from the plan.
+    const ghostIds = new Set<string>(
+      dragChain
+        ? dragChain.chain.tasks.map((t) => t.id)
+        : g?.kind === 'move'
+          ? [g.task.id]
+          : []
+    );
+    if (livePreview) ghostIds.add(livePreview.id);
+
+    const segments = daySegments(tasks, day).filter((seg) => !ghostIds.has(seg.task.id));
+
+    // Sessions and sequences, drawn as a spine to the left of the column. While
+    // one is dragged it is shown where it would land.
+    const daySessions = chains
+      .filter(isSession)
+      .map((chain) => {
+        const shift = dragChain?.chain.id === chain.id ? dragChain.deltaMs : 0;
+        return { chain, startMs: chain.startMs + shift, endMs: chain.endMs + shift };
+      })
+      .filter((c) => c.endMs > dayFrom && c.startMs < dayTo);
+
+    // Sequences that nearly touch: the handle in the gap glues them together.
+    const glueSpots = suggestions
+      .map((s) => ({ ...s, atMs: (s.before.endMs + s.after.startMs) / 2 }))
+      .filter((s) => s.atMs >= dayFrom && s.atMs < dayTo);
+
+    // Everything drawn from a gesture or from the open editor rather than from
+    // the saved plan.
+    const ghosts: {
+      key: string;
+      task: Task;
+      startMin: number;
+      lengthMin: number;
+      live: boolean; // the editor's block, not a dragged one
+    }[] = [];
+    if (dragChain) {
+      for (const task of dragChain.chain.tasks) {
+        const slot = shiftedSlot(task, dragChain.deltaMs);
+        if (slot.day !== day) continue;
+        ghosts.push({
+          key: task.id,
+          task,
+          startMin: slot.start,
+          lengthMin: task.plannedTime / 60,
+          live: false,
+        });
+      }
+    } else if (g?.kind === 'move' && g.day === day) {
+      ghosts.push({
+        key: g.task.id,
+        task: g.task,
+        startMin: g.startMin,
+        lengthMin: g.task.plannedTime / 60,
+        live: false,
+      });
+    }
+    if (livePreview && livePreview.day === day) {
+      ghosts.push({
+        key: `preview-${livePreview.id}`,
+        task: livePreview,
+        startMin: livePreview.start ?? 0,
+        lengthMin: livePreview.plannedTime / 60,
+        live: true,
+      });
+    }
 
     return (
       <div
@@ -434,34 +642,41 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
         className={`cal-col${isToday ? ' today' : ''}`}
         data-day={day}
         onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest('.cal-block')) return;
+          if ((e.target as HTMLElement).closest('.cal-block, .cal-chain, .cal-glue')) return;
           startCreate(e, day);
         }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => dropFromBacklog(e, day)}
       >
-        {dayChains.map((chain) => {
-          const top = Math.max(0, (chain.startMs - dayFrom) / MIN_MS) * PX_PER_MIN;
-          const bottom = Math.min(DAY_MIN, (chain.endMs - dayFrom) / MIN_MS) * PX_PER_MIN;
+        {daySessions.map(({ chain, startMs, endMs }) => {
+          const top = Math.max(0, (startMs - dayFrom) / MIN_MS) * PX_PER_MIN;
+          const bottom = Math.min(DAY_MIN, (endMs - dayFrom) / MIN_MS) * PX_PER_MIN;
+          const height = Math.max(12, bottom - top);
           return (
-            <button
+            <div
               key={chain.id}
-              type="button"
-              className="cal-chain"
-              style={{ top, height: Math.max(12, bottom - top) }}
-              title={`Секвенция из ${chain.tasks.length} задач — открыть в трекере`}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onOpenChain(chain)}
+              className={[
+                'cal-chain',
+                chain.sessionId ? 'session' : '',
+                chain.name ? 'named' : '',
+                dragChain?.chain.id === chain.id ? 'dragging' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{ top, height }}
+              title={`${chain.name ?? 'Секвенция'} · ${chain.tasks.length} задач — открыть настройки сессии, потянуть — перенести целиком`}
+              onPointerDown={(e) => startChainDrag(e, chain)}
             >
+              {chain.name && height > 40 && (
+                <span className="cal-chain-label">{chain.name}</span>
+              )}
               <span className="cal-chain-dot" />
-            </button>
+            </div>
           );
         })}
 
         <div className="cal-col-body">
-        {segments
-          .filter((seg) => !(g?.kind === 'move' && g.task.id === seg.task.id))
-          .map((seg) => {
+        {segments.map((seg) => {
           const task = seg.task;
           const resizing = g?.kind === 'resize' && g.task.id === task.id;
           const topMin = seg.topMin;
@@ -481,6 +696,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
                 done ? 'done' : '',
                 active ? 'active' : '',
                 task.type === 'rest' ? 'rest' : '',
+                task.sessionId ? 'in-session' : '',
                 resizing ? 'dragging' : '',
                 !seg.startsHere ? 'cont-top' : '',
                 !seg.endsHere ? 'cont-bottom' : '',
@@ -547,26 +763,27 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
           );
         })}
 
-        {g?.kind === 'move' && g.day === day && (
+        {ghosts.map((ghost) => (
           <div
-            className="cal-block dragging"
+            key={ghost.key}
+            className={ghost.live ? 'cal-block live' : 'cal-block dragging'}
             style={{
-              top: g.startMin * PX_PER_MIN,
-              height: Math.max(16, (g.task.plannedTime / 60) * PX_PER_MIN),
-              '--task-color': g.task.color,
+              top: ghost.startMin * PX_PER_MIN,
+              height: Math.max(16, ghost.lengthMin * PX_PER_MIN),
+              '--task-color': ghost.task.color,
             } as React.CSSProperties}
           >
             <div className="cal-block-head">
-              <span className="cal-block-emoji">{g.task.emoji}</span>
-              <span className="cal-block-name">{g.task.name}</span>
+              <span className="cal-block-emoji">{ghost.task.emoji}</span>
+              <span className="cal-block-name">{ghost.task.name || 'Без названия'}</span>
             </div>
             <div className="cal-block-meta">
               <span>
-                {hhmm(g.startMin)}–{hhmm(g.startMin + g.task.plannedTime / 60)}
+                {hhmm(ghost.startMin)}–{hhmm(ghost.startMin + ghost.lengthMin)}
               </span>
             </div>
           </div>
-        )}
+        ))}
 
         {g?.kind === 'create' && g.day === day && (
           <div
@@ -583,6 +800,20 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
             </div>
           </div>
         )}
+
+        {glueSpots.map((spot) => (
+          <button
+            key={`${spot.before.id}-${spot.after.id}`}
+            type="button"
+            className="cal-glue"
+            style={{ top: ((spot.atMs - dayFrom) / MIN_MS) * PX_PER_MIN }}
+            title={`Между блоками ${dur(spot.gapMs / 1000)} — склеить в одну сессию`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => glueChains(spot.before, spot.after)}
+          >
+            🔗 {dur(spot.gapMs / 1000)}
+          </button>
+        ))}
 
         {isToday && renderNowMarkers()}
         </div>
@@ -666,7 +897,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
                       style={{ '--task-color': task.color } as React.CSSProperties}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDialog({ task, isNew: false });
+                        openDialog(task, false, e);
                       }}
                     >
                       <span className="cal-chip-time">{hhmm(task.start ?? 0)}</span>
@@ -787,10 +1018,10 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
               className="cal-btn cal-btn--icon"
               title="Новая задача в бэклог"
               onClick={() =>
-                setDialog({
-                  task: { ...draftTask(anchor, 9 * 60, 60), status: 'open', start: null },
-                  isNew: true,
-                })
+                openDialog(
+                  { ...draftTask(anchor, 9 * 60, 60), status: 'open', start: null },
+                  true
+                )
               }
             >
               ＋
@@ -805,7 +1036,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
                 style={{ '--task-color': task.color } as React.CSSProperties}
                 draggable
                 onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
-                onClick={() => setDialog({ task, isNew: false })}
+                onClick={(e) => openDialog(task, false, e)}
               >
                 <span className="cal-chip-emoji">{task.emoji}</span>
                 <span className="cal-chip-name">{task.name}</span>
@@ -821,9 +1052,42 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
         <TaskDialog
           task={dialog.task}
           isNew={dialog.isNew}
+          anchor={dialog.anchor}
+          sessionName={
+            dialog.task.sessionId
+              ? (dialog.task.sessionName ?? 'без названия')
+              : null
+          }
+          onLeaveSession={
+            dialog.task.sessionId ? () => leaveSession(dialog.task) : undefined
+          }
+          onPreview={setPreview}
           onSave={saveFromDialog}
           onDelete={dialog.isNew ? undefined : deleteFromDialog}
-          onClose={() => setDialog(null)}
+          onClose={closeDialog}
+        />
+      )}
+
+      {sessionPop && popChain && (
+        <SessionPopover
+          chain={popChain}
+          anchor={sessionPop.anchor}
+          now={now}
+          glueBefore={suggestions.find((s) => s.after.id === popChain.id)?.before ?? null}
+          glueAfter={suggestions.find((s) => s.before.id === popChain.id)?.after ?? null}
+          onRename={(name) => makeSession(popChain, name)}
+          onMakeSession={() => makeSession(popChain)}
+          onDissolve={() => {
+            dissolveSession(popChain);
+            setSessionPop(null);
+          }}
+          onGlue={glueChains}
+          onStartNow={() => startChainNow(popChain)}
+          onOpen={() => {
+            setSessionPop(null);
+            onOpenChain(popChain);
+          }}
+          onClose={() => setSessionPop(null)}
         />
       )}
     </div>

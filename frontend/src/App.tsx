@@ -9,7 +9,15 @@ import HomePage from './HomePage';
 import CalendarPage from './CalendarPage';
 import { useDayStore } from './dayStore';
 import type { Chain } from './schedule';
-import { buildChains, buildGroups, chainOfTask, isDone, taskEndMs } from './schedule';
+import {
+  MIN_MS,
+  buildChains,
+  buildGroups,
+  chainOfTask,
+  isDone,
+  shiftPatches,
+  taskEndMs,
+} from './schedule';
 import { computeCredit } from './credit';
 import { buildChainRun } from './chainRun';
 import { newTaskId, spawnNextOccurrence } from './tasks';
@@ -94,6 +102,15 @@ function App() {
   );
 
   const run = useMemo(() => (openChain ? buildChainRun(openChain) : null), [openChain]);
+
+  // Start an open sequence early: the whole thing slides to the current moment,
+  // keeping the gaps inside it, and the tracker picks it up from there.
+  const startOpenChainNow = useCallback(() => {
+    if (!openChain) return;
+    const deltaMs = Math.round((Date.now() - openChain.startMs) / MIN_MS) * MIN_MS;
+    if (deltaMs !== 0) store.patchTasks(shiftPatches(openChain.tasks, deltaMs));
+    setPreviewSec(null);
+  }, [openChain, store]);
 
   const openSequence = useCallback((chain: Chain) => {
     setOpenTaskId(chain.tasks[0]?.id ?? null);
@@ -387,6 +404,15 @@ function App() {
               ▶ {wallTime(openChain.startMs)}–{wallTime(openChain.endMs)} · {leadLabel}{' '}
               {formatDelta(-credit.lead * 1000)}
             </span>
+            {now < openChain.startMs && (
+              <button
+                className="btn btn-resume"
+                onClick={startOpenChainNow}
+                title="Перенести всю секвенцию на текущее время и начать её сейчас"
+              >
+                ▶ Начать сейчас
+              </button>
+            )}
             {previewSec !== null && (
               <button
                 className="btn btn-resume"

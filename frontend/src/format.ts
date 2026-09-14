@@ -38,3 +38,19 @@ export function formatDelta(ms: number): string {
   }
   return `${sign}${s}.${String(msPart).padStart(2, '0')}`;
 }
+
+// Wall-clock 'HH:MM' of an epoch timestamp — how the calendar labels a moment.
+export function clockTime(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// "1 ч 05 м" / "25 м" / "40 с" — compact, for durations and leads.
+export function compactDur(totalSec: number): string {
+  const s = Math.max(0, Math.round(Math.abs(totalSec)));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h} ч ${String(m).padStart(2, '0')} м` : `${h} ч`;
+  if (m > 0) return `${m} м`;
+  return `${s} с`;
+}

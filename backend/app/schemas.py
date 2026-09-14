@@ -70,6 +70,10 @@ class DayTask(BaseModel):
     repeat: Optional[RepeatConfig] = None
     repeatIndex: int = 0
     repeatOf: Optional[str] = None
+    # Explicit session: tasks glued together by hand share a `sessionId` and its
+    # name, so the sequence survives a reload and can be moved as one block.
+    sessionId: Optional[str] = None
+    sessionName: Optional[str] = None
 
 
 class RunIn(BaseModel):

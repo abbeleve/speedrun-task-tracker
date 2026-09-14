@@ -312,15 +312,77 @@
     color-mix(in srgb, var(--accent-cyan) 70%, transparent),
     color-mix(in srgb, var(--accent-purple) 70%, transparent)
   );
-  cursor: pointer;
+  cursor: grab;
   opacity: 0.75;
   transition: opacity 0.15s, width 0.15s;
+  touch-action: none;
   z-index: 3;
 }
 
 .cal-chain:hover {
   opacity: 1;
   width: 8px;
+}
+
+/* An explicit session — glued by hand, so it is drawn as a solid rail. */
+.cal-chain.session {
+  background: linear-gradient(
+    180deg,
+    var(--accent-cyan),
+    var(--accent-purple)
+  );
+  opacity: 0.9;
+}
+
+.cal-chain.named,
+.cal-chain.named:hover {
+  width: 12px;
+}
+
+.cal-chain.dragging {
+  opacity: 1;
+  cursor: grabbing;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-cyan) 60%, transparent);
+}
+
+/* The session's name runs down its rail, so it never covers a block. */
+.cal-chain-label {
+  position: absolute;
+  inset: 6px 0 auto 0;
+  writing-mode: vertical-rl;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: var(--bg-secondary);
+  font-weight: 700;
+  text-align: center;
+  max-height: calc(100% - 24px);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* "Склеить": offered in a gap small enough that the two sequences were
+   probably meant to be one session. */
+.cal-glue {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 6px;
+  border: 1px dashed var(--accent-cyan);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--accent-cyan);
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.75;
+  z-index: 5;
+}
+
+.cal-glue:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent-cyan) 18%, var(--bg-secondary));
 }
 
 .cal-chain-dot {
@@ -354,6 +416,10 @@
   z-index: 2;
 }
 
+.cal-block.in-session {
+  border-right: 2px solid color-mix(in srgb, var(--accent-cyan) 70%, transparent);
+}
+
 .cal-block.active {
   box-shadow: 0 0 0 2px var(--task-color, #3498db), var(--shadow);
   z-index: 4;
@@ -382,6 +448,15 @@
   cursor: grabbing;
   pointer-events: none;
   z-index: 6;
+}
+
+/* The block the editor is describing: it stays on the grid next to the popover
+   and follows the fields as they are typed. */
+.cal-block.live {
+  pointer-events: none;
+  z-index: 6;
+  border-style: dashed;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--task-color, #3498db) 45%, transparent);
 }
 
 .cal-block.draft {
@@ -909,4 +984,78 @@
     width: auto;
     max-height: 190px;
   }
+}
+
+/* ── popovers (block editor / session editor) ────────────────────── */
+
+/* Anchored next to the block instead of dimming the page: the grid stays
+   readable and the block being described keeps showing through. */
+.cal-modal-backdrop--pop {
+  background: transparent;
+  display: block;
+  padding: 0;
+}
+
+.cal-modal--pop {
+  position: fixed;
+  max-height: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.cal-modal-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+.cal-session-pop {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent-cyan);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 101;
+}
+
+.cal-session-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cal-session-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.cal-session-when {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cal-session-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cal-session-actions .cal-btn {
+  text-align: left;
+}
+
+.cal-session-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
 }

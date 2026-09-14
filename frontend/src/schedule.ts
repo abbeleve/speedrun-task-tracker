@@ -24,6 +24,11 @@ export const DAY_MIN = 24 * 60;
 // blocks that miss each other by seconds.
 export const SEQUENCE_GAP_MS = 60_000;
 
+// Blocks that miss each other by no more than this are close enough that they
+// were probably *meant* to be one session: the calendar offers to glue them
+// together (it never does it on its own — see mergeSuggestions).
+export const MERGE_GAP_MS = 5 * MIN_MS;
+
 export function dayStartMs(day: string): number {
   const [y, m, d] = day.split('-').map(Number);
   return new Date(y, m - 1, d).getTime();
@@ -111,34 +116,132 @@ export interface Chain {
   tasks: Task[]; // every task of the chain, ordered by start
   startMs: number;
   endMs: number;
+  // Set when the chain is an *explicit* session (its blocks were glued by
+  // hand): it then holds together whatever the gaps inside it are, moves as one
+  // block and may carry a name.
+  sessionId: string | null;
+  name: string | null;
+}
+
+// The explicit session a group belongs to, or null for a loose block.
+function groupSessionId(group: TaskGroup): string | null {
+  for (const task of group.tasks) {
+    if (task.sessionId) return task.sessionId;
+  }
+  return null;
 }
 
 // Groups that start (almost) exactly when the previous one ends are one
-// sequence. A sequence of two or more blocks is what the tracker views are
-// opened on.
+// sequence — and so are groups glued into the same explicit session, however
+// far apart they sit. A block that belongs to a session never joins anything
+// else, so two sessions laid back to back stay two sessions.
 export function buildChains(groups: TaskGroup[]): Chain[] {
   const chains: Chain[] = [];
+  // Every chain of a session is found by its id, not by being the previous one:
+  // a loose block dropped into a gap of the session must not split it in two.
+  const bySession = new Map<string, Chain>();
+
+  const extend = (chain: Chain, group: TaskGroup) => {
+    chain.groups.push(group);
+    chain.tasks.push(...group.tasks);
+    chain.endMs = Math.max(chain.endMs, group.endMs);
+    chain.name = chain.name ?? sessionNameOf(group.tasks);
+  };
+
   for (const group of groups) {
-    const last = chains[chains.length - 1];
-    if (last && group.startMs - last.endMs <= SEQUENCE_GAP_MS) {
-      last.groups.push(group);
-      last.tasks.push(...group.tasks);
-      last.endMs = Math.max(last.endMs, group.endMs);
-    } else {
-      chains.push({
-        id: group.tasks[0].id,
-        groups: [group],
-        tasks: [...group.tasks],
-        startMs: group.startMs,
-        endMs: group.endMs,
-      });
+    const sessionId = groupSessionId(group);
+    const openSession = sessionId !== null ? bySession.get(sessionId) : undefined;
+    if (openSession) {
+      extend(openSession, group);
+      continue;
     }
+    const last = chains[chains.length - 1];
+    // Only loose blocks grow by proximity: a block that belongs to a session
+    // never joins anything else, so two sessions laid back to back stay two.
+    if (
+      last &&
+      sessionId === null &&
+      last.sessionId === null &&
+      group.startMs - last.endMs <= SEQUENCE_GAP_MS
+    ) {
+      extend(last, group);
+      continue;
+    }
+    const chain: Chain = {
+      id: group.tasks[0].id,
+      groups: [group],
+      tasks: [...group.tasks],
+      startMs: group.startMs,
+      endMs: group.endMs,
+      sessionId,
+      name: sessionNameOf(group.tasks),
+    };
+    chains.push(chain);
+    if (sessionId !== null) bySession.set(sessionId, chain);
   }
   return chains;
 }
 
+function sessionNameOf(tasks: Task[]): string | null {
+  for (const task of tasks) {
+    if (task.sessionName) return task.sessionName;
+  }
+  return null;
+}
+
 export function chainOfTask(chains: Chain[], taskId: string): Chain | null {
   return chains.find((c) => c.tasks.some((t) => t.id === taskId)) ?? null;
+}
+
+// A chain is worth showing as a session spine once it holds more than one block
+// or has been glued by hand.
+export function isSession(chain: Chain): boolean {
+  return chain.sessionId !== null || chain.groups.length > 1;
+}
+
+// ── Gluing sequences together ──────────────────────────────────────
+
+export interface MergeSuggestion {
+  before: Chain;
+  after: Chain;
+  gapMs: number;
+}
+
+// Pairs of neighbouring sequences that sit close enough to be one session (a
+// gap of no more than MERGE_GAP_MS). The calendar draws a "склеить" handle in
+// that gap; nothing is merged until it is pressed.
+export function mergeSuggestions(chains: Chain[]): MergeSuggestion[] {
+  const out: MergeSuggestion[] = [];
+  for (let i = 1; i < chains.length; i++) {
+    const before = chains[i - 1];
+    const after = chains[i];
+    const gapMs = after.startMs - before.endMs;
+    if (gapMs > 0 && gapMs <= MERGE_GAP_MS) out.push({ before, after, gapMs });
+  }
+  return out;
+}
+
+export function newSessionId(): string {
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ── Moving a whole sequence ────────────────────────────────────────
+
+// Where a task lands when the thing it belongs to is shifted by `deltaMs`. The
+// slot is recomputed against the date it lands on, so a session may be dragged
+// across midnight and keeps its shape.
+export function shiftedSlot(task: Task, deltaMs: number): { day: string; start: number } {
+  const ms = taskStartMs(task) + deltaMs;
+  const day = dayKeyOf(ms);
+  return { day, start: Math.round((ms - dayStartMs(day)) / MIN_MS) };
+}
+
+// The patches that move a set of tasks together, keeping every gap inside them.
+export function shiftPatches(
+  tasks: Task[],
+  deltaMs: number
+): { id: string; patch: { day: string; start: number } }[] {
+  return tasks.map((task) => ({ id: task.id, patch: shiftedSlot(task, deltaMs) }));
 }
 
 // ── Calendar layout (side-by-side columns) ─────────────────────────

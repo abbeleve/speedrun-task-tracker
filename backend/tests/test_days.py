@@ -242,3 +242,44 @@ def test_day_state_keeps_calendar_slots(client, auth_headers):
     # An unplaced backlog task simply has no slot.
     assert tasks[1]['start'] is None
     assert tasks[1]['finishedAt'] is None
+
+
+def test_day_state_keeps_sessions(client, auth_headers):
+    """Blocks glued into a session keep that binding across a round-trip."""
+    body = {
+        'tasks': [
+            {
+                'id': 'a',
+                'name': 'Reading',
+                'plannedTime': 1800,
+                'start': 600,
+                'order': 0,
+                'emoji': '📚',
+                'color': '#3498db',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'in-progress',
+                'sessionId': 's-1',
+                'sessionName': 'Утренний блок',
+            },
+            {
+                'id': 'b',
+                'name': 'Loose block',
+                'plannedTime': 1800,
+                'start': 700,
+                'order': 1,
+                'emoji': '📋',
+                'color': '#2ecc71',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'in-progress',
+            },
+        ]
+    }
+    assert client.put('/api/day/2026-09-10', headers=auth_headers, json=body).status_code == 200
+
+    tasks = client.get('/api/day/2026-09-10', headers=auth_headers).json()['tasks']
+    assert tasks[0]['sessionId'] == 's-1'
+    assert tasks[0]['sessionName'] == 'Утренний блок'
+    assert tasks[1]['sessionId'] is None
+    assert tasks[1]['sessionName'] is None

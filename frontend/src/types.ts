@@ -40,6 +40,12 @@ export interface Task {
   repeat?: RepeatConfig | null; // recurrence rule; absent/null = one-off task
   repeatIndex?: number; // 0-based step in the recurrence series
   repeatOf?: string; // id of the occurrence this one was spawned from
+  // Explicit session ("сессия"): blocks glued together by hand. They are one
+  // sequence whatever the gaps between them are, they move as one block and
+  // they carry a name. Null/absent = the task only belongs to whatever implicit
+  // sequence its neighbours happen to form.
+  sessionId?: string | null;
+  sessionName?: string | null;
 }
 
 // Minutes from midnight a freshly planned task defaults to, when nothing

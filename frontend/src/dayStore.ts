@@ -28,6 +28,8 @@ export interface DayStore {
   upsertTask: (task: Task) => void;
   // Patch a task by id; a patch that changes `day` moves it between days.
   patchTask: (id: string, patch: Partial<Task>) => void;
+  // Patch several tasks in one write — how a whole session is moved.
+  patchTasks: (patches: { id: string; patch: Partial<Task> }[]) => void;
   removeTask: (id: string) => void;
   flush: () => void;
 }
@@ -151,36 +153,46 @@ export function useDayStore(): DayStore {
     [commit]
   );
 
-  const patchTask = useCallback(
-    (id: string, patch: Partial<Task>) => {
+  // One pass over the plan applying a patch per task id, so a whole session
+  // moves in a single commit instead of a burst of them.
+  const patchTasks = useCallback(
+    (patches: { id: string; patch: Partial<Task> }[]) => {
+      if (patches.length === 0) return;
+      const byId = new Map(patches.map((p) => [p.id, p.patch]));
       const prev = daysRef.current;
       const next: DaysByDate = {};
       const touched: string[] = [];
-      let moved: Task | null = null;
+      const moved: Task[] = [];
       for (const [date, list] of Object.entries(prev)) {
         let changed = false;
         const updated: Task[] = [];
         for (const task of list) {
-          if (task.id !== id) {
+          const patch = byId.get(task.id);
+          if (!patch) {
             updated.push(task);
             continue;
           }
           changed = true;
           const patched = { ...task, ...patch };
           // A patch that moves the task to another date re-buckets it.
-          if (patched.day !== date) moved = patched;
+          if (patched.day !== date) moved.push(patched);
           else updated.push(patched);
         }
         next[date] = changed ? updated : list;
         if (changed) touched.push(date);
       }
-      if (moved) {
-        next[moved.day] = [...(next[moved.day] ?? []), moved];
-        touched.push(moved.day);
+      for (const task of moved) {
+        next[task.day] = [...(next[task.day] ?? []), task];
+        touched.push(task.day);
       }
       commit(next, touched);
     },
     [commit]
+  );
+
+  const patchTask = useCallback(
+    (id: string, patch: Partial<Task>) => patchTasks([{ id, patch }]),
+    [patchTasks]
   );
 
   const removeTask = useCallback(
@@ -200,5 +212,17 @@ export function useDayStore(): DayStore {
 
   const tasks = useMemo(() => Object.values(days).flat(), [days]);
 
-  return { days, tasks, ready, error, reload, mutateDay, upsertTask, patchTask, removeTask, flush };
+  return {
+    days,
+    tasks,
+    ready,
+    error,
+    reload,
+    mutateDay,
+    upsertTask,
+    patchTask,
+    patchTasks,
+    removeTask,
+    flush,
+  };
 }

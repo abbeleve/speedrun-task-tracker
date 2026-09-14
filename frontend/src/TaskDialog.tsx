@@ -1,20 +1,57 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RepeatMode, Task, TaskType } from './types';
 import { ALL_EMOJIS, EMOJI_DATA, TASK_COLORS, resolveTaskEmoji } from './types';
 import { INCREASING_SERIES } from './tasks';
 import { DAY_MIN } from './schedule';
 
+export interface DialogAnchor {
+  x: number; // client coordinates of the block the popover belongs to
+  y: number;
+}
+
 interface TaskDialogProps {
   task: Task;
   isNew: boolean;
+  // Where the editor was opened from. Anchored → it floats next to the block on
+  // the grid (Google-Calendar style) and the grid keeps showing the block
+  // itself; absent → it is a plain centred modal.
+  anchor?: DialogAnchor | null;
+  // Name of the session the task is glued into, when it is in one.
+  sessionName?: string | null;
+  onLeaveSession?: () => void;
+  // Fires on every edit so the calendar can redraw the block being described.
+  onPreview?: (task: Task) => void;
   onSave: (task: Task) => void;
   onDelete?: () => void;
   onClose: () => void;
 }
 
+const POP_WIDTH = 380;
+const POP_MARGIN = 12;
+
+// Keep the popover inside the window: it opens to the right of the block when
+// there is room, and flips to its left when there is not.
+function popoverStyle(anchor: DialogAnchor, height: number): React.CSSProperties {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const left =
+    anchor.x + POP_MARGIN + POP_WIDTH <= vw - POP_MARGIN
+      ? anchor.x + POP_MARGIN
+      : Math.max(POP_MARGIN, anchor.x - POP_MARGIN - POP_WIDTH);
+  const top = Math.max(POP_MARGIN, Math.min(anchor.y - 40, vh - height - POP_MARGIN));
+  return { position: 'fixed', left, top, width: POP_WIDTH, maxHeight: vh - 2 * POP_MARGIN };
+}
+
 function toTimeInput(startMin: number | null): string {
   const m = Math.max(0, Math.min(DAY_MIN - 1, Math.round(startMin ?? 0)));
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+// Minutes typed in the editor → planned seconds. Anything unreadable falls
+// back to a minute, which is also the floor.
+function minutesToSec(minutes: string): number {
+  const parsed = parseFloat(minutes.replace(',', '.'));
+  return Math.max(60, Math.round((isFinite(parsed) ? parsed : 1) * 60));
 }
 
 function fromTimeInput(value: string, fallback: number): number {
@@ -26,7 +63,17 @@ function fromTimeInput(value: string, fallback: number): number {
 // Editor for one calendar block: when it runs, how long, what it looks like and
 // whether it repeats. Used for both creating (a draft dropped on the grid) and
 // editing an existing block.
-function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps) {
+function TaskDialog({
+  task,
+  isNew,
+  anchor,
+  sessionName,
+  onLeaveSession,
+  onPreview,
+  onSave,
+  onDelete,
+  onClose,
+}: TaskDialogProps) {
   const [name, setName] = useState(task.name);
   const [day, setDay] = useState(task.day);
   const [time, setTime] = useState(toTimeInput(task.start));
@@ -56,6 +103,31 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
     return () => window.removeEventListener('keydown', onKey);
   }, [emojiOpen, onClose]);
 
+  // Live draft: the grid redraws the block from the fields as they are typed.
+  const previewRef = useRef(onPreview);
+  previewRef.current = onPreview;
+  const taskRef = useRef(task);
+  taskRef.current = task;
+  useEffect(() => {
+    previewRef.current?.({
+      ...taskRef.current,
+      name: name.trim(),
+      day,
+      start: fromTimeInput(time, taskRef.current.start ?? 0),
+      plannedTime: minutesToSec(minutes),
+      emoji,
+      color,
+      type,
+    });
+  }, [name, day, time, minutes, emoji, color, type]);
+
+  const formRef = useRef<HTMLFormElement>(null);
+  const [popHeight, setPopHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    setPopHeight(formRef.current?.offsetHeight ?? 0);
+  }, [anchor, emojiOpen, repeatOn]);
+
   const emojis = useMemo(() => {
     const q = emojiSearch.trim().toLowerCase();
     if (!q) return ALL_EMOJIS;
@@ -68,7 +140,7 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
     e.preventDefault();
     // A block dragged out on the grid may be saved without typing a name yet.
     const trimmed = name.trim() || 'Новая задача';
-    const plannedTime = Math.max(60, Math.round(parseFloat(minutes) * 60) || 60);
+    const plannedTime = minutesToSec(minutes);
     onSave({
       ...task,
       name: trimmed,
@@ -87,12 +159,21 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
   const base = Math.max(1, parseFloat(repeatBase) || 1);
 
   return (
-    <div className="cal-modal-backdrop" onMouseDown={onClose}>
+    <div
+      className={`cal-modal-backdrop${anchor ? ' cal-modal-backdrop--pop' : ''}`}
+      onMouseDown={onClose}
+    >
       <form
-        className="cal-modal"
+        ref={formRef}
+        className={`cal-modal${anchor ? ' cal-modal--pop' : ''}`}
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={submit}
-        style={{ '--task-color': color } as React.CSSProperties}
+        style={
+          {
+            '--task-color': color,
+            ...(anchor ? popoverStyle(anchor, popHeight) : null),
+          } as React.CSSProperties
+        }
       >
         <header className="cal-modal-head">
           <button
@@ -156,7 +237,10 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
             <input
               type="number"
               min={1}
-              step={5}
+              // `step` here is only the arrow increment: a fixed step would make
+              // the browser reject every duration that is not min + k·step
+              // ("введите допустимое значение") — 60 among them.
+              step="any"
               value={minutes}
               onChange={(e) => setMinutes(e.target.value)}
             />
@@ -232,6 +316,7 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
                 <input
                   type="number"
                   min={1}
+                  step="any"
                   value={repeatBase}
                   onChange={(e) => setRepeatBase(e.target.value)}
                 />
@@ -244,6 +329,17 @@ function TaskDialog({ task, isNew, onSave, onDelete, onClose }: TaskDialogProps)
             </>
           )}
         </div>
+
+        {sessionName !== undefined && sessionName !== null && (
+          <div className="cal-modal-session">
+            <span>🔗 В сессии «{sessionName}»</span>
+            {onLeaveSession && (
+              <button type="button" className="cal-btn cal-btn--icon" onClick={onLeaveSession}>
+                ✂ Выйти
+              </button>
+            )}
+          </div>
+        )}
 
         <footer className="cal-modal-foot">
           {onDelete && (
