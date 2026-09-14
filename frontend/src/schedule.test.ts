@@ -4,9 +4,11 @@ import {
   buildChains,
   buildGroups,
   dayStartMs,
+  fillSessionGaps,
   layoutTasks,
   mergeSuggestions,
   migrateDayTasks,
+  sessionGapRestTasks,
   shiftPatches,
   shiftedSlot,
   taskEndMs,
@@ -189,6 +191,57 @@ describe('mergeSuggestions', () => {
         ])
       )
     ).toHaveLength(0);
+  });
+});
+
+describe('session rest gaps', () => {
+  it('fills a session hole bigger than five minutes with a rest block', () => {
+    const filled = fillSessionGaps([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's1' }),
+    ]);
+    const rest = filled.find((t) => t.type === 'rest');
+    expect(rest).toBeDefined();
+    expect(rest!.start).toBe(hm(10)); // 09:00 end → gap 10:00–10:30
+    expect(rest!.plannedTime).toBe(30 * 60);
+    expect(rest!.day).toBe(DAY);
+    expect(rest!.sessionId).toBe('s1');
+    expect(rest!.sessionName).toBe('Утро');
+  });
+
+  it('leaves a gap of five minutes or less alone', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+      task({ start: hm(10, 5), plannedTime: 3600, sessionId: 's1' }),
+    ];
+    expect(sessionGapRestTasks(tasks)).toEqual([]);
+  });
+
+  it('ignores gaps between loose blocks that are not a session', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600 }),
+      task({ start: hm(11), plannedTime: 3600 }),
+    ];
+    expect(sessionGapRestTasks(tasks)).toEqual([]);
+    expect(fillSessionGaps(tasks)).toHaveLength(2);
+  });
+
+  it('is idempotent once the hole is already filled', () => {
+    const filled = fillSessionGaps([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+      task({ start: hm(11), plannedTime: 3600, sessionId: 's1' }),
+    ]);
+    expect(filled.filter((t) => t.type === 'rest')).toHaveLength(1);
+    expect(sessionGapRestTasks(filled)).toEqual([]);
+  });
+
+  it('does not rest over a block another session put in the gap', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's2' }),
+      task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }),
+    ];
+    expect(sessionGapRestTasks(tasks)).toEqual([]);
   });
 });
 

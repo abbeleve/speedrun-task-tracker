@@ -11,8 +11,9 @@
 //   layout  — side-by-side columns for overlapping blocks, like Google Calendar.
 
 import type { Task } from './types';
-import { DEFAULT_START_MIN } from './types';
+import { DEFAULT_COLOR, DEFAULT_START_MIN } from './types';
 import { dateKey } from './history';
+import { newTaskId } from './tasks';
 
 export const MIN_MS = 60_000;
 export const HOUR_MS = 3_600_000;
@@ -223,6 +224,76 @@ export function mergeSuggestions(chains: Chain[]): MergeSuggestion[] {
 
 export function newSessionId(): string {
   return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ── Rest gaps inside a session ────────────────────────────────────
+
+// A session holds its blocks together whatever the gaps inside it are, so two
+// blocks of the same session can end up standing hours apart. A playable day
+// should not leave an empty hole in the middle of a session though: once the
+// gap between two consecutive blocks grows beyond MERGE_GAP_MS the plan fills
+// it automatically with a rest task, so the run reads task → отдых → task
+// instead of a stretch that has nothing to close.
+export function sessionGapRestTasks(tasks: Task[]): Task[] {
+  const scheduled = tasks.filter(isScheduled);
+  const bySession = new Map<string, TaskGroup[]>();
+  for (const group of buildGroups(scheduled)) {
+    const sid = groupSessionId(group);
+    if (sid === null) continue;
+    const list = bySession.get(sid);
+    if (list) list.push(group);
+    else bySession.set(sid, [group]);
+  }
+  const rests: Task[] = [];
+  for (const [sid, groups] of bySession) {
+    const sorted = [...groups].sort((a, b) => a.startMs - b.startMs);
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const next = sorted[i];
+      const gapMs = next.startMs - prev.endMs;
+      // A gap of a few minutes is "идущие подряд"; only a real hole needs rest.
+      if (gapMs <= MERGE_GAP_MS) continue;
+      const fromMs = prev.endMs;
+      const toMs = next.startMs;
+      // Never double-book: a rest fills only a gap nothing else already occupies.
+      if (scheduled.some((t) => taskStartMs(t) < toMs && taskEndMs(t) > fromMs)) continue;
+      const sessionName = sessionNameOf(prev.tasks) ?? sessionNameOf(next.tasks);
+      rests.push(restTaskFor(fromMs, toMs, sid, sessionName));
+    }
+  }
+  return rests;
+}
+
+// The tasks of a day with every hole inside a session filled with a rest block.
+export function fillSessionGaps(tasks: Task[]): Task[] {
+  const extra = sessionGapRestTasks(tasks);
+  return extra.length === 0 ? tasks : [...tasks, ...extra];
+}
+
+function restTaskFor(
+  fromMs: number,
+  toMs: number,
+  sessionId: string,
+  sessionName: string | null
+): Task {
+  const day = dayKeyOf(fromMs);
+  const base = dayStartMs(day);
+  return {
+    id: newTaskId(),
+    name: 'Отдых',
+    plannedTime: Math.round((toMs - fromMs) / 1000),
+    completedAt: null,
+    start: Math.round((fromMs - base) / MIN_MS),
+    finishedAt: null,
+    order: 0,
+    emoji: '☕',
+    color: DEFAULT_COLOR,
+    type: 'rest',
+    day,
+    status: 'in-progress',
+    sessionId,
+    sessionName,
+  };
 }
 
 // ── Moving a whole sequence ────────────────────────────────────────
