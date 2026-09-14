@@ -18,6 +18,7 @@ interface HabitGridProps {
 }
 
 const STRIP_DAYS = 7;
+const DIAL_DOTS = 14; // the dial shows today's progress as a row of dots
 
 interface StripDay {
   date: string;
@@ -31,7 +32,7 @@ function weekdayName(day: string): string {
 }
 
 // The home-page habit tracker. Every habit gets its own dial-card: a
-// semicircular rainbow of dots (one per day, last 7) framing today's
+// semicircular row of dots in the habit's own colour framing today's
 // progress as an oversized number. Each card is independent — history, target
 // and unit all belong to one habit, nothing is aggregated across habits.
 function HabitGrid({ store, tasks, date }: HabitGridProps) {
@@ -167,10 +168,11 @@ interface HabitCardProps {
 }
 
 // One habit as a self-contained dial-card:
-//   • emoji + name as the title (clickable → edit)
-//   • the dial — TODAY only — with today's value as the big number
-//   • a "history" toggle in the top-right corner that expands a 7-day strip
-//   • "yesterday" footer
+//   • name (large, centred) — clicking it opens the edit dialog
+//   • a tiny arrow-toggle in the top-right corner that opens/closes history
+//   • the dial — TODAY only — in the habit's own colour with the big number
+//     and "value / target unit" in the gap the arc leaves
+//   • a 7-day strip of "did I hit it" cells, only when the toggle is open
 //   • − / + steppers at the bottom
 // The dial is the visual identity of the card; the number is the practical
 // read-out ("how much have I done today"). Past days live behind the toggle.
@@ -190,7 +192,6 @@ function HabitCard({
   onAdjust,
 }: HabitCardProps) {
   const today = habitTotal(habit, date, tasks, entries);
-  const yesterday = habitTotal(habit, shiftDayKey(date, -1), tasks, entries);
   const complete = isHabitComplete(today, habit.target);
   const unit = habit.unit || defaultUnit(habit.format);
   const stepLabel = habit.format === 'time' ? '5 мин' : '1';
@@ -222,39 +223,37 @@ function HabitCard({
       style={{ '--habit-color': habit.color } as React.CSSProperties}
       aria-label={`${habit.name}: ${formatNumber(today)} из ${formatNumber(habit.target)}${unit ? ' ' + unit : ''} сегодня`}
     >
-      <div className="habit-card-head">
-        <button
-          type="button"
-          className="habit-card-name"
-          onClick={onEdit}
-          title="Изменить привычку"
-        >
-          <span className="habit-emoji" aria-hidden>
-            {habit.emoji}
-          </span>
-          <span className="habit-card-name-text">{habit.name}</span>
-        </button>
-        <button
-          type="button"
-          className="habit-card-history-toggle"
-          onClick={onToggleHistory}
-          aria-expanded={isHistoryOpen}
-          aria-controls={`history-${habit.id}`}
-          title={isHistoryOpen ? 'Скрыть историю' : 'Показать историю за 7 дней'}
-        >
-          <span aria-hidden>{isHistoryOpen ? '✕' : '📅'}</span>
-          <span className="habit-card-history-toggle-label">
-            {isHistoryOpen ? 'Скрыть' : 'История'}
-          </span>
-        </button>
-      </div>
+      <button
+        type="button"
+        className="habit-card-history-toggle"
+        onClick={onToggleHistory}
+        aria-expanded={isHistoryOpen}
+        aria-controls={`history-${habit.id}`}
+        title={isHistoryOpen ? 'Скрыть историю' : 'Показать историю за 7 дней'}
+        aria-label={isHistoryOpen ? 'Скрыть историю' : 'Показать историю'}
+      >
+        <span aria-hidden>{isHistoryOpen ? '✕' : '↗'}</span>
+      </button>
+
+      <button
+        type="button"
+        className="habit-card-name"
+        onClick={onEdit}
+        title="Изменить привычку"
+      >
+        <span className="habit-emoji" aria-hidden>
+          {habit.emoji}
+        </span>
+        <span className="habit-card-name-text">{habit.name}</span>
+      </button>
 
       <div className="habit-card-dial">
         <HabitDial
+          color={habit.color}
           progress={progress}
-          total={7}
-          size={280}
-          dot={26}
+          total={DIAL_DOTS}
+          size={260}
+          dot={14}
           className="habit-card-dial-svg"
           ariaLabel={`Сегодня: ${pct}% от цели`}
         />
@@ -273,10 +272,6 @@ function HabitCard({
           className="habit-card-history"
           aria-label={`История за ${dayStatuses.length} дней: ${doneCount} выполнено`}
         >
-          <div className="habit-card-history-title">
-            Последние {dayStatuses.length} дней ·{' '}
-            <strong>{doneCount} из {dayStatuses.length}</strong>
-          </div>
           <ul className="habit-card-history-grid">
             {dayStatuses.map((d) => {
               const isToday = d.date === date;
@@ -289,9 +284,6 @@ function HabitCard({
                 >
                   <span className="habit-card-history-weekday">{d.weekdayShort}</span>
                   <span className="habit-card-history-day">{dayNum}</span>
-                  <span className="habit-card-history-mark" aria-hidden>
-                    {d.ok ? '✓' : '·'}
-                  </span>
                 </li>
               );
             })}
@@ -299,34 +291,26 @@ function HabitCard({
         </div>
       )}
 
-      <div className="habit-card-foot">
-        <div className="habit-card-yesterday">
-          <span className="habit-card-yesterday-label">Yesterday</span>
-          <span className="habit-card-yesterday-value">
-            {formatNumber(yesterday)} / {formatNumber(habit.target)}
-          </span>
-        </div>
-        <div className="habit-card-actions">
-          <button
-            type="button"
-            className="habit-btn"
-            onClick={() => onAdjust(-1)}
-            title={habit.format === 'time' ? `−${stepLabel}` : '−1'}
-            aria-label={habit.format === 'time' ? `Минус ${stepLabel}` : 'Минус 1'}
-          >
-            −
-          </button>
-          <span className="habit-step">{stepLabel}</span>
-          <button
-            type="button"
-            className="habit-btn"
-            onClick={() => onAdjust(1)}
-            title={habit.format === 'time' ? `+${stepLabel}` : '+1'}
-            aria-label={habit.format === 'time' ? `Плюс ${stepLabel}` : 'Плюс 1'}
-          >
-            +
-          </button>
-        </div>
+      <div className="habit-card-actions">
+        <button
+          type="button"
+          className="habit-btn"
+          onClick={() => onAdjust(-1)}
+          title={habit.format === 'time' ? `−${stepLabel}` : '−1'}
+          aria-label={habit.format === 'time' ? `Минус ${stepLabel}` : 'Минус 1'}
+        >
+          −
+        </button>
+        <span className="habit-step">{stepLabel}</span>
+        <button
+          type="button"
+          className="habit-btn"
+          onClick={() => onAdjust(1)}
+          title={habit.format === 'time' ? `+${stepLabel}` : '+1'}
+          aria-label={habit.format === 'time' ? `Плюс ${stepLabel}` : 'Плюс 1'}
+        >
+          +
+        </button>
       </div>
     </li>
   );

@@ -3838,29 +3838,16 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px 20px 16px;
+  gap: 6px;
+  padding: 14px 18px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 16px;
   cursor: grab;
   overflow: hidden;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.2s ease,
     transform 0.2s ease,
     opacity 0.15s ease;
-}
-
-/* The colour lives in a corner accent — a stripe reads as "calendar
-   block", a corner reads as "this thing has its own identity". */
-.habit-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: var(--habit-color, var(--accent-blue));
-  opacity: 0.85;
 }
 
 .habit-card.dragging {
@@ -3869,45 +3856,37 @@
 }
 
 .habit-card:hover {
-  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 55%, var(--border));
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 35%, var(--border));
 }
 
-/* The completed card gets a soft glow in the habit's own colour, not a
-   generic green — the colour belongs to the habit. */
 .habit-card.done {
-  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 60%, var(--border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--habit-color, var(--accent-blue)) 35%, transparent),
-    0 4px 18px color-mix(in srgb, var(--habit-color, var(--accent-blue)) 18%, transparent);
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 45%, var(--border));
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 6%, var(--bg-surface));
 }
 
-/* ── Card head ───────────────────────────────────────────────────
-   Emoji + name on the left (the whole thing is the edit button),
-   a "X/7" streak on the right so you can see the rhythm at a glance. */
-
-.habit-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
+/* ── Name (centred, large) ───────────────────────────────────────
+   The whole name is the edit button — emoji + text centred as a group.
+   The history-toggle sits absolutely in the top-right corner so it
+   doesn't compete with the name's visual weight. */
 
 .habit-card-name {
   appearance: none;
   background: transparent;
   border: none;
   padding: 0;
-  text-align: left;
   font-family: inherit;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: var(--text-primary);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  min-width: 0;
   cursor: pointer;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
+  margin: 0 auto;
+  max-width: calc(100% - 36px); /* leave room for the corner toggle */
+  min-width: 0;
 }
 
 .habit-card-name-text {
@@ -3922,45 +3901,50 @@
 }
 
 .habit-emoji {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 18%, transparent);
   border-radius: 9px;
 }
 
-/* Toggle in the top-right corner that opens/closes the 7-day history.
-   Visually quiet by default; takes on the habit's colour when active so the
-   card doesn't lose its identity in the open state. */
+/* ── History toggle — tiny arrow in the top-right corner ──────────
+   Icon-only so it doesn't compete with the name. Opens the 7-day strip;
+   takes on the habit's colour when active. */
+
 .habit-card-history-toggle {
   appearance: none;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px 5px 7px;
-  border-radius: 999px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
-  font-variant-numeric: tabular-nums;
   transition:
     color 0.15s ease,
     border-color 0.15s ease,
-    background 0.15s ease;
+    background 0.15s ease,
+    transform 0.15s ease;
 }
 
 .habit-card-history-toggle:hover {
   color: var(--habit-color, var(--accent-blue));
   border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 55%, var(--border));
+  transform: scale(1.05);
 }
 
 .habit-card.history-open .habit-card-history-toggle {
@@ -3969,30 +3953,26 @@
   background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 12%, var(--bg-secondary));
 }
 
-.habit-card-history-toggle-label {
-  text-transform: uppercase;
-  font-size: 0.66rem;
-}
-
 /* ── Dial stage ──────────────────────────────────────────────────
    The dial is centred inside its box; the number sits in the gap the
-   arc deliberately leaves at the bottom. Both stack the same way on
-   every card, so a 7-day rhythm and a 0-day empty card read the same. */
+   arc deliberately leaves at the bottom. All dots share the card's
+   --habit-color, so the dial reads as "this habit, lit up" rather
+   than a rainbow. */
 
 .habit-card-dial {
   position: relative;
   display: grid;
   place-items: center;
-  margin: 4px auto 0;
+  margin: 2px auto 0;
   width: 100%;
-  max-width: 320px;
+  max-width: 300px;
 }
 
 .habit-card-dial-svg {
   display: block;
   width: 100%;
   height: auto;
-  max-width: 280px;
+  max-width: 260px;
 }
 
 .habit-card-dial-center {
@@ -4013,7 +3993,7 @@
 }
 
 .habit-card-dial-number {
-  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  font-size: clamp(2.2rem, 4.8vw, 3.2rem);
   font-weight: 800;
   line-height: 0.95;
   letter-spacing: -0.04em;
@@ -4041,36 +4021,19 @@
 
 /* ── History panel (collapsed by default) ───────────────────────
    When the toggle is open, the 7-day strip unfolds under the dial:
-   one cell per day, weekday + date + tick/miss, today highlighted.
-   The animation is a tiny slide-down so the panel feels like a
-   natural reveal, not a pop-in. */
+   one cell per day with weekday + date; today highlighted. The
+   animation is a tiny slide-down so the panel feels like a natural
+   reveal, not a pop-in. */
 
 .habit-card-history {
-  margin-top: 4px;
-  padding: 10px 4px 4px;
-  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding: 8px 4px 4px;
   animation: habit-history-reveal 0.18s ease-out;
 }
 
 @keyframes habit-history-reveal {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-.habit-card-history-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-  padding: 0 6px;
-}
-
-.habit-card-history-title strong {
-  color: var(--text-primary);
-  font-weight: 700;
-  letter-spacing: 0.06em;
 }
 
 .habit-card-history-grid {
@@ -4096,7 +4059,7 @@
 }
 
 .habit-card-history-cell.ok {
-  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 18%, var(--bg-secondary));
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 22%, var(--bg-secondary));
   border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 45%, var(--border));
 }
 
@@ -4124,62 +4087,16 @@
   color: var(--habit-color, var(--accent-blue));
 }
 
-.habit-card-history-mark {
-  font-size: 0.78rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text-dim);
-}
-
-.habit-card-history-cell.ok .habit-card-history-mark {
-  color: var(--habit-color, var(--accent-blue));
-}
-
-/* ── Card foot ───────────────────────────────────────────────────
-   "Yesterday" line on the left (small context), the +/- steppers on
-   the right. The stepper uses the habit's own colour, not the global
-   accent — the colour belongs to the habit. */
-
-.habit-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.habit-card-yesterday {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-variant-numeric: tabular-nums;
-  min-width: 0;
-}
-
-.habit-card-yesterday-label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-
-.habit-card-yesterday-value {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ── Steppers ───────────────────────────────────────────────────
+   Centred under the dial, the colour belongs to the habit. */
 
 .habit-card-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex: none;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 4px;
 }
 
 .habit-btn {
@@ -4225,22 +4142,22 @@
     grid-template-columns: 1fr;
   }
   .habit-card-dial-svg {
-    max-width: 240px;
+    max-width: 220px;
+  }
+  .habit-card-name {
+    font-size: 1.3rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .habit-card,
-  .habit-btn {
+  .habit-btn,
+  .habit-card-history-toggle {
     transition: none;
   }
 }
-
-
 
 .hab-modal {
   width: 460px;
   max-width: calc(100vw - 32px);
 }
-
-
