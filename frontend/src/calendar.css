@@ -404,9 +404,7 @@
   left: 0;
   right: 0;
   border-radius: 5px;
-  border: 1px solid color-mix(in srgb, var(--task-color, #3498db) 60%, transparent);
-  border-left: 3px solid var(--task-color, #3498db);
-  background: color-mix(in srgb, var(--task-color, #3498db) 22%, var(--bg-secondary));
+  background: var(--task-color, #3498db);
   color: var(--text-primary);
   padding: 2px 5px;
   overflow: hidden;
@@ -455,12 +453,12 @@
 .cal-block.live {
   pointer-events: none;
   z-index: 6;
-  border-style: dashed;
+  border: 1px dashed var(--task-color, #3498db);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--task-color, #3498db) 45%, transparent);
 }
 
 .cal-block.draft {
-  border-style: dashed;
+  border: 1px dashed var(--accent-blue);
   background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-secondary));
   pointer-events: none;
 }
@@ -468,13 +466,13 @@
 .cal-block.cont-top {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  border-top-style: dashed;
+  border-top: 1px dashed var(--border);
 }
 
 .cal-block.cont-bottom {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  border-bottom-style: dashed;
+  border-bottom: 1px dashed var(--border);
 }
 
 .cal-block-head {
@@ -692,9 +690,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: color-mix(in srgb, var(--task-color, #3498db) 20%, transparent);
+  background: var(--task-color, #3498db);
   border: none;
-  border-left: 3px solid var(--task-color, #3498db);
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 0.68rem;
@@ -775,8 +772,8 @@
   gap: 5px;
   padding: 5px 6px;
   border-radius: 4px;
-  border-left: 3px solid var(--task-color, #3498db);
-  background: color-mix(in srgb, var(--task-color, #3498db) 16%, var(--bg-surface));
+  background: var(--task-color, #3498db);
+  color: var(--text-primary);
   font-size: 0.76rem;
   cursor: grab;
 }
