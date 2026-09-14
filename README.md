@@ -1,6 +1,6 @@
 # ⏱ SpeedRun Task Tracker
 
-A LiveSplit-inspired task tracking app with a vertical thermometer timeline, an infinite zooming spiral route, and a snake-hunting grid. Plan your tasks, time your run, and see exactly how far ahead (or behind) you are — in style.
+A LiveSplit-inspired task tracking app: plan tasks on a kanban board, drop them onto a day's timeline, and run the day against the clock on a vertical thermometer or an infinite zooming spiral route — seeing exactly how far ahead (or behind) schedule you are.
 
 ![Stack](https://img.shields.io/badge/React-19-61dafb?logo=react) ![Stack](https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript) ![Stack](https://img.shields.io/badge/Vite-8-646cff?logo=vite) ![Stack](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
 
@@ -8,24 +8,26 @@ A LiveSplit-inspired task tracking app with a vertical thermometer timeline, an 
 
 The app is split into two parts:
 
-- `frontend/` — React + Vite SPA (all the visualisation: timeline, spiral, snake).
-- `backend/` — FastAPI + SQLite REST API (users, daily sprints, sleep log, templates).
+- `frontend/` — React + Vite SPA (dashboard, kanban board and all the run visualisation: timeline, spiral, list).
+- `backend/` — FastAPI + SQLite REST API (users, tasks, daily sprints, sleep log, templates).
 
 All user data lives in the backend's SQLite file, scoped per account (registration
 & login are included). Deployment instructions for a bare server are in
 [`DEPLOY.md`](./DEPLOY.md).
 
-## Features (test)
+## Features
 
+- **Dashboard** — one home screen with the kanban board, the timeline of saved sessions and the statistics page; the run itself lives on its own tab
+- **Kanban board** — plan tasks ahead across days in three columns (Open → In-Progress → Done); dragging an Open task planned for the active day onto In-Progress drops it straight onto that day's timeline, and a task created on the timeline starts as In-Progress
+- **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); completing it schedules the next occurrence back into Open
 - **Thermometer timeline** — vertical fill bar that grows as time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
-- **Snake grid** — tasks are scattered across a square grid like meals; a snake crawls from meal to meal and eats each one exactly when its planned time arrives
 - **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the run has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
-- **Dark & light themes** — both the spiral and the snake view adapt to the active theme
+- **Dark & light themes** — every view, including the spiral, adapts to the active theme
 - **Space background** — layered depth: far starfield and constellation clusters stay fixed, near stars endlessly stream outward from the spiral's center
 - **Task splits** — each task has a planned time, actual segment time, and live delta (ahead/behind)
-- **Time scrubbing** — click & drag on the timeline, spiral or snake route to manually set the timer
-- **Per-user accounts** — register / log in; daily sprints, sleep log and templates are stored server-side per user
+- **Time scrubbing** — click & drag on the timeline or the spiral route to manually set the timer
+- **Per-user accounts** — register / log in; tasks, daily sprints, sleep log and templates are stored server-side per user
 - **Early completion credit** — completing a future task early boosts the current task's delta
 - **Task customization** — emoji and color per task; reflected in the thermometer dots
 - **Templates** — save, load, export & import task lists as JSON (kept on the backend)
@@ -73,19 +75,22 @@ images there — they are picked up automatically and are not committed to git.
 ## How to Use
 
 1. **Register / log in** — data is tied to your account.
-2. **Add tasks** — pick an emoji & color, enter a name and planned minutes, click **+ Add**
-3. *(Optional)* — drag tasks to reorder, or save/load templates
-4. **Start Run** — the timer begins; the playhead moves down the thermometer, the star sweeps along the spiral, or the snake crawls the grid (toggle between Timeline, Spiral and Snake views)
-5. **Complete splits** — click **✓** (or the planet / meal); see your delta (green = ahead, red = behind)
-6. **Scrub time** — click & drag the timeline, spiral or snake route to manually adjust the timer
-7. **Pause / Resume / Reset** as needed; finished sprints are saved to your daily history and shown in the statistics page (heatmap + sleep tracker)
+2. **Plan tasks** — on the kanban board pick an emoji & color, enter a name, planned minutes and the day the task is for (optionally a repeat rule); it lands in **Open**
+3. **Fill the day** — drag today's Open tasks into **In-Progress** to put them on the timeline, or add a task straight on the tracker tab
+4. *(Optional)* — drag tasks to reorder, or save/load templates
+5. **Start Run** — the timer begins; the playhead moves down the thermometer or the star sweeps along the spiral (toggle between Timeline, Spiral and List views)
+6. **Complete splits** — click **✓** (or the planet); see your delta (green = ahead, red = behind) — the task moves to **Done**
+7. **Scrub time** — click & drag the timeline or the spiral route to manually adjust the timer
+8. **Pause / Resume / Reset** as needed; finished sprints are saved to your daily history and shown in the statistics page (heatmap + sleep tracker)
 
 ## CI / CD
 
-GitHub Actions runs on push / PR (see `.github/workflows/ci.yml`):
+GitHub Actions runs on push / PR (see `.github/workflows/deploy.yml`):
 
 - **backend** — installs deps, runs `pytest`
-- **frontend** — `npm ci`, lint, Vitest tests, production build
+- **frontend** — `npm ci`, lint, Vitest tests, production build (uploaded as an artefact)
+- **deploy** — only on push to `master`: pulls the backend on the server, ships the
+  pre-built `dist/` over SCP, restarts the systemd service and checks `/api/health`
 
 ## Tech Stack
 

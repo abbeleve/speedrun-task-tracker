@@ -209,20 +209,11 @@ def delete_history(
 
 
 # ── Runs (individual completed sessions) ────────────────────────────
-# Temporary debug logging to trace whether runs actually reach the server.
-def _debug_log(line: str) -> None:
-    try:
-        with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'api_debug.log'), 'a') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass
-
 
 @app.get('/api/runs')
 def get_runs(
     user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
 ):
-    _debug_log(f'GET /api/runs by user_id={user["id"]}')
     rows = conn.execute(
         """
         SELECT id, date, started_at, ended_at, work_sec, rest_sec, planned_sec, tasks
@@ -251,10 +242,6 @@ def add_run(
     user=Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_db),
 ):
-    _debug_log(
-        f'POST /api/runs user_id={user["id"]} date={body.date} '
-        f'work={body.workSec} rest={body.restSec} dur={(body.endedAt-body.startedAt)/1000:.0f}s'
-    )
     conn.execute(
         """
         INSERT INTO run_sessions
