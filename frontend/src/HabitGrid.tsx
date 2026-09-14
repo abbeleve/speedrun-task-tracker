@@ -203,7 +203,14 @@ function HabitCard({
   const progress = habit.target > 0
     ? Math.max(0, Math.min(1, today / habit.target))
     : 0;
-  const pct = Math.round(progress * 100);
+  const pct = habit.target > 0 ? Math.round(Math.max(0, today / habit.target) * 100) : 0;
+
+  const yesterday = shiftDayKey(date, -1);
+  const yesterdayTotal = habitTotal(habit, yesterday, tasks, entries);
+  const yesterdayProgress = habit.target > 0
+    ? Math.max(0, Math.min(1, yesterdayTotal / habit.target))
+    : 0;
+  const yesterdayPct = habit.target > 0 ? Math.round(Math.max(0, yesterdayTotal / habit.target) * 100) : 0;
 
   return (
     <li
@@ -248,6 +255,17 @@ function HabitCard({
       </button>
 
       <div className="habit-card-dial">
+        <div className="habit-card-dial-label" aria-hidden>
+          Сегодня
+        </div>
+        <div className="habit-card-dial-number" aria-hidden>
+          {pct}
+          <span className="habit-card-dial-percent-sign">%</span>
+        </div>
+        <div className="habit-card-dial-unit" aria-hidden>
+          {formatNumber(today)} / {formatNumber(habit.target)}
+          {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
+        </div>
         <HabitDial
           color={habit.color}
           progress={progress}
@@ -257,12 +275,8 @@ function HabitCard({
           className="habit-card-dial-svg"
           ariaLabel={`Сегодня: ${pct}% от цели`}
         />
-        <div className="habit-card-dial-center" aria-hidden>
-          <div className="habit-card-dial-number">{pct}</div>
-          <div className="habit-card-dial-unit">
-            {formatNumber(today)} / {formatNumber(habit.target)}
-            {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
-          </div>
+        <div className="habit-card-dial-compare" aria-hidden>
+          <span className="habit-card-dial-compare-value">{yesterdayPct}%</span> вчера
         </div>
       </div>
 

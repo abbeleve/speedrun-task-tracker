@@ -3907,8 +3907,6 @@
   height: 34px;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 18%, transparent);
-  border-radius: 9px;
 }
 
 /* ── History toggle — tiny arrow in the top-right corner ──────────
@@ -3960,40 +3958,27 @@
    than a rainbow. */
 
 .habit-card-dial {
-  position: relative;
-  display: grid;
-  place-items: center;
-  margin: 2px auto 0;
-  width: 100%;
-  max-width: 300px;
-}
-
-.habit-card-dial-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-width: 260px;
-}
-
-.habit-card-dial-center {
-  position: absolute;
-  /* The number sits in the lower-third of the dial, in the gap left
-     by the arc. Centred horizontally, anchored to the bottom of the
-     stage so the number doesn't overlap the dots. */
-  left: 0;
-  right: 0;
-  bottom: 12%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  pointer-events: none;
+  margin: 2px auto 0;
+  width: 100%;
+  max-width: 300px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
+.habit-card-dial-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
 .habit-card-dial-number {
-  font-size: clamp(2.2rem, 4.8vw, 3.2rem);
+  font-size: clamp(1.9rem, 4.2vw, 2.8rem);
   font-weight: 800;
   line-height: 0.95;
   letter-spacing: -0.04em;
@@ -4004,12 +3989,19 @@
   color: var(--habit-color, var(--accent-blue));
 }
 
+.habit-card-dial-percent-sign {
+  font-size: 0.55em;
+  font-weight: 700;
+  margin-left: 1px;
+}
+
 .habit-card-dial-unit {
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
   text-transform: uppercase;
+  margin-bottom: 2px;
 }
 
 .habit-card-dial-unit-label {
@@ -4017,6 +4009,33 @@
   letter-spacing: 0;
   font-weight: 500;
   color: var(--text-dim);
+}
+
+.habit-card-dial-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 260px;
+}
+
+.habit-dial-dot {
+  transition:
+    r 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.35s ease;
+}
+
+/* ── Yesterday comparison — a quiet pill under the arc ─────────── */
+
+.habit-card-dial-compare {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.habit-card-dial-compare-value {
+  color: var(--habit-color, var(--accent-blue));
+  font-weight: 700;
 }
 
 /* ── History panel (collapsed by default) ───────────────────────
@@ -4152,7 +4171,8 @@
 @media (prefers-reduced-motion: reduce) {
   .habit-card,
   .habit-btn,
-  .habit-card-history-toggle {
+  .habit-card-history-toggle,
+  .habit-dial-dot {
     transition: none;
   }
 }
