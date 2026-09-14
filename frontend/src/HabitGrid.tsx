@@ -3,7 +3,6 @@ import type { Habit, HabitEntry, Task } from './types';
 import type { HabitStore } from './habitStore';
 import { shiftDayKey } from './history';
 import {
-  dayCompletion,
   defaultUnit,
   habitTotal,
   isHabitComplete,
@@ -21,28 +20,35 @@ interface HabitGridProps {
 const STRIP_DAYS = 7;
 
 interface StripDay {
-  date: string; // 'YYYY-MM-DD'
+  date: string;
+  weekdayShort: string;
 }
 
-// The home-page habit tracker. The hero dial is the visual centre; the
-// individual habits sit underneath as compact rows — each row carries a tiny
-// 7-dot version of the dial, so the page speaks one visual language top to
-// bottom instead of mixing a circle and a list of cards.
+function weekdayName(day: string): string {
+  const [, m, d] = day.split('-').map(Number);
+  const dt = new Date(2000, m - 1, d);
+  return dt.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', '');
+}
+
+// The home-page habit tracker. Every habit gets its own dial-card: a
+// semicircular rainbow of dots (one per day, last 7) framing today's
+// progress as an oversized number. Each card is independent — history, target
+// and unit all belong to one habit, nothing is aggregated across habits.
 function HabitGrid({ store, tasks, date }: HabitGridProps) {
   const [dialog, setDialog] = useState<Habit | 'new' | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  // Which habit's history is currently expanded. Only one at a time — opening
+  // a second one closes the first, so the page doesn't grow without bound.
+  const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   const habits = store.habits;
   const entries = store.entries;
-
-  const today = todayCompletion(habits, tasks, entries, date);
-  const yesterday = yesterdayCompletion(habits, tasks, entries, date);
-  const dialTotal = Math.max(habits.length, 7);
 
   const stripDays = useMemo<StripDay[]>(
     () =>
       Array.from({ length: STRIP_DAYS }, (_, i) => ({
         date: shiftDayKey(date, -(STRIP_DAYS - 1 - i)),
+        weekdayShort: weekdayName(shiftDayKey(date, -(STRIP_DAYS - 1 - i))),
       })),
     [date]
   );
@@ -65,8 +71,6 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
     store.setManual(habit.id, date, Math.max(0, cur + delta * step));
   };
 
-  const trend = trendArrow(today.rate, yesterday.rate);
-
   return (
     <section className="home-panel home-panel--habits">
       <header className="habits-head">
@@ -75,7 +79,13 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
           <em>
             {habits.length === 0
               ? 'нет ни одной'
-              : `${today.done} из ${today.total} сегодня`}
+              : `${habits.length} активн${
+                  habits.length === 1
+                    ? 'ая'
+                    : habits.length < 5
+                      ? 'ые'
+                      : 'ых'
+                }`}
           </em>
         </h2>
         <button
@@ -87,23 +97,15 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
         </button>
       </header>
 
-      <DialHero
-        today={today}
-        yesterday={yesterday}
-        dialTotal={dialTotal}
-        trend={trend}
-        hasHabits={habits.length > 0}
-      />
-
       {habits.length === 0 ? (
         <p className="habits-empty">
           Пока нет привычек. Добавь первую — например
           <strong> «10 отжиманий»</strong> или <strong>«5 часов занятий»</strong>.
         </p>
       ) : (
-        <ul className="habits-list">
+        <ul className="habits-grid">
           {habits.map((habit) => (
-            <HabitRow
+            <HabitCard
               key={habit.id}
               habit={habit}
               tasks={tasks}
@@ -111,6 +113,10 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
               date={date}
               days={stripDays}
               isDragging={dragId === habit.id}
+              isHistoryOpen={historyOpenId === habit.id}
+              onToggleHistory={() =>
+                setHistoryOpenId((cur) => (cur === habit.id ? null : habit.id))
+              }
               onEdit={() => setDialog(habit)}
               onDragStart={() => setDragId(habit.id)}
               onDragEnd={() => setDragId(null)}
@@ -144,75 +150,15 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
   );
 }
 
-interface DialHeroProps {
-  today: { done: number; total: number; rate: number };
-  yesterday: { done: number; total: number; rate: number };
-  dialTotal: number;
-  trend: 'up' | 'down' | 'flat';
-  hasHabits: boolean;
-}
-
-// The hero: a semicircular rainbow dial framing a single oversized number.
-// When there are no habits, the dial is a quiet dim arc and the number is a
-// dash — the design has an empty state, it doesn't pretend progress exists.
-function DialHero({ today, yesterday, dialTotal, trend, hasHabits }: DialHeroProps) {
-  const pct = Math.round(today.rate * 100);
-  const yPct = Math.round(yesterday.rate * 100);
-  return (
-    <div
-      className={`habit-hero${hasHabits ? '' : ' is-empty'}`}
-      aria-label={
-        hasHabits
-          ? `Сегодня выполнено ${today.done} из ${today.total} привычек`
-          : 'Привычек пока нет'
-      }
-    >
-      <HabitDial
-        progress={today.rate}
-        total={dialTotal}
-        size={360}
-        dot={18}
-        className="habit-hero-dial"
-        ariaLabel={`Прогресс сегодня: ${pct}%`}
-      />
-      <div className="habit-hero-copy">
-        <span className="habit-hero-eyebrow">Goals reached today</span>
-        <div className="habit-hero-number">
-          <span className="habit-hero-number-value">
-            {hasHabits ? pct : '—'}
-          </span>
-          <span className="habit-hero-number-unit">
-            {hasHabits ? 'percent' : ''}
-          </span>
-        </div>
-        <span className="habit-hero-yesterday">
-          {yesterday.total === 0 ? (
-            'вчера — без данных'
-          ) : (
-            <>
-              <span className="habit-hero-yesterday-value">{yPct}%</span>
-              <span className="habit-hero-yesterday-label">yesterday</span>
-              <span
-                className={`habit-hero-trend habit-hero-trend--${trend}`}
-                aria-hidden
-              >
-                {trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→'}
-              </span>
-            </>
-          )}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-interface HabitRowProps {
+interface HabitCardProps {
   habit: Habit;
   tasks: Task[];
   entries: HabitEntry[];
   date: string;
   days: StripDay[];
   isDragging: boolean;
+  isHistoryOpen: boolean;
+  onToggleHistory: () => void;
   onEdit: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -220,32 +166,47 @@ interface HabitRowProps {
   onAdjust: (delta: number) => void;
 }
 
-// One habit as a horizontal row: identity on the left, micro-dial (the past 7
-// days) in the middle, the +/- steppers on the right. The micro-dial reuses
-// the hero's rainbow so the row reads as "a smaller copy of the big thing".
-function HabitRow({
+// One habit as a self-contained dial-card:
+//   • emoji + name as the title (clickable → edit)
+//   • the dial — TODAY only — with today's value as the big number
+//   • a "history" toggle in the top-right corner that expands a 7-day strip
+//   • "yesterday" footer
+//   • − / + steppers at the bottom
+// The dial is the visual identity of the card; the number is the practical
+// read-out ("how much have I done today"). Past days live behind the toggle.
+function HabitCard({
   habit,
   tasks,
   entries,
   date,
   days,
   isDragging,
+  isHistoryOpen,
+  onToggleHistory,
   onEdit,
   onDragStart,
   onDragEnd,
   onDrop,
   onAdjust,
-}: HabitRowProps) {
-  const total = habitTotal(habit, date, tasks, entries);
-  const complete = isHabitComplete(total, habit.target);
+}: HabitCardProps) {
+  const today = habitTotal(habit, date, tasks, entries);
+  const yesterday = habitTotal(habit, shiftDayKey(date, -1), tasks, entries);
+  const complete = isHabitComplete(today, habit.target);
   const unit = habit.unit || defaultUnit(habit.format);
   const stepLabel = habit.format === 'time' ? '5 мин' : '1';
-  const dayStatuses = days.map((d) => isHabitDoneOn(habit, d.date, tasks, entries));
-  const todayIdx = days.findIndex((d) => d.date === date);
+  const dayStatuses = days.map((d) => ({
+    ...d,
+    ok: isHabitDoneOn(habit, d.date, tasks, entries),
+  }));
+  const doneCount = dayStatuses.filter((d) => d.ok).length;
+  const progress = habit.target > 0
+    ? Math.max(0, Math.min(1, today / habit.target))
+    : 0;
+  const pct = Math.round(progress * 100);
 
   return (
     <li
-      className={`habit-row${complete ? ' done' : ''}${isDragging ? ' dragging' : ''}`}
+      className={`habit-card${complete ? ' done' : ''}${isDragging ? ' dragging' : ''}${isHistoryOpen ? ' history-open' : ''}`}
       draggable
       onDragStart={(e) => {
         onDragStart();
@@ -259,106 +220,119 @@ function HabitRow({
       }}
       onDragEnd={onDragEnd}
       style={{ '--habit-color': habit.color } as React.CSSProperties}
+      aria-label={`${habit.name}: ${formatNumber(today)} из ${formatNumber(habit.target)}${unit ? ' ' + unit : ''} сегодня`}
     >
-      <div className="habit-row-identity">
-        <span className="habit-emoji" aria-hidden>
-          {habit.emoji}
-        </span>
-        <div className="habit-row-text">
-          <button
-            type="button"
-            className="habit-row-name"
-            onClick={onEdit}
-            title="Изменить привычку"
-          >
-            {habit.name}
-          </button>
-          <span className="habit-row-target">
-            <span className={complete ? 'habit-row-target-value ok' : 'habit-row-target-value'}>
-              {formatNumber(total)}
-              {unit && <span className="habit-row-target-unit">{unit}</span>}
-            </span>
-            <span className="habit-row-target-sep">/</span>
-            <span className="habit-row-target-goal">{formatNumber(habit.target)}</span>
+      <div className="habit-card-head">
+        <button
+          type="button"
+          className="habit-card-name"
+          onClick={onEdit}
+          title="Изменить привычку"
+        >
+          <span className="habit-emoji" aria-hidden>
+            {habit.emoji}
           </span>
+          <span className="habit-card-name-text">{habit.name}</span>
+        </button>
+        <button
+          type="button"
+          className="habit-card-history-toggle"
+          onClick={onToggleHistory}
+          aria-expanded={isHistoryOpen}
+          aria-controls={`history-${habit.id}`}
+          title={isHistoryOpen ? 'Скрыть историю' : 'Показать историю за 7 дней'}
+        >
+          <span aria-hidden>{isHistoryOpen ? '✕' : '📅'}</span>
+          <span className="habit-card-history-toggle-label">
+            {isHistoryOpen ? 'Скрыть' : 'История'}
+          </span>
+        </button>
+      </div>
+
+      <div className="habit-card-dial">
+        <HabitDial
+          progress={progress}
+          total={7}
+          size={280}
+          dot={26}
+          className="habit-card-dial-svg"
+          ariaLabel={`Сегодня: ${pct}% от цели`}
+        />
+        <div className="habit-card-dial-center" aria-hidden>
+          <div className="habit-card-dial-number">{pct}</div>
+          <div className="habit-card-dial-unit">
+            {formatNumber(today)} / {formatNumber(habit.target)}
+            {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
+          </div>
         </div>
       </div>
 
-      <div
-        className="habit-row-strip"
-        aria-label="История за 7 дней"
-        title={`История за 7 дней: ${dayStatuses.filter(Boolean).length}/${dayStatuses.length} выполнено`}
-      >
-        <HabitDial
-          statuses={dayStatuses}
-          size={dayStatuses.length === 7 ? 112 : 140}
-          dot={dayStatuses.length === 7 ? 10 : 12}
-          className="habit-row-dial"
-          ariaLabel={`История: ${dayStatuses.filter(Boolean).length} из ${dayStatuses.length} выполнено`}
-        />
-        <ul className="habit-row-strip-marks" aria-hidden>
-          {dayStatuses.map((ok, i) => (
-            <li
-              key={i}
-              className={`habit-row-mark${ok ? ' ok' : ''}${i === todayIdx ? ' today' : ''}`}
-            />
-          ))}
-        </ul>
-      </div>
+      {isHistoryOpen && (
+        <div
+          id={`history-${habit.id}`}
+          className="habit-card-history"
+          aria-label={`История за ${dayStatuses.length} дней: ${doneCount} выполнено`}
+        >
+          <div className="habit-card-history-title">
+            Последние {dayStatuses.length} дней ·{' '}
+            <strong>{doneCount} из {dayStatuses.length}</strong>
+          </div>
+          <ul className="habit-card-history-grid">
+            {dayStatuses.map((d) => {
+              const isToday = d.date === date;
+              const dayNum = d.date.slice(-2);
+              return (
+                <li
+                  key={d.date}
+                  className={`habit-card-history-cell${d.ok ? ' ok' : ''}${isToday ? ' today' : ''}`}
+                  title={`${d.date}: ${d.ok ? 'выполнено' : 'не выполнено'}`}
+                >
+                  <span className="habit-card-history-weekday">{d.weekdayShort}</span>
+                  <span className="habit-card-history-day">{dayNum}</span>
+                  <span className="habit-card-history-mark" aria-hidden>
+                    {d.ok ? '✓' : '·'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
-      <div className="habit-row-actions">
-        <button
-          type="button"
-          className="habit-btn"
-          onClick={() => onAdjust(-1)}
-          title={habit.format === 'time' ? `−${stepLabel}` : '−1'}
-          aria-label={habit.format === 'time' ? `Минус ${stepLabel}` : 'Минус 1'}
-        >
-          −
-        </button>
-        <span className="habit-step">{stepLabel}</span>
-        <button
-          type="button"
-          className="habit-btn"
-          onClick={() => onAdjust(1)}
-          title={habit.format === 'time' ? `+${stepLabel}` : '+1'}
-          aria-label={habit.format === 'time' ? `Плюс ${stepLabel}` : 'Плюс 1'}
-        >
-          +
-        </button>
+      <div className="habit-card-foot">
+        <div className="habit-card-yesterday">
+          <span className="habit-card-yesterday-label">Yesterday</span>
+          <span className="habit-card-yesterday-value">
+            {formatNumber(yesterday)} / {formatNumber(habit.target)}
+          </span>
+        </div>
+        <div className="habit-card-actions">
+          <button
+            type="button"
+            className="habit-btn"
+            onClick={() => onAdjust(-1)}
+            title={habit.format === 'time' ? `−${stepLabel}` : '−1'}
+            aria-label={habit.format === 'time' ? `Минус ${stepLabel}` : 'Минус 1'}
+          >
+            −
+          </button>
+          <span className="habit-step">{stepLabel}</span>
+          <button
+            type="button"
+            className="habit-btn"
+            onClick={() => onAdjust(1)}
+            title={habit.format === 'time' ? `+${stepLabel}` : '+1'}
+            aria-label={habit.format === 'time' ? `Плюс ${stepLabel}` : 'Плюс 1'}
+          >
+            +
+          </button>
+        </div>
       </div>
     </li>
   );
 }
 
 // Helpers ─────────────────────────────────────────────────────────────
-
-function todayCompletion(
-  habits: Habit[],
-  tasks: Task[],
-  entries: HabitEntry[],
-  date: string
-) {
-  return dayCompletion(habits, date, tasks, entries);
-}
-
-function yesterdayCompletion(
-  habits: Habit[],
-  tasks: Task[],
-  entries: HabitEntry[],
-  date: string
-) {
-  return dayCompletion(habits, shiftDayKey(date, -1), tasks, entries);
-}
-
-function trendArrow(
-  today: number,
-  yesterday: number
-): 'up' | 'down' | 'flat' {
-  const diff = today - yesterday;
-  if (Math.abs(diff) < 0.01) return 'flat';
-  return diff > 0 ? 'up' : 'down';
-}
 
 function manualFor(entries: HabitEntry[], habit: Habit, date: string): number {
   for (const e of entries) {
