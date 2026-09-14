@@ -17,8 +17,20 @@ export interface RepeatConfig {
 export interface Task {
   id: string;
   name: string;
-  plannedTime: number; // seconds
-  completedAt: number | null; // session elapsed seconds when completed, null = not done
+  plannedTime: number; // seconds — the planned duration of the block
+  // Session-relative completion, in seconds from the start of the sequence the
+  // task belongs to. Derived from `finishedAt` when a chain is opened in the
+  // thermometer/spiral/list views, which are still driven by an elapsed clock.
+  completedAt: number | null;
+  // Wall-clock schedule (calendar model). `start` is minutes from midnight of
+  // `day`; a task with start === null is unplaced and lives in the backlog.
+  // `start + plannedTime` may run past midnight — the block then spills into
+  // the next day's column.
+  start: number | null;
+  // Epoch ms when ✓ was actually pressed; null = not done. This is the single
+  // source of truth for "when did it really finish" and drives the overtake
+  // (обгон) engine in ./credit.ts.
+  finishedAt: number | null;
   order: number;
   emoji: string; // single emoji icon
   color: string; // hex color
@@ -30,21 +42,28 @@ export interface Task {
   repeatOf?: string; // id of the occurrence this one was spawned from
 }
 
+// Minutes from midnight a freshly planned task defaults to, when nothing
+// better is known (used by the legacy-data migration and the quick-add form).
+export const DEFAULT_START_MIN = 9 * 60;
+
 export interface Template {
   id: string;
   name: string;
   tasks: { name: string; plannedTime: number; emoji: string; color: string; type: TaskType }[];
 }
 
-// Full, resumable state of a single day: the planned/completed tasks plus where
-// the timeline was left, so a past day can be reopened and continued.
+// A day's plan. Since the calendar rework the day is just a bag of tasks with
+// wall-clock slots: there is no session clock any more, so `elapsedMs`,
+// `timeCredit` and `sessionState` are legacy fields kept only so old rows keep
+// deserialising (and so the migration can read `startedAt` to place tasks that
+// were saved before slots existed).
 export interface DayState {
   date: string; // 'YYYY-MM-DD' (local)
   tasks: Task[];
-  elapsedMs: number; // timeline progress, in ms
-  timeCredit: number; // banked seconds from early completions
-  sessionState: SessionState;
-  startedAt: number | null; // wall-clock anchor for ruler labels
+  elapsedMs?: number;
+  timeCredit?: number;
+  sessionState?: SessionState;
+  startedAt?: number | null;
 }
 
 export type SessionState = 'idle' | 'running' | 'paused' | 'finished';

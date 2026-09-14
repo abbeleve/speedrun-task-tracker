@@ -7,6 +7,8 @@ const task = (completedAt: number | null): Task => ({
   name: 'Task',
   plannedTime: 600,
   completedAt,
+  start: null,
+  finishedAt: null,
   order: 0,
   emoji: '🛠️',
   color: '#3498db',

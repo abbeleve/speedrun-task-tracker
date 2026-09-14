@@ -13,7 +13,14 @@ import {
   spawnNextOccurrence,
 } from './tasks';
 
-const base = { plannedTime: 60, emoji: '📋', color: '#3498db', type: 'task' as const };
+const base = {
+  plannedTime: 60,
+  emoji: '📋',
+  color: '#3498db',
+  type: 'task' as const,
+  start: null,
+  finishedAt: null,
+};
 
 // Legacy rows (stored before kanban existed) omit `day`/`status`.
 const legacy = (partial: Partial<Task>): Task =>
@@ -104,7 +111,16 @@ describe('recurrence', () => {
     expect(nextRepeatIntervalDays({ mode: 'increasing', baseDays: 2 }, 1)).toBe(6);
   });
 
-  it('schedules the next occurrence in the backlog on day+interval', () => {
+  it('keeps a calendar slot on the next occurrence', () => {
+    const placed = recurring({ mode: 'fixed', baseDays: 2 }, { start: 9 * 60 });
+    const child = spawnNextOccurrence(placed, makeId, '2026-09-10');
+    expect(child!.day).toBe('2026-09-12');
+    expect(child!.start).toBe(9 * 60);
+    expect(child!.status).toBe('in-progress');
+    expect(child!.finishedAt).toBeNull();
+  });
+
+  it('schedules an unplaced recurrence back into the backlog on day+interval', () => {
     const child = spawnNextOccurrence(recurring({ mode: 'fixed', baseDays: 7 }), makeId, '2026-09-10');
     expect(child).not.toBeNull();
     expect(child!.day).toBe('2026-09-17');

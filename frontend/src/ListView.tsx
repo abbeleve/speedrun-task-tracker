@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { Task, SessionState } from './types';
-import { formatTime, formatDelta } from './useTimer';
+import { formatTime, formatDelta } from './format';
 import { progressPct } from './listProgress';
 import { taskDeltaMs } from './listDelta';
 import { useMotivationImages } from './motivation';

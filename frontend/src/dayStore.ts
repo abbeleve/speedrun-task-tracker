@@ -1,0 +1,204 @@
+// The whole plan, in one place.
+//
+// The calendar shows weeks and months at a time, so a single open day is not
+// enough any more: every day the account has is held here as date → tasks, and
+// writes go back to the backend per day, debounced. Legacy days are migrated to
+// wall-clock slots as they are read and saved back in the new shape.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Task } from './types';
+import * as api from './api';
+import { normalizeTasks } from './tasks';
+import { migrateDayTasks } from './schedule';
+import { dayStatsFromTasks } from './dayStats';
+
+export type DaysByDate = Record<string, Task[]>;
+
+const SAVE_DEBOUNCE_MS = 600;
+
+export interface DayStore {
+  days: DaysByDate;
+  tasks: Task[]; // every task of every day, flattened
+  ready: boolean;
+  error: string | null;
+  reload: () => Promise<void>;
+  // Replace the tasks of one day.
+  mutateDay: (date: string, updater: (tasks: Task[]) => Task[]) => void;
+  // Add or replace a task, moving it between days when `task.day` changed.
+  upsertTask: (task: Task) => void;
+  // Patch a task by id; a patch that changes `day` moves it between days.
+  patchTask: (id: string, patch: Partial<Task>) => void;
+  removeTask: (id: string) => void;
+  flush: () => void;
+}
+
+export function useDayStore(): DayStore {
+  const [days, setDays] = useState<DaysByDate>({});
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const daysRef = useRef<DaysByDate>(days);
+  daysRef.current = days;
+  const dirtyRef = useRef<Set<string>>(new Set());
+  const saveTimerRef = useRef<number | null>(null);
+
+  const flush = useCallback(() => {
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const dates = [...dirtyRef.current];
+    dirtyRef.current.clear();
+    for (const date of dates) {
+      const tasks = daysRef.current[date] ?? [];
+      void api
+        .saveDay(date, { date, tasks })
+        .catch((e) => console.error('Failed to save day', date, e));
+      // The day's totals are derived from the plan, so they are refreshed
+      // alongside it — that is what feeds the heatmap and the statistics page.
+      void api
+        .saveDayStats(date, dayStatsFromTasks(date, tasks))
+        .catch((e) => console.error('Failed to save day stats', date, e));
+    }
+  }, []);
+
+  const markDirty = useCallback(
+    (dates: string[]) => {
+      for (const date of dates) dirtyRef.current.add(date);
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = window.setTimeout(flush, SAVE_DEBOUNCE_MS);
+    },
+    [flush]
+  );
+
+  const reload = useCallback(async () => {
+    try {
+      const raw = await api.loadDays();
+      const next: DaysByDate = {};
+      const migrated: string[] = [];
+      for (const [date, state] of Object.entries(raw)) {
+        const normalized = normalizeTasks(state.tasks, date);
+        const withSlots = migrateDayTasks(normalized, date, state.startedAt);
+        next[date] = withSlots;
+        if (withSlots !== normalized) migrated.push(date);
+      }
+      setDays(next);
+      setReady(true);
+      setError(null);
+      // Persist the migration once, so the legacy shape is read only one time.
+      if (migrated.length > 0) {
+        daysRef.current = next;
+        markDirty(migrated);
+      }
+    } catch (e) {
+      console.error('Failed to load days', e);
+      setError('Не удалось загрузить план');
+      setReady(true);
+    }
+  }, [markDirty]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // Nothing in flight should be lost when the tab goes away.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [flush]);
+
+  // Every mutation works off `daysRef`, which is kept in step with the state,
+  // and writes the new map straight back: several edits in the same tick then
+  // compose instead of racing, and the dirty bookkeeping stays out of React's
+  // state updater (which may run twice).
+  const commit = useCallback(
+    (next: DaysByDate, touched: string[]) => {
+      daysRef.current = next;
+      setDays(next);
+      markDirty(touched);
+    },
+    [markDirty]
+  );
+
+  const mutateDay = useCallback(
+    (date: string, updater: (tasks: Task[]) => Task[]) => {
+      const prev = daysRef.current;
+      commit({ ...prev, [date]: updater(prev[date] ?? []) }, [date]);
+    },
+    [commit]
+  );
+
+  const upsertTask = useCallback(
+    (task: Task) => {
+      const prev = daysRef.current;
+      const next: DaysByDate = {};
+      const touched = new Set<string>([task.day]);
+      for (const [date, list] of Object.entries(prev)) {
+        const without = list.filter((t) => t.id !== task.id);
+        if (without.length !== list.length && date !== task.day) touched.add(date);
+        next[date] = without;
+      }
+      next[task.day] = [...(next[task.day] ?? []), task];
+      commit(next, [...touched]);
+    },
+    [commit]
+  );
+
+  const patchTask = useCallback(
+    (id: string, patch: Partial<Task>) => {
+      const prev = daysRef.current;
+      const next: DaysByDate = {};
+      const touched: string[] = [];
+      let moved: Task | null = null;
+      for (const [date, list] of Object.entries(prev)) {
+        let changed = false;
+        const updated: Task[] = [];
+        for (const task of list) {
+          if (task.id !== id) {
+            updated.push(task);
+            continue;
+          }
+          changed = true;
+          const patched = { ...task, ...patch };
+          // A patch that moves the task to another date re-buckets it.
+          if (patched.day !== date) moved = patched;
+          else updated.push(patched);
+        }
+        next[date] = changed ? updated : list;
+        if (changed) touched.push(date);
+      }
+      if (moved) {
+        next[moved.day] = [...(next[moved.day] ?? []), moved];
+        touched.push(moved.day);
+      }
+      commit(next, touched);
+    },
+    [commit]
+  );
+
+  const removeTask = useCallback(
+    (id: string) => {
+      const prev = daysRef.current;
+      const next: DaysByDate = {};
+      const touched: string[] = [];
+      for (const [date, list] of Object.entries(prev)) {
+        const without = list.filter((t) => t.id !== id);
+        next[date] = without;
+        if (without.length !== list.length) touched.push(date);
+      }
+      commit(next, touched);
+    },
+    [commit]
+  );
+
+  const tasks = useMemo(() => Object.values(days).flat(), [days]);
+
+  return { days, tasks, ready, error, reload, mutateDay, upsertTask, patchTask, removeTask, flush };
+}

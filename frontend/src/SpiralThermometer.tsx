@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { Task, SessionState } from './types';
 import { TASK_COLORS } from './types';
-import { formatDelta } from './useTimer';
+import { formatDelta } from './format';
 
 // Spiral geometry — starts at the outer edge, winds inward to the center.
 // One hour of time = one full turn (2π): the star sweeps exactly one turn

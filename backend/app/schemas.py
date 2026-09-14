@@ -47,7 +47,14 @@ class DayTask(BaseModel):
     id: str
     name: str
     plannedTime: float
+    # Session-relative completion in seconds — kept for run snapshots saved
+    # before the calendar rework (and for the sequence views, which still run
+    # on an elapsed clock).
     completedAt: Optional[float] = None
+    # Wall-clock slot: minutes from midnight of `day`. None = unplaced backlog.
+    start: Optional[float] = None
+    # Epoch ms the task was actually finished at; drives the overtake engine.
+    finishedAt: Optional[float] = None
     order: int = 0
     emoji: str = ''
     color: str = ''
@@ -81,6 +88,8 @@ class RunIn(BaseModel):
 
 class DayStateIn(BaseModel):
     tasks: List[DayTask] = []
+    # Legacy session fields: written by clients from before the calendar
+    # rework, still accepted so their days round-trip unchanged.
     elapsedMs: float = 0
     timeCredit: float = 0
     sessionState: str = 'idle'

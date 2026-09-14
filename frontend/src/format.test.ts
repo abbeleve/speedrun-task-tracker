@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDelta, formatTime } from './useTimer';
+import { formatDelta, formatTime } from './format';
 
 describe('formatTime', () => {
   it('formats sub-hour durations as MM:SS.CC', () => {

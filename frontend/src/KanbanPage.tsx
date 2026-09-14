@@ -3,12 +3,13 @@ import type { DayState, RepeatMode, Task, TaskStatus, TaskType } from './types';
 import {
   DEFAULT_COLOR,
   DEFAULT_EMOJI,
+  DEFAULT_START_MIN,
   TASK_COLORS,
   TASK_EMOJIS,
   resolveTaskEmoji,
 } from './types';
 import * as api from './api';
-import { formatTime } from './useTimer';
+import { formatTime } from './format';
 import {
   describeRepeat,
   INCREASING_SERIES,
@@ -22,14 +23,9 @@ import {
 import { todayKey } from './history';
 
 interface KanbanPageProps {
-  // Day the tracker is currently on (normally today). Tasks of this day are
-  // held live by the parent so board edits and the timeline stay in sync.
+  // Day a new task is planned for by default (normally today).
   activeDay: string;
-  // Live tasks of the active day, or null while a historical run is open (then
-  // the board edits that day through the backend instead).
-  liveActiveTasks: Task[] | null;
-  mutateActive: (updater: (tasks: Task[]) => Task[]) => void;
-  onOpenTimeline: () => void;
+  onOpenCalendar: () => void;
 }
 
 const COLUMNS: TaskStatus[] = ['open', 'in-progress', 'done'];
@@ -46,9 +42,8 @@ function fmtDay(key: string): string {
 // (placed on a timeline) and Done. Dragging an Open task that is planned for
 // the active day onto In-Progress drops it on the timeline there; a task created
 // straight on the timeline already starts as In-Progress.
-function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }: KanbanPageProps) {
+function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
   const today = todayKey();
-  const hasLive = liveActiveTasks !== null;
 
   const [days, setDays] = useState<Record<string, DayState> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,34 +89,25 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
   const reload = useCallback(async () => {
     try {
       const all = await api.loadDays();
-      // When the parent holds the active day live, drop its (possibly stale)
-      // persisted copy so the merged list never shows it twice.
-      if (hasLive) delete all[activeDay];
       setDays(all);
       setError(null);
     } catch (e) {
       console.error('Failed to load days', e);
       setError('Не удалось загрузить задачи');
     }
-  }, [activeDay, hasLive]);
+  }, []);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  const activeTasks = useMemo(
-    () => liveActiveTasks ?? normalizeTasks(days?.[activeDay]?.tasks, activeDay),
-    [liveActiveTasks, days, activeDay]
-  );
-
   const allTasks = useMemo(() => {
-    const list: Task[] = [...activeTasks];
+    const list: Task[] = [];
     for (const [day, state] of Object.entries(days ?? {})) {
-      if (day === activeDay) continue;
       list.push(...normalizeTasks(state.tasks, day));
     }
     return list;
-  }, [activeTasks, days, activeDay]);
+  }, [days]);
 
   const dayOptions = useMemo(() => {
     const set = new Set<string>();
@@ -143,15 +129,22 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
     return g;
   }, [visible]);
 
-  // A task can only change columns while it belongs to the active day — the
-  // day whose timeline is on screen. Tasks of other days stay read-only.
-  const canMove = useCallback((task: Task) => task.day === activeDay, [activeDay]);
-  const isLive = useCallback(
-    (task: Task) => hasLive && task.day === activeDay,
-    [hasLive, activeDay]
+  // Where a task dropped into In-Progress lands on that day's calendar: right
+  // after everything already planned there, or at the default start when the
+  // day is still empty.
+  const nextFreeStart = useCallback(
+    (day: string): number => {
+      const planned = allTasks.filter((t) => t.day === day && t.start !== null);
+      if (planned.length === 0) return DEFAULT_START_MIN;
+      return planned.reduce(
+        (end, t) => Math.max(end, (t.start ?? 0) + Math.round(t.plannedTime / 60)),
+        0
+      );
+    },
+    [allTasks]
   );
 
-  // Persist a change to any day the parent is not holding live.
+  // Persist a change to a day.
   const applyToDay = useCallback(
     async (day: string, updater: (tasks: Task[]) => Task[]) => {
       try {
@@ -175,6 +168,10 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
     (task: Task, status: TaskStatus) => {
       const becomesDone = status === 'done' && task.status !== 'done';
       const becomesUndone = status !== 'done' && task.status === 'done';
+      // Leaving the backlog puts the task on the calendar; going back to it
+      // takes the slot away again.
+      const start =
+        status === 'open' ? null : (task.start ?? nextFreeStart(task.day));
       // Completing a recurring task schedules its next occurrence in the
       // backlog; undoing removes the occurrence that was auto-scheduled.
       const child = becomesDone ? spawnNextOccurrence(task, newTaskId, activeDay) : null;
@@ -184,12 +181,13 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
         reindexTasks(
           ts.map((t): Task => {
             if (t.id !== task.id) return t;
-            if (status === 'done') return { ...t, status, completedAt: t.completedAt ?? 0 };
-            return { ...t, status, completedAt: null };
+            if (status === 'done') {
+              return { ...t, status, start, finishedAt: t.finishedAt ?? Date.now() };
+            }
+            return { ...t, status, start, finishedAt: null, completedAt: null };
           })
         );
-      if (isLive(task)) mutateActive(apply);
-      else void applyToDay(task.day, apply);
+      void applyToDay(task.day, apply);
 
       // The occurrence lives in its own (future) day's blob so it is shown once,
       // under the right day, without duplicating the task's origin day.
@@ -201,15 +199,14 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
         );
       }
     },
-    [isLive, mutateActive, applyToDay, activeDay]
+    [applyToDay, activeDay, nextFreeStart]
   );
 
   const removeTask = useCallback(
     (task: Task) => {
-      if (isLive(task)) mutateActive((prev) => reindexTasks(prev.filter((t) => t.id !== task.id)));
-      else void applyToDay(task.day, (ts) => reindexTasks(ts.filter((t) => t.id !== task.id)));
+      void applyToDay(task.day, (ts) => reindexTasks(ts.filter((t) => t.id !== task.id)));
     },
-    [isLive, mutateActive, applyToDay]
+    [applyToDay]
   );
 
   const addPlannedTask = useCallback(
@@ -224,6 +221,8 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
         name: trimmed,
         plannedTime,
         completedAt: null,
+        start: null,
+        finishedAt: null,
         order: 0,
         emoji: resolveTaskEmoji(emoji),
         color: color || DEFAULT_COLOR,
@@ -233,12 +232,11 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
         repeat: repeatOn ? { mode: repeatMode, baseDays } : null,
         repeatIndex: 0,
       };
-      if (isLive(task)) mutateActive((prev) => reindexTasks([...prev, task]));
-      else void applyToDay(planDay, (ts) => reindexTasks([...ts, task]));
+      void applyToDay(planDay, (ts) => reindexTasks([...ts, task]));
       setName('');
       closeAdd();
     },
-    [name, minutes, emoji, color, type, planDay, repeatOn, repeatMode, repeatBase, isLive, mutateActive, applyToDay, closeAdd]
+    [name, minutes, emoji, color, type, planDay, repeatOn, repeatMode, repeatBase, applyToDay, closeAdd]
   );
 
   const onDropColumn = (col: TaskStatus) => (e: React.DragEvent) => {
@@ -248,11 +246,11 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
     setDropCol(null);
     if (!id) return;
     const task = allTasks.find((t) => t.id === id);
-    if (!task || !canMove(task) || task.status === col) return;
+    if (!task || task.status === col) return;
     moveTaskTo(task, col);
   };
 
-  if (days === null && liveActiveTasks === null) {
+  if (days === null) {
     return (
       <div className="kanban-page">
         <h2 className="kanban-title">🗂 Kanban</h2>
@@ -284,8 +282,8 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
           >
             ＋ Создать
           </button>
-          <button type="button" className="btn btn-stats-nav" onClick={onOpenTimeline}>
-            ▶ К таймлайну
+          <button type="button" className="btn btn-stats-nav" onClick={onOpenCalendar}>
+            📅 В календарь
           </button>
         </div>
       </div>
@@ -489,7 +487,9 @@ function KanbanPage({ activeDay, liveActiveTasks, mutateActive, onOpenTimeline }
             <div className="kanban-cards">
               {grouped[status].map((task) => {
                 const offered = status === 'open' && task.day === activeDay;
-                const movable = canMove(task);
+                // Any card can be dragged between columns now that the plan
+                // is not tied to one open day.
+                const movable = true;
                 return (
                   <div
                     key={task.id}

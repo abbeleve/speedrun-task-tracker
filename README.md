@@ -1,6 +1,6 @@
 # ⏱ SpeedRun Task Tracker
 
-A LiveSplit-inspired task tracking app: plan tasks on a kanban board, drop them onto a day's timeline, and run the day against the clock on a vertical thermometer or an infinite zooming spiral route — seeing exactly how far ahead (or behind) schedule you are.
+A calendar you can speedrun. Plan the day the way you would in Google Calendar — real slots, real times, parallel blocks — then close tasks as you go and watch the **overtake**: the time you have won back from the plan and can spend on everything that follows. Any run of back-to-back blocks can be opened in the LiveSplit-style views (thermometer, spiral route, list) and run against the clock.
 
 ![Stack](https://img.shields.io/badge/React-19-61dafb?logo=react) ![Stack](https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript) ![Stack](https://img.shields.io/badge/Vite-8-646cff?logo=vite) ![Stack](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
 
@@ -8,8 +8,8 @@ A LiveSplit-inspired task tracking app: plan tasks on a kanban board, drop them 
 
 The app is split into two parts:
 
-- `frontend/` — React + Vite SPA (dashboard, kanban board and all the run visualisation: timeline, spiral, list).
-- `backend/` — FastAPI + SQLite REST API (users, tasks, daily sprints, sleep log, templates).
+- `frontend/` — React + Vite SPA (calendar, dashboard, kanban board and the sequence visualisations: timeline, spiral, list).
+- `backend/` — FastAPI + SQLite REST API (users, the per-day plan, daily totals, sleep log).
 
 All user data lives in the backend's SQLite file, scoped per account (registration
 & login are included). Deployment instructions for a bare server are in
@@ -17,21 +17,42 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 
 ## Features
 
-- **Dashboard** — one home screen with the kanban board, the timeline of saved sessions and the statistics page; the run itself lives on its own tab
-- **Kanban board** — plan tasks ahead across days in three columns (Open → In-Progress → Done); dragging an Open task planned for the active day onto In-Progress drops it straight onto that day's timeline, and a task created on the timeline starts as In-Progress
-- **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); completing it schedules the next occurrence back into Open
-- **Thermometer timeline** — vertical fill bar that grows as time passes, color-coded by task
+- **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag its bottom edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time.
+- **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
+- **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
+- **Sequences** — blocks that follow each other with no gap form a sequence, marked by a spine on the left of the day column. Click it to open the sequence in the tracker views.
+- **Thermometer timeline** — vertical fill bar that grows as the sequence's time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
-- **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the run has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
+- **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the sequence has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
+- **Kanban board** — plan tasks ahead across days in three columns (Open → In-Progress → Done); dragging an Open task into In-Progress puts it on that day's calendar, after everything already planned there
+- **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); closing it schedules the next occurrence at the same time of day
+- **Wall-clock only** — no session to start, pause or reset: the day runs on the real clock, and ✓ records the moment a task was actually closed
+- **Statistics** — the heatmap and the sleep tracker are derived from the plan itself: work/rest seconds come from the blocks that were really closed
 - **Dark & light themes** — every view, including the spiral, adapts to the active theme
 - **Space background** — layered depth: far starfield and constellation clusters stay fixed, near stars endlessly stream outward from the spiral's center
-- **Task splits** — each task has a planned time, actual segment time, and live delta (ahead/behind)
-- **Time scrubbing** — click & drag on the timeline or the spiral route to manually set the timer
-- **Per-user accounts** — register / log in; tasks, daily sprints, sleep log and templates are stored server-side per user
-- **Early completion credit** — completing a future task early boosts the current task's delta
+- **Time scrubbing** — drag the thermometer or the spiral route to inspect another moment of a sequence; one click returns to now
+- **Per-user accounts** — register / log in; the plan, the daily totals and the sleep log are stored server-side per user
 - **Task customization** — emoji and color per task; reflected in the thermometer dots
-- **Templates** — save, load, export & import task lists as JSON (kept on the backend)
-- **Drag & drop** — reorder tasks in idle mode
+
+## The overtake
+
+Everything below is computed from the plan and the current time — nothing is stored,
+so reloading mid-day never changes the number
+([`credit.ts`](./frontend/src/credit.ts), with the worked examples in
+[`credit.test.ts`](./frontend/src/credit.test.ts)).
+
+| Situation | What happens to the lead |
+| --- | --- |
+| A block is closed before its slot ends | The lead becomes `planned end − now`: the rest of the plan may start that much earlier |
+| The next block starts immediately | The lead keeps running against it — finish inside the shifted slot and it is kept, overrun and it melts away |
+| The next block is an hour off | The lead is frozen and waits. When you get there you may start that much earlier, so the lead is kept rather than spent |
+| Blocks run in parallel | They are one group: the lead is measured from the latest planned end in the group to the moment its last task was closed |
+| A block was already closed before its slot begins | Its whole duration is added to the lead when the plan reaches it |
+| Midnight passes while the blocks keep coming | The lead carries over — it is dropped only at the first gap of an hour or more that falls on a later date |
+
+The calendar shows the lead three ways: the HUD number (frozen or running), a
+green band between the now-line and where the plan effectively stands, and a
+per-block delta on every closed block.
 
 ## Local development
 
@@ -75,13 +96,10 @@ images there — they are picked up automatically and are not committed to git.
 ## How to Use
 
 1. **Register / log in** — data is tied to your account.
-2. **Plan tasks** — on the kanban board pick an emoji & color, enter a name, planned minutes and the day the task is for (optionally a repeat rule); it lands in **Open**
-3. **Fill the day** — drag today's Open tasks into **In-Progress** to put them on the timeline, or add a task straight on the tracker tab
-4. *(Optional)* — drag tasks to reorder, or save/load templates
-5. **Start Run** — the timer begins; the playhead moves down the thermometer or the star sweeps along the spiral (toggle between Timeline, Spiral and List views)
-6. **Complete splits** — click **✓** (or the planet); see your delta (green = ahead, red = behind) — the task moves to **Done**
-7. **Scrub time** — click & drag the timeline or the spiral route to manually adjust the timer
-8. **Pause / Resume / Reset** as needed; finished sprints are saved to your daily history and shown in the statistics page (heatmap + sleep tracker)
+2. **Plan the day** — on the calendar, drag on the grid to create a block, or drop one from the backlog. Set the emoji, colour, length and (optionally) a repeat rule in the dialog. Blocks may overlap: that is a parallel group.
+3. **Work the plan** — press ✓ on a block the moment you really finish it. The HUD shows your lead, what closing the running block right now would bank, and when the rest of the plan will be done.
+4. **Open a sequence** — click the spine next to a run of back-to-back blocks to open it in the thermometer / spiral / list views, and close splits from there.
+5. **Look back** — the dashboard (🏠) holds the kanban board, every sequence you have worked, and the statistics page.
 
 ## CI / CD
 

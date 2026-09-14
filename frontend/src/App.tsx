@@ -1,86 +1,45 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Task, Template, TaskTemplate, TaskType, DayState, RunRecord } from './types';
-import { DEFAULT_EMOJI, DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS, ALL_EMOJIS, EMOJI_DATA, resolveTaskEmoji } from './types';
-import { useTimer, formatTime, formatDelta } from './useTimer';
+import type { SessionState } from './types';
+import { DEFAULT_COLOR } from './types';
+import { formatTime, formatDelta } from './format';
 import { SpiralThermometer } from './SpiralThermometer';
 import { ListView } from './ListView';
 import { primeMotivationImages } from './motivation';
 import HomePage from './HomePage';
-import { splitSessionByType, todayKey } from './history';
-import { getOpenTasks, getTimelineTasks, newTaskId, normalizeTasks, scheduledDayFor, spawnNextOccurrence } from './tasks';
-import * as api from './api';
+import CalendarPage from './CalendarPage';
+import { useDayStore } from './dayStore';
+import type { Chain } from './schedule';
+import { buildChains, buildGroups, chainOfTask, isDone, taskEndMs } from './schedule';
+import { computeCredit } from './credit';
+import { buildChainRun } from './chainRun';
+import { newTaskId, spawnNextOccurrence } from './tasks';
 import { useAuth } from './auth';
 import './App.css';
-
-const uid = newTaskId;
-
-const PRESETS: { name: string; plannedTime: number }[] = [
-  { name: 'Setup', plannedTime: 120 },
-  { name: 'Planning', plannedTime: 300 },
-  { name: 'Development', plannedTime: 1800 },
-  { name: 'Testing', plannedTime: 600 },
-  { name: 'Review', plannedTime: 300 },
-  { name: 'Deploy', plannedTime: 180 },
-];
+import './calendar.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
 
+// How often the wall clock is read. The whole app — the overtake, the playhead,
+// the now-line — is a function of this tick, so it is fast enough for the
+// spiral to move smoothly and cheap enough to run all day.
+const TICK_MS = 500;
+
+function wallTime(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function App() {
   const { user, logout } = useAuth();
+  const store = useDayStore();
 
-  // ── Pick ruler interval so labels don't overlap ──
-  // targetPx: minimum pixel gap between consecutive marks
-  function pickInterval(totalSec: number, totalPx: number, targetPx = 32): number {
-    if (totalPx <= 0 || totalSec <= 0) return 300;
-    const pxPerSec = totalPx / totalSec;
-    const targetSec = Math.ceil(targetPx / pxPerSec);
-    const nice = [15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600];
-    for (const iv of nice) {
-      if (iv >= targetSec) return iv;
-    }
-    return 3600;
-  }
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [newName, setNewName] = useState('');
-  const [newMinutes, setNewMinutes] = useState('5');
-  const [newEmoji, setNewEmoji] = useState(DEFAULT_EMOJI);
-  const [newColor, setNewColor] = useState(DEFAULT_COLOR);
-  const [showEmojiPopup, setShowEmojiPopup] = useState(false);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [emojiSearch, setEmojiSearch] = useState("");
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-  const [showPresets, setShowPresets] = useState(true);
-  const [savedTemplates, setSavedTemplates] = useState<Template[]>([]);
-  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
-  const [timeCredit, setTimeCredit] = useState(0);
-  const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
-  const [editTimeStr, setEditTimeStr] = useState('');
-  const [editingNameId, setEditingNameId] = useState<string | null>(null);
-  const [editNameStr, setEditNameStr] = useState('');
-  const [editingEmojiId, setEditingEmojiId] = useState<string | null>(null);
-  const [emojiEditSearch, setEmojiEditSearch] = useState('');
-  const [editingColorId, setEditingColorId] = useState<string | null>(null);
-  const [jumpStr, setJumpStr] = useState('');
-  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const pauseStartRef = useRef<number | null>(null);
-  // Guards against recording the same session into day history twice
-  const recordedRef = useRef(false);
-  const [congrats, setCongrats] = useState<{ id: string; name: string } | null>(null);
-  const congratsTimerRef = useRef<number | null>(null);
-  const [glow, setGlow] = useState<{ id: string; color: string } | null>(null);
-  const glowTimerRef = useRef<number | null>(null);
-  const prevTaskIdRef = useRef<string | null>(null);
-  const [showSidebar, setShowSidebar] = useState(false);
-  const [tplName, setTplName] = useState('');
-  const [tplMinutes, setTplMinutes] = useState('5');
-  const [tplEmoji, setTplEmoji] = useState(DEFAULT_EMOJI);
-  const [tplColor, setTplColor] = useState(DEFAULT_COLOR);
-  const [tplType, setTplType] = useState<TaskType>('task');
-  const [showTplEmojiPopup, setShowTplEmojiPopup] = useState(false);
-  const [tplEmojiSearch, setTplEmojiSearch] = useState("");
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('speedrun_theme');
     return saved !== null ? saved === 'dark' : true;
@@ -91,20 +50,24 @@ function App() {
     return saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
   });
 
-  // 'home' = dashboard (kanban + days + stats on one page), 'tracker' = the
-  // timeline/spiral/list workspace where runs happen.
-  const [page, setPage] = useState<'home' | 'tracker'>('home');
+  // 'calendar' = the plan (main screen), 'home' = kanban + sessions + stats,
+  // 'tracker' = one sequence opened in the thermometer/spiral/list views.
+  const [page, setPage] = useState<'calendar' | 'home' | 'tracker'>('calendar');
 
-  // A saved run opened read-only in the tracker (from the Days page). While set,
-  // the tracker shows the run's task snapshot and autosave stays disabled so the
-  // historical plan is never written back as the day's live state.
-  const [viewingRun, setViewingRun] = useState<RunRecord | null>(null);
+  // The sequence currently open in the tracker, addressed by one of its tasks
+  // so that editing the plan cannot lose it.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
-  // Currently shown day and whether its saved state has been loaded yet. Until
-  // readyDate === dayDate the autosave stays off, so a freshly selected day is
-  // never overwritten by the previous day's (still-hydrated) state.
-  const [dayDate, setDayDate] = useState<string>(() => todayKey());
-  const [readyDate, setReadyDate] = useState<string | null>(null);
+  // Scrub offset (ms) while dragging the timeline/spiral: the views may be
+  // dragged to inspect another moment, and snap back to the wall clock on demand.
+  const [previewSec, setPreviewSec] = useState<number | null>(null);
+
+  const [congrats, setCongrats] = useState<{ id: string; name: string } | null>(null);
+  const congratsTimerRef = useRef<number | null>(null);
+  const [glow, setGlow] = useState<{ id: string; color: string } | null>(null);
+  const glowTimerRef = useRef<number | null>(null);
+  const prevTaskIdRef = useRef<string | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     localStorage.setItem('speedrun_view', view);
@@ -116,349 +79,209 @@ function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    const id = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Prefetch the motivational pictures in the background at startup so the
-  // List view is never blocked waiting on the request when the day changes.
-  useEffect(() => {
     primeMotivationImages();
   }, []);
 
-  // Escape always closes any open dialog/overlay so the app can't get stuck
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      setEditingEmojiId(null);
-      setEmojiEditSearch('');
-      setEditingColorId(null);
-      setShowEmojiPopup(false);
-      setShowTplEmojiPopup(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // ── the plan, its groups, its sequences and the overtake ─────────
 
-  const timelineRef = useRef<HTMLDivElement>(null);
-  const playheadRef = useRef<HTMLDivElement>(null);
-  const fillRef = useRef<HTMLDivElement>(null);
-  const { elapsed, sessionState, start, pause, resume, reset, restore, loadFinished, seek } = useTimer();
-  const sessionStateRef = useRef(sessionState);
-  sessionStateRef.current = sessionState;
-  const seekRef = useRef(seek);
-  seekRef.current = seek;
-  const pauseRef = useRef(pause);
-  pauseRef.current = pause;
+  const groups = useMemo(() => buildGroups(store.tasks), [store.tasks]);
+  const chains = useMemo(() => buildChains(groups), [groups]);
+  const credit = useMemo(() => computeCredit(groups, now), [groups, now]);
 
-  // ── Per-day persistence: tasks + timeline progress ──
-  // Latest tracker values, read by the autosave so a debounced/intervalled save
-  // writes the current state without re-subscribing on every timer frame.
-  const latestDayRef = useRef({ dayDate, tasks, elapsed, timeCredit, sessionState, sessionStartTime });
-  latestDayRef.current = { dayDate, tasks, elapsed, timeCredit, sessionState, sessionStartTime };
+  const openChain: Chain | null = useMemo(
+    () => (openTaskId ? chainOfTask(chains, openTaskId) : null),
+    [chains, openTaskId]
+  );
 
-  const buildDayState = useCallback((overrideDate?: string): DayState => {
-    const s = latestDayRef.current;
-    return {
-      date: overrideDate ?? s.dayDate,
-      tasks: s.tasks,
-      elapsedMs: s.elapsed,
-      timeCredit: s.timeCredit,
-      sessionState: s.sessionState,
-      startedAt: s.sessionStartTime,
-    };
-  }, []);
+  const run = useMemo(() => (openChain ? buildChainRun(openChain) : null), [openChain]);
 
-  const persistDay = useCallback((state: DayState) => {
-    void api
-      .saveDay(state.date, state)
-      .catch((e) => console.error('Failed to save day', e));
-  }, []);
-
-  // Load the selected day (today by default) and hydrate the tracker from it.
-  // When a saved run is open, its snapshot is shown instead and autosave stays
-  // off (readyDate stays null) so the historical plan is never persisted.
-  useEffect(() => {
-    if (viewingRun) {
-      const runTasks = normalizeTasks(viewingRun.tasks, viewingRun.date);
-      setTasks(runTasks);
-      setTimeCredit(0);
-      setSessionStartTime(viewingRun.startedAt);
-      loadFinished(Math.max(0, viewingRun.endedAt - viewingRun.startedAt));
-      setShowPresets(getTimelineTasks(runTasks).length === 0);
-      setReadyDate(null);
-      return;
-    }
-    let active = true;
-    setReadyDate(null);
-    (async () => {
-      try {
-        const state = await api.loadDay(dayDate);
-        if (!active) return;
-        const loaded = normalizeTasks(state.tasks, dayDate);
-        setTasks(loaded);
-        setTimeCredit(state.timeCredit ?? 0);
-        setSessionStartTime(state.startedAt ?? null);
-        restore(state.elapsedMs ?? 0);
-        setShowPresets(getTimelineTasks(loaded).length === 0);
-        setReadyDate(dayDate);
-      } catch (e) {
-        console.error('Failed to load day', e);
-        if (!active) return;
-        // Show an empty plan and keep autosave disabled (readyDate stays null)
-        // so the previous day's state can never be written into this one.
-        setTasks([]);
-        setTimeCredit(0);
-        setSessionStartTime(null);
-        restore(0);
-        setShowPresets(true);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [dayDate, restore, loadFinished, viewingRun]);
-
-  // Debounced save whenever the day's plan or progress state changes.
-  const saveTimerRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (readyDate !== dayDate) return;
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      persistDay(buildDayState());
-    }, 700);
-    return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [tasks, timeCredit, sessionState, dayDate, readyDate, persistDay, buildDayState]);
-
-  // While a run is active the elapsed time changes every frame, so persist it on
-  // a slow timer instead of on every render.
-  useEffect(() => {
-    if (sessionState !== 'running' || readyDate !== dayDate) return;
-    const id = window.setInterval(() => persistDay(buildDayState()), 15000);
-    return () => window.clearInterval(id);
-  }, [sessionState, dayDate, readyDate, persistDay, buildDayState]);
-
-  // Best-effort save when the tab is hidden or closed.
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden' && readyDate === dayDate) {
-        persistDay(buildDayState());
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [readyDate, dayDate, persistDay, buildDayState]);
-
-  const openRun = useCallback((run: RunRecord) => {
-    setViewingRun(run);
-    setDayDate(run.date);
+  const openSequence = useCallback((chain: Chain) => {
+    setOpenTaskId(chain.tasks[0]?.id ?? null);
+    setPreviewSec(null);
     setPage('tracker');
   }, []);
 
-  const closeRun = useCallback(() => {
-    setViewingRun(null);
-    setDayDate(todayKey());
-  }, []);
+  // The kanban board still talks to the backend directly, so the plan is
+  // flushed before handing over and re-read on the way back.
+  const goHome = useCallback(() => {
+    store.flush();
+    setPage('home');
+  }, [store]);
 
-  // Lets the kanban board edit the active day's tasks through the same state the
-  // timeline uses, so both stay in sync and the change is autosaved.
-  const mutateActiveTasks = useCallback((updater: (tasks: Task[]) => Task[]) => {
-    setTasks(updater);
-  }, []);
-
-  // A recurring task's next occurrence lives in its own scheduled day's blob.
-  // When that day is the currently open one, the in-memory state + autosave
-  // covers it; otherwise it is written straight into that day.
-  const scheduleOccurrence = useCallback(
-    (child: Task) => {
-      if (child.day === dayDate) return;
-      void (async () => {
-        try {
-          const state = await api.loadDay(child.day);
-          const existing = normalizeTasks(state.tasks, child.day);
-          await api.saveDay(child.day, {
-            ...state,
-            date: child.day,
-            tasks: [...existing, child],
-          });
-        } catch (e) {
-          console.error('Failed to schedule recurring task', e);
-        }
-      })();
+  const leaveHome = useCallback(
+    (next: 'calendar' | 'tracker') => {
+      void store.reload();
+      setPage(next);
     },
-    [dayDate]
+    [store]
   );
 
-  const unscheduleOccurrence = useCallback(
-    (parentId: string, childDay: string) => {
-      if (childDay === dayDate) return; // removed from the in-memory state instead
-      void (async () => {
-        try {
-          const state = await api.loadDay(childDay);
-          const tasks = normalizeTasks(state.tasks, childDay).filter(
-            (t) => !(t.repeatOf === parentId && t.status === 'open')
-          );
-          await api.saveDay(childDay, { ...state, date: childDay, tasks });
-        } catch (e) {
-          console.error('Failed to unschedule recurring task', e);
-        }
-      })();
+  // ── completing tasks ─────────────────────────────────────────────
+
+  const showCongrats = useCallback((name: string) => {
+    if (congratsTimerRef.current !== null) window.clearTimeout(congratsTimerRef.current);
+    setCongrats({ id: newTaskId(), name });
+    congratsTimerRef.current = window.setTimeout(() => setCongrats(null), 3000);
+  }, []);
+
+  const completeTask = useCallback(
+    (id: string) => {
+      const task = store.tasks.find((t) => t.id === id);
+      if (!task || isDone(task)) return;
+      store.patchTask(id, { status: 'done', finishedAt: Date.now() });
+      const child = spawnNextOccurrence(task, newTaskId, task.day);
+      if (child) store.upsertTask(child);
+      if (task.type !== 'rest') showCongrats(task.name);
     },
-    [dayDate]
+    [store, showCongrats]
   );
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const [tpls, taskTpls] = await Promise.all([api.loadTemplates(), api.loadTaskTemplates()]);
-        if (!active) return;
-        setSavedTemplates(tpls);
-        setTaskTemplates(taskTpls);
-      } catch (e) {
-        console.error('Failed to load templates', e);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Only placed tasks (in-progress/done) belong on the timeline; the Open
-  // backlog lives in the kanban board.
-  const sortedTasks = useMemo(() => getTimelineTasks(tasks), [tasks]);
-  const sessionElapsedSec = elapsed / 1000;
-
-  const filteredEmojis = useMemo(() => {
-    if (!emojiSearch.trim()) return ALL_EMOJIS;
-    const q = emojiSearch.toLowerCase();
-    return EMOJI_DATA.filter(e => e.keywords.some(k => k.includes(q)) || e.emoji === q).map(e => e.emoji);
-  }, [emojiSearch]);
-
-  const filteredTplEmojis = useMemo(() => {
-    if (!tplEmojiSearch.trim()) return ALL_EMOJIS;
-    const q = tplEmojiSearch.toLowerCase();
-    return EMOJI_DATA.filter(e => e.keywords.some(k => k.includes(q)) || e.emoji === q).map(e => e.emoji);
-  }, [tplEmojiSearch]);
-
-  const filteredEditEmojis = useMemo(() => {
-    if (!emojiEditSearch.trim()) return ALL_EMOJIS;
-    const q = emojiEditSearch.toLowerCase();
-    return EMOJI_DATA.filter(e => e.keywords.some(k => k.includes(q)) || e.emoji === q).map(e => e.emoji);
-  }, [emojiEditSearch]);
-
-  const editingEmojiTask = useMemo(
-    () => tasks.find(t => t.id === editingEmojiId) ?? null,
-    [tasks, editingEmojiId]
+  const uncompleteTask = useCallback(
+    (id: string) => {
+      const task = store.tasks.find((t) => t.id === id);
+      if (!task) return;
+      store.patchTask(id, { status: 'in-progress', finishedAt: null, completedAt: null });
+      const child = store.tasks.find((t) => t.repeatOf === id && !isDone(t));
+      if (child) store.removeTask(child.id);
+    },
+    [store]
   );
 
-  const editingColorTask = useMemo(
-    () => tasks.find(t => t.id === editingColorId) ?? null,
-    [tasks, editingColorId]
+  const renameTask = useCallback(
+    (id: string, name: string) => {
+      const trimmed = name.trim();
+      if (trimmed) store.patchTask(id, { name: trimmed });
+    },
+    [store]
   );
 
-  const cumulativeTimes = useMemo(() => {
-    const arr: number[] = [];
-    let cum = 0;
-    for (const t of sortedTasks) {
-      arr.push(cum);
-      cum += t.plannedTime;
-    }
-    return arr;
-  }, [sortedTasks]);
-
-  const totalPlannedSec = useMemo(
-    () => sortedTasks.reduce((s, t) => s + t.plannedTime, 0),
-    [sortedTasks]
+  const changeTaskTime = useCallback(
+    (id: string, plannedTime: number) => {
+      if (plannedTime > 0) store.patchTask(id, { plannedTime });
+    },
+    [store]
   );
+
+  const changeTaskColor = useCallback(
+    (id: string, color: string) => store.patchTask(id, { color }),
+    [store]
+  );
+
+  // ── the open sequence, as an elapsed-clock run ───────────────────
+
+  const runTasks = useMemo(() => run?.tasks ?? [], [run]);
+  const cumulativeTimes = useMemo(() => run?.cumulativeTimes ?? [], [run]);
+  const totalPlannedSec = run?.totalSec ?? 0;
+
+  const wallSec = run ? run.toRunSec(now) : 0;
+  const elapsedSec = previewSec ?? wallSec;
+
+  const sessionState: SessionState = useMemo(() => {
+    if (!openChain) return 'idle';
+    if (openChain.tasks.every(isDone)) return 'finished';
+    if (now < openChain.startMs) return 'idle';
+    if (now > openChain.endMs) return 'finished';
+    return 'running';
+  }, [openChain, now]);
+
+  const currentTaskIdx = useMemo(
+    () => runTasks.findIndex((t) => t.completedAt === null),
+    [runTasks]
+  );
+
+  const currentTask = useMemo(() => {
+    if (runTasks.length === 0) return null;
+    return currentTaskIdx >= 0 ? runTasks[currentTaskIdx] : runTasks[runTasks.length - 1];
+  }, [runTasks, currentTaskIdx]);
+
+  // The live delta of the sequence: what closing the running group right now
+  // would bank. Negative = ahead, matching the views' colour coding.
+  const currentDeltaMs = useMemo(() => {
+    if (!openChain || !credit.active) return null;
+    const inChain = openChain.tasks.some((t) => t.id === credit.active?.tasks[0].id);
+    if (!inChain) return null;
+    return -credit.projected * 1000;
+  }, [openChain, credit]);
 
   const maxPlannedSec = useMemo(
-    () => sortedTasks.reduce((max, t) => Math.max(max, t.plannedTime), 0),
-    [sortedTasks]
+    () => runTasks.reduce((max, t) => Math.max(max, t.plannedTime), 0),
+    [runTasks]
   );
 
   const blockHeight = useCallback(
     (plannedTime: number) => {
       if (maxPlannedSec <= 0) return MIN_BLOCK_PX;
-      const proportion = plannedTime / maxPlannedSec;
-      return MIN_BLOCK_PX + (MAX_BLOCK_PX - MIN_BLOCK_PX) * Math.sqrt(proportion);
+      return MIN_BLOCK_PX + (MAX_BLOCK_PX - MIN_BLOCK_PX) * Math.sqrt(plannedTime / maxPlannedSec);
     },
     [maxPlannedSec]
   );
 
-  const timelineHeight = useMemo(() => {
-    return sortedTasks.reduce((sum, t) => sum + blockHeight(t.plannedTime), 0);
-  }, [sortedTasks, blockHeight]);
-
-  // Pixels → time converter for scrubbing (stable ref, refreshed each render)
-  const calcTimeFromPxRef = useRef<(px: number) => number>(() => 0);
-  calcTimeFromPxRef.current = (px: number) => {
-    let remaining = Math.max(0, Math.min(px, timelineHeight));
-    let time = 0;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      const t = sortedTasks[i];
-      const bH = blockHeight(t.plannedTime);
-      if (remaining <= bH) {
-        time += (remaining / bH) * t.plannedTime;
-        break;
-      }
-      remaining -= bH;
-      time += t.plannedTime;
-    }
-    return Math.min(time, totalPlannedSec);
-  };
-
   const taskLayout = useMemo(() => {
     const layout: { offset: number; height: number }[] = [];
     let offset = 0;
-    for (const t of sortedTasks) {
+    for (const t of runTasks) {
       const h = blockHeight(t.plannedTime);
       layout.push({ offset, height: h });
       offset += h;
     }
     return layout;
-  }, [sortedTasks, blockHeight]);
+  }, [runTasks, blockHeight]);
 
-  const currentTaskIdx = useMemo(
-    () => sortedTasks.findIndex((t) => t.completedAt === null),
-    [sortedTasks]
+  const timelineHeight = useMemo(
+    () => taskLayout.reduce((sum, l) => sum + l.height, 0),
+    [taskLayout]
   );
 
-  // Ahead/behind schedule for the current task, in ms — the same value the
-  // timeline shows as the task delta (negative = ahead, positive = behind).
-  // Shown whenever a session is active (running or paused), so the delta
-  // timer on the spiral page is always a real number, never "—".
-  const currentDeltaMs = useMemo(() => {
-    if ((sessionState !== 'running' && sessionState !== 'paused') || currentTaskIdx < 0 || currentTaskIdx >= sortedTasks.length) return null;
-    const plannedStartSec = cumulativeTimes[currentTaskIdx];
-    const task = sortedTasks[currentTaskIdx];
-    const actualProgressSec = sessionElapsedSec - plannedStartSec;
-    const remainingPlanned = task.plannedTime - actualProgressSec;
-    return -(remainingPlanned + timeCredit) * 1000;
-  }, [sessionState, currentTaskIdx, sortedTasks, cumulativeTimes, sessionElapsedSec, timeCredit]);
+  const playheadPx = useMemo(() => {
+    let sec = elapsedSec;
+    let px = 0;
+    for (let i = 0; i < runTasks.length; i++) {
+      const h = taskLayout[i].height;
+      const span = runTasks[i].plannedTime;
+      if (sec <= span) {
+        px += span > 0 ? (sec / span) * h : 0;
+        break;
+      }
+      sec -= span;
+      px += h;
+    }
+    return Math.min(px, timelineHeight);
+  }, [elapsedSec, runTasks, taskLayout, timelineHeight]);
 
-  // Active task = first uncompleted one, so the color switches immediately when
-  // a task is finished early (used for thermo/fill/glow color).
-  const currentTask = useMemo(() => {
-    if (sortedTasks.length === 0) return null;
-    const idx = sortedTasks.findIndex((t) => t.completedAt === null);
-    return idx >= 0 ? sortedTasks[idx] : sortedTasks[sortedTasks.length - 1];
-  }, [sortedTasks]);
+  // Scrubbing: dragging the thermometer or the spiral route inspects another
+  // moment of the sequence without touching the clock.
+  const seek = useCallback(
+    (ms: number) => setPreviewSec(Math.max(0, ms / 1000)),
+    []
+  );
 
-  // Flash the edge glow only when moving to another task
+  const rulerMarks = useMemo(() => {
+    if (totalPlannedSec <= 0 || runTasks.length === 0) return [];
+    const pxPerSec = timelineHeight / totalPlannedSec;
+    const nice = [60, 120, 300, 600, 900, 1800, 3600];
+    const interval = nice.find((iv) => iv * pxPerSec >= 40) ?? 3600;
+    const marks: { sec: number; label: string; px: number }[] = [];
+    let nextMark = interval;
+    let secAccum = 0;
+    let pxAccum = 0;
+    for (let i = 0; i < runTasks.length; i++) {
+      const span = runTasks[i].plannedTime;
+      const h = taskLayout[i].height;
+      while (nextMark <= secAccum + span && span > 0) {
+        marks.push({
+          sec: nextMark,
+          label: formatTime(nextMark * 1000, false),
+          px: pxAccum + ((nextMark - secAccum) / span) * h,
+        });
+        nextMark += interval;
+      }
+      secAccum += span;
+      pxAccum += h;
+    }
+    return marks;
+  }, [runTasks, taskLayout, totalPlannedSec, timelineHeight]);
+
+  // Flash the edge glow when the sequence moves on to another task.
   useEffect(() => {
     const task = currentTask;
     const prevId = prevTaskIdRef.current;
@@ -469,662 +292,19 @@ function App() {
     glowTimerRef.current = window.setTimeout(() => setGlow(null), 1800);
   }, [currentTask]);
 
-  // Total work time left: planned time of uncompleted tasks minus time already
-  // spent in the current task and minus banked credit
-  const remainingWorkSec = useMemo(() => {
-    const planned = sortedTasks.reduce(
-      (s, t) => s + (t.completedAt === null ? t.plannedTime : 0),
-      0
-    );
-    let taskStart = 0;
-    for (const t of sortedTasks) {
-      if (t.completedAt !== null && t.completedAt > taskStart) {
-        taskStart = t.completedAt;
-      }
-    }
-    const elapsedInTask = Math.max(0, sessionElapsedSec - taskStart);
-    return Math.max(0, planned - elapsedInTask - timeCredit);
-  }, [sortedTasks, sessionElapsedSec, timeCredit]);
-
-  const calcPlayheadPx = useCallback(() => {
-    let sec = sessionElapsedSec;
-    let px = 0;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      const t = sortedTasks[i];
-      const bH = blockHeight(t.plannedTime);
-      const secInBlock = t.plannedTime;
-      if (sec <= secInBlock) {
-        px += (sec / secInBlock) * bH;
-        break;
-      }
-      sec -= secInBlock;
-      px += bH;
-    }
-    return px;
-  }, [sortedTasks, blockHeight, sessionElapsedSec]);
-
-  // Pixel position of the playhead — used for both the playhead marker
-  // and for determining which ruler marks are "filled" (passed).
-  const playheadPx = useMemo(() => {
-    if (sessionState === 'idle') return 0;
-    return calcPlayheadPx();
-  }, [sessionState, calcPlayheadPx]);
-
+  // A sequence that has scrolled into the past and is fully closed is dropped
+  // from the tracker, so the tab never shows a stale plan.
   useEffect(() => {
-    if (sessionState === 'idle') return;
-    if (playheadRef.current) {
-      playheadRef.current.style.transform = `translateY(${playheadPx}px)`;
-    }
-    if (fillRef.current) {
-      fillRef.current.style.height = `${playheadPx}px`;
-    }
-  }, [playheadPx, sessionState]);
+    if (page === 'tracker' && openTaskId && !openChain) setPage('calendar');
+  }, [page, openTaskId, openChain]);
 
-  useEffect(() => {
-    if (sessionState === 'idle' && fillRef.current) {
-      fillRef.current.style.height = '0px';
-    }
-    if (sessionState === 'idle' && playheadRef.current) {
-      playheadRef.current.style.transform = 'translateY(0px)';
-    }
-  }, [sessionState]);
-
-  useEffect(() => {
-    if (sessionState === 'running' && playheadRef.current) {
-      playheadRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
-    }
-  }, [currentTaskIdx, sessionState]);
-
-  // Time scrubbing — drag on the thermo column to seek. The listener is
-  // attached to the window and resolves the timeline element on every event:
-  // the tracker view (and its DOM node) is unmounted while the stats/days
-  // pages are shown, so a captured reference would go stale and scrubbing
-  // would silently stop working after visiting those pages.
-  useEffect(() => {
-    let scrubbing = false;
-
-    const getTimeFromEvent = (e: MouseEvent): number => {
-      const container = timelineRef.current;
-      if (!container) return 0;
-      const rect = container.getBoundingClientRect();
-      const px = e.clientY - rect.top + container.scrollTop;
-      return calcTimeFromPxRef.current(Math.max(0, px));
-    };
-
-    const onMouseDown = (e: MouseEvent) => {
-      const container = timelineRef.current;
-      if (!container) return;
-      const target = e.target as HTMLElement;
-      // Only scrub when clicking on the timeline view's thermo column (the
-      // List view reuses the glass tube look but is not scrubbable).
-      if (!target.closest('.timeline-inner .timeline-thermo')) return;
-      if (sessionStateRef.current === 'idle') return;
-
-      scrubbing = true;
-
-      const time = getTimeFromEvent(e);
-      seekRef.current(time * 1000);
-      e.preventDefault();
-      container.style.cursor = 'grabbing';
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!scrubbing) return;
-      const time = getTimeFromEvent(e);
-      seekRef.current(time * 1000);
-    };
-
-    const onMouseUp = () => {
-      if (!scrubbing) return;
-      scrubbing = false;
-      if (timelineRef.current) timelineRef.current.style.cursor = '';
-    };
-
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-
-    return () => {
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, []);
-
-  const addTask = useCallback(
-    (name: string, plannedTime: number, emoji: string, color: string, type: TaskType = 'task') => {
-      if (!name.trim() || plannedTime <= 0) return;
-      const task: Task = {
-        id: uid(),
-        name: name.trim(),
-        plannedTime,
-        completedAt: null,
-        order: tasks.length,
-        emoji: resolveTaskEmoji(emoji),
-        color: color || DEFAULT_COLOR,
-        type,
-        // A task added straight to the timeline is already placed.
-        day: dayDate,
-        status: 'in-progress',
-      };
-      setTasks((prev) => [...prev, task]);
-    },
-    [tasks.length, dayDate]
+  const formatEnd = useCallback(
+    (secondsFromStart: number) => (run ? wallTime(run.toWallMs(secondsFromStart)) : '—'),
+    [run]
   );
 
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      addTask(newName, Math.max(1, Math.round(parseFloat(newMinutes) * 60)), newEmoji, newColor);
-      setNewName('');
-      setNewMinutes('5');
-      setNewEmoji(DEFAULT_EMOJI);
-      setNewColor(DEFAULT_COLOR);
-    },
-    [addTask, newName, newMinutes, newEmoji, newColor]
-  );
-
-  const removeTask = useCallback((id: string) => {
-    setTasks((prev) => {
-      const filtered = prev.filter((t) => t.id !== id);
-      return filtered.map((t, i) => ({ ...t, order: i }));
-    });
-  }, []);
-
-  const clearAllTasks = useCallback(() => {
-    // Clear the timeline plan but keep the Open backlog for the board.
-    setTasks((prev) => getOpenTasks(prev).map((t, i) => ({ ...t, order: i })));
-    reset();
-    setShowPresets(true);
-    setTimeCredit(0);
-  }, [reset]);
-
-  const loadTemplate = useCallback((template: Template) => {
-    reset();
-    setSessionStartTime(null);
-    setTimeCredit(0);
-    const newTasks: Task[] = template.tasks.map((t, i) => ({
-      id: uid(),
-      name: t.name,
-      plannedTime: t.plannedTime,
-      completedAt: null,
-      order: i,
-      emoji: resolveTaskEmoji(t.emoji),
-      color: t.color || DEFAULT_COLOR,
-      type: t.type ?? 'task',
-      day: dayDate,
-      status: 'in-progress',
-    }));
-    // Loading a template rebuilds the timeline but keeps the Open backlog.
-    setTasks((prev) => [...newTasks, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i })));
-    setShowPresets(false);
-  }, [reset, dayDate]);
-
-  const deleteTemplate = useCallback((id: string) => {
-    const updated = savedTemplates.filter(t => t.id !== id);
-    setSavedTemplates(updated);
-    void api.deleteTemplate(id).catch((e) => console.error('Failed to delete template', e));
-  }, [savedTemplates]);
-
-  const showCongrats = useCallback((name: string) => {
-    if (congratsTimerRef.current !== null) {
-      window.clearTimeout(congratsTimerRef.current);
-    }
-    setCongrats({ id: uid(), name });
-    congratsTimerRef.current = window.setTimeout(() => setCongrats(null), 3000);
-  }, []);
-
-  const completeTask = useCallback(
-    (id: string) => {
-      if (sessionState !== 'running') return;
-
-      // Check if completing a future task (there are uncompleted tasks before it)
-      const sorted = getTimelineTasks(tasks);
-      const taskIdx = sorted.findIndex((t) => t.id === id);
-      if (taskIdx === -1) return;
-      const task = sorted[taskIdx];
-      const firstUncompletedIdx = sorted.findIndex((t) => t.completedAt === null);
-
-      if (firstUncompletedIdx >= 0 && firstUncompletedIdx < taskIdx) {
-        // Completing a future task early — add saved time as credit
-        let plannedStart = 0;
-        for (let i = 0; i < taskIdx; i++) {
-          plannedStart += sorted[i].plannedTime;
-        }
-        const plannedEnd = plannedStart + sorted[taskIdx].plannedTime;
-        const timeSaved = plannedEnd - sessionElapsedSec;
-
-        const child = spawnNextOccurrence(task, uid, dayDate);
-        setTasks((prev) => {
-          const next = prev.map((t): Task =>
-            t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t
-          );
-          return child && child.day === dayDate ? [...next, child] : next;
-        });
-        if (child && child.day !== dayDate) scheduleOccurrence(child);
-
-        if (timeSaved > 0) {
-          setTimeCredit((prev) => prev + timeSaved);
-        }
-        if (task.type !== 'rest') showCongrats(task.name);
-        return;
-      }
-
-      // Normal completion
-      const child = spawnNextOccurrence(task, uid, dayDate);
-      setTasks((prev) => {
-        const next = prev.map((t): Task =>
-          t.id === id ? { ...t, completedAt: sessionElapsedSec, status: 'done' } : t
-        );
-        return child && child.day === dayDate ? [...next, child] : next;
-      });
-      if (child && child.day !== dayDate) scheduleOccurrence(child);
-      if (task.type !== 'rest') showCongrats(task.name);
-    },
-    [sessionState, sessionElapsedSec, tasks, showCongrats, dayDate, scheduleOccurrence]
-  );
-
-  const uncompleteTask = useCallback((id: string) => {
-    // Reopening a recurring task drops the occurrence it auto-scheduled, which
-    // may live in another day's blob (the in-memory filter only covers today).
-    const parent = tasks.find((t) => t.id === id);
-    const childDay = parent ? scheduledDayFor(parent, dayDate) : null;
-    if (childDay) unscheduleOccurrence(id, childDay);
-
-    setTasks((prev) => {
-      const task = prev.find((t) => t.id === id);
-      if (!task || task.completedAt === null) return prev;
-
-      // If this was a future completion, subtract its timeSaved from credit
-      const sorted = getTimelineTasks(prev);
-      const taskIdx = sorted.findIndex((t) => t.id === id);
-      const hasUncompletedBefore = sorted.slice(0, taskIdx).some((t) => t.completedAt === null);
-
-      if (hasUncompletedBefore && task.completedAt !== null) {
-        let plannedStart = 0;
-        for (let i = 0; i < taskIdx; i++) {
-          plannedStart += sorted[i].plannedTime;
-        }
-        const plannedEnd = plannedStart + task.plannedTime;
-        const timeSaved = plannedEnd - task.completedAt;
-        if (timeSaved > 0) {
-          setTimeCredit((c) => Math.max(0, c - timeSaved));
-        }
-      }
-
-      // Drop the occurrence from today's state too (covers childDay === dayDate).
-      return prev
-        .map((t): Task => (t.id === id ? { ...t, completedAt: null, status: 'in-progress' } : t))
-        .filter((t) => !(t.repeatOf === id && t.status === 'open'));
-    });
-  }, [tasks, dayDate, unscheduleOccurrence]);
-
-  const copyTask = useCallback((id: string) => {
-    setTasks((prev) => {
-      const sorted = getTimelineTasks(prev);
-      const sourceIdx = sorted.findIndex((t) => t.id === id);
-      if (sourceIdx < 0) return prev;
-      const source = sorted[sourceIdx];
-      const copy: Task = {
-        id: uid(),
-        name: source.name + ' (copy)',
-        plannedTime: source.plannedTime,
-        completedAt: null,
-        order: source.order + 1,
-        emoji: source.emoji,
-        color: source.color,
-        type: source.type,
-        day: source.day || dayDate,
-        status: 'in-progress',
-      };
-      const result: Task[] = [];
-      for (let i = 0; i < sorted.length; i++) {
-        result.push(sorted[i]);
-        if (i === sourceIdx) {
-          result.push(copy);
-        }
-      }
-      return [...result, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
-    });
-  }, [dayDate]);
-
-  const startEditName = useCallback((id: string, name: string) => {
-    setEditingNameId(id);
-    setEditNameStr(name);
-  }, []);
-
-  const commitEditName = useCallback((id: string) => {
-    const trimmed = editNameStr.trim();
-    if (trimmed) {
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, name: trimmed } : t));
-    }
-    setEditingNameId(null);
-    setEditNameStr('');
-  }, [editNameStr]);
-
-  const changeTaskEmoji = useCallback((id: string, emoji: string) => {
-    const resolved = resolveTaskEmoji(emoji);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, emoji: resolved } : t));
-    setEditingEmojiId(null);
-    setEmojiEditSearch('');
-  }, []);
-
-  const changeTaskColor = useCallback((id: string, color: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, color } : t));
-    setEditingColorId(null);
-  }, []);
-
-  // Direct task edits for the spiral view's edit popup.
-  const renameTask = useCallback((id: string, name: string) => {
-    const trimmed = name.trim();
-    if (trimmed) setTasks(prev => prev.map(t => t.id === id ? { ...t, name: trimmed } : t));
-  }, []);
-
-  const changeTaskTime = useCallback((id: string, plannedTime: number) => {
-    if (plannedTime > 0) setTasks(prev => prev.map(t => t.id === id ? { ...t, plannedTime } : t));
-  }, []);
-
-  const moveTask = useCallback((fromIdx: number, toIdx: number) => {
-    setTasks((prev) => {
-      const timeline = getTimelineTasks(prev);
-      const [moved] = timeline.splice(fromIdx, 1);
-      timeline.splice(toIdx, 0, moved);
-      return [...timeline, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
-    });
-  }, []);
-
-  // --- Task resize: drag bottom edge to change planned time ---
-  const resizeRef = useRef<{ id: string; startY: number; startH: number; maxPlanned: number } | null>(null);
-
-  const startEditTime = useCallback((id: string, plannedTime: number) => {
-    setEditingTimeId(id);
-    const totalSec = plannedTime;
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    if (h > 0) {
-      setEditTimeStr(`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
-    } else {
-      setEditTimeStr(`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
-    }
-  }, []);
-
-  const commitEditTime = useCallback((id: string) => {
-    const parts = editTimeStr.split(':').map(p => parseInt(p) || 0);
-    let totalSec = 0;
-    if (parts.length === 3) {
-      totalSec = Math.min(parts[0], 99) * 3600 + Math.min(parts[1], 59) * 60 + Math.min(parts[2], 59);
-    } else if (parts.length === 2) {
-      totalSec = Math.min(parts[0], 99) * 60 + Math.min(parts[1], 59);
-    } else {
-      totalSec = Math.max(1, Math.round(parseFloat(editTimeStr) * 60));
-    }
-    if (totalSec > 0) {
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, plannedTime: totalSec } : t));
-    }
-    setEditingTimeId(null);
-  }, [editTimeStr]);
-
-  const handleJump = useCallback(() => {
-    const val = jumpStr.trim();
-    if (!val) return;
-    const offsetMin = parseFloat(val);
-    if (!isNaN(offsetMin)) {
-      const offsetMs = Math.round(offsetMin * 60 * 1000);
-      seek(Math.max(0, elapsed + offsetMs));
-    }
-    setJumpStr('');
-  }, [jumpStr, seek, elapsed]);
-
-  const addTaskTemplate = useCallback(() => {
-    if (!tplName.trim()) return;
-    const tpl: TaskTemplate = {
-      id: uid(), name: tplName.trim(),
-      plannedTime: Math.max(1, Math.round(parseFloat(tplMinutes) * 60)),
-      emoji: tplEmoji, color: tplColor, type: tplType,
-    };
-    const updated = [...taskTemplates, tpl];
-    setTaskTemplates(updated);
-    void api.saveTaskTemplate(tpl).catch((e) => console.error('Failed to save task template', e));
-    setTplName(''); setTplMinutes('5'); setTplEmoji(DEFAULT_EMOJI); setTplColor(DEFAULT_COLOR); setTplType('task');
-  }, [tplName, tplMinutes, tplEmoji, tplColor, tplType, taskTemplates]);
-
-  const deleteTaskTemplate = useCallback((id: string) => {
-    const updated = taskTemplates.filter(t => t.id !== id);
-    setTaskTemplates(updated);
-    void api.deleteTaskTemplate(id).catch((e) => console.error('Failed to delete task template', e));
-  }, [taskTemplates]);
-
-  const addTaskFromTemplate = useCallback((tpl: TaskTemplate) => {
-    const task: Task = {
-      id: uid(), name: tpl.name, plannedTime: tpl.plannedTime,
-      completedAt: null, order: tasks.length, emoji: tpl.emoji, color: tpl.color,
-      type: tpl.type ?? 'task', day: dayDate, status: 'in-progress',
-    };
-    setTasks(prev => [...prev, task]);
-  }, [tasks.length, dayDate]);
-
-  const handleTimelineDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData('text/plain');
-    const tpl = taskTemplates.find(t => t.id === id);
-    if (tpl) addTaskFromTemplate(tpl);
-  }, [taskTemplates, addTaskFromTemplate]);
-
-  const handleTimelineDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const splitTask = useCallback(() => {
-    if (sessionState !== 'paused' && sessionState !== 'idle') return;
-    const idx = sortedTasks.findIndex(t => t.completedAt === null);
-    if (idx < 0) return;
-    const task = sortedTasks[idx];
-    const taskStart = sortedTasks.slice(0, idx).reduce((max, t) => Math.max(max, t.completedAt ?? 0), 0);
-    const elapsed = Math.max(1, Math.round(sessionElapsedSec - taskStart));
-    const remaining = Math.max(1, task.plannedTime - elapsed);
-    if (remaining <= 0 || elapsed <= 0) return;
-
-    setTasks(prev => {
-      const timeline = getTimelineTasks(prev);
-      // Create first half (completed)
-      const firstHalf: Task = {
-        id: uid(), name: task.name + ' (1/2)',
-        plannedTime: elapsed, completedAt: sessionElapsedSec, order: 0,
-        emoji: task.emoji, color: task.color, type: task.type,
-        day: task.day || dayDate, status: 'in-progress',
-      };
-      // Update second half (remaining, stays current)
-      const timelineNext = timeline.map(t =>
-        t.id === task.id
-          ? { ...t, name: task.name + ' (2/2)', plannedTime: remaining, completedAt: null, status: 'in-progress' as const }
-          : t
-      );
-      // Insert first half before second half
-      const at = timelineNext.findIndex(t => t.id === task.id);
-      timelineNext.splice(at, 0, firstHalf);
-      return [...timelineNext, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i }));
-    });
-  }, [sortedTasks, sessionElapsedSec, sessionState, dayDate]);
-
-  const handleResizeStart = useCallback((e: React.MouseEvent, id: string, currentHeight: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-    resizeRef.current = { id, startY: e.clientY, startH: currentHeight, maxPlanned: maxPlannedSec || task.plannedTime };
-  }, [tasks, maxPlannedSec]);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const r = resizeRef.current;
-      const dy = e.clientY - r.startY;
-      const newH = Math.max(MIN_BLOCK_PX, r.startH + dy);
-      const ratio = (newH - MIN_BLOCK_PX) / (MAX_BLOCK_PX - MIN_BLOCK_PX);
-      const proportion = Math.max(0.01, ratio * ratio);
-      const newTime = Math.max(1, Math.round(proportion * r.maxPlanned));
-      setTasks(prev => prev.map(t => (t.id === r.id ? { ...t, plannedTime: newTime } : t)));
-    };
-    const onUp = () => { resizeRef.current = null; };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, []);
-
-  const loadPresets = useCallback(() => {
-    setTimeCredit(0);
-    const pts = PRESETS.map((p, i) => ({
-      id: uid(),
-      name: p.name,
-      plannedTime: p.plannedTime,
-      completedAt: null,
-      order: i,
-      emoji: TASK_EMOJIS[i % TASK_EMOJIS.length],
-      color: TASK_COLORS[i % TASK_COLORS.length],
-      type: 'task' as TaskType,
-      day: dayDate,
-      status: 'in-progress' as const,
-    }));
-    setTasks(prev => [...pts, ...getOpenTasks(prev)].map((t, i) => ({ ...t, order: i })));
-    setShowPresets(false);
-  }, [dayDate]);
-
-  // Log an ended run into both the day history aggregation and the per-run
-  // list, so a day can show each session individually. Runs under a minute are
-  // too short to matter and are skipped entirely (mirrors the day history rule).
-  const recordRun = useCallback(
-    (date: string, workSec: number, restSec: number) => {
-      if (workSec + restSec < 60) return;
-      // Epoch ms must be whole numbers: `elapsed` comes from performance.now()
-      // and is fractional, and the API rejects a fractional timestamp with 422.
-      const startedAt = Math.round(sessionStartTime ?? Date.now());
-      const endedAt = Math.round(startedAt + elapsed);
-      void api.addSessionToHistory(workSec, restSec, date).catch((e) => console.error('Failed to log session', e));
-      void api
-        .addRun({
-          date,
-          startedAt,
-          endedAt,
-          workSec,
-          restSec,
-          plannedSec: Math.round(totalPlannedSec),
-          tasks: sortedTasks,
-        })
-        .catch((e) => console.error('Failed to log run', e));
-    },
-    [sessionStartTime, elapsed, totalPlannedSec, sortedTasks]
-  );
-
-  const handleReset = useCallback(() => {
-    // Abandoned (paused) or finished mid-session — still log the progress as a
-    // run. The task list is then cleared so the next session can be built from
-    // a clean plan (the finished runs stay saved in run_sessions/history).
-    if (!recordedRef.current && sessionState !== 'idle') {
-      recordedRef.current = true;
-      const split = splitSessionByType(sortedTasks, sessionElapsedSec);
-      recordRun(dayDate, split.workSec, split.restSec);
-    }
-    reset();
-    // Keep the Open backlog so planned tasks survive ending a run.
-    setTasks((prev) => getOpenTasks(prev).map((t, i) => ({ ...t, order: i })));
-    setShowPresets(true);
-    setSessionStartTime(null);
-    setTimeCredit(0);
-    pauseStartRef.current = null;
-  }, [reset, sessionState, sortedTasks, sessionElapsedSec, dayDate, recordRun]);
-
-  const handleSessionAction = useCallback(() => {
-    if (sessionState === 'idle') {
-      if (sortedTasks.length === 0) return;
-      recordedRef.current = false;
-      setSessionStartTime(Date.now());
-      setTimeCredit(0);
-      pauseStartRef.current = null;
-      start();
-    } else if (sessionState === 'running') {
-      pauseStartRef.current = Date.now();
-      pause();
-    } else if (sessionState === 'paused') {
-      pauseStartRef.current = null;
-      resume();
-    }
-  }, [sessionState, sortedTasks.length, start, pause, resume]);
-
-  // Every task is closed. The run is NOT finished automatically: the user ends
-  // the session (and saves the day) explicitly via the ✓ button, so the save
-  // stays deliberate. This flag drives the prompt banner and the ✓ highlight.
-  const allCompleted = sortedTasks.length > 0 && sortedTasks.every((t) => t.completedAt !== null);
-  const showAllDone = allCompleted && (sessionState === 'running' || sessionState === 'paused');
-
-  const onDragStart = (idx: number) => setDragIdx(idx);
-  const onDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault();
-    // Sidebar template drags have no source index — skip reorder state entirely
-    if (dragIdx === null) return;
-    // Only re-render when the hovered block actually changes
-    setDragOverIdx(prev => (prev === idx ? prev : idx));
-  };
-  const onDrop = (toIdx: number) => {
-    if (dragIdx !== null && dragIdx !== toIdx) {
-      moveTask(dragIdx, toIdx);
-    }
-    setDragIdx(null);
-    setDragOverIdx(null);
-  };
-  const onDragEnd = () => {
-    setDragIdx(null);
-    setDragOverIdx(null);
-  };
-
-  const formatWallTime = (ms: number) => {
-    const d = new Date(ms);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  };
-
-  const formatRealTime = (secondsFromStart: number) => {
-    const base = sessionStartTime ?? Date.now();
-    const d = new Date(base + secondsFromStart * 1000);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  };
-
-  const rulerMarks = useMemo(() => {
-    if (totalPlannedSec <= 0 || sortedTasks.length === 0) return [];
-    const marks: { sec: number; label: string; px: number }[] = [];
-    const interval = pickInterval(totalPlannedSec, timelineHeight, 40);
-
-    let nextMark = interval;
-    let secAccum = 0;
-    let pxAccum = 0;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      const t = sortedTasks[i];
-      const bH = blockHeight(t.plannedTime);
-      const blockSec = t.plannedTime;
-      while (nextMark <= secAccum + blockSec) {
-        const secIntoBlock = nextMark - secAccum;
-        const pxIntoBlock = (secIntoBlock / blockSec) * bH;
-        marks.push({
-          sec: nextMark,
-          label: formatTime(nextMark * 1000, false),
-          px: pxAccum + pxIntoBlock,
-        });
-        nextMark += interval;
-      }
-      secAccum += blockSec;
-      pxAccum += bH;
-    }
-    return marks;
-  }, [sortedTasks, totalPlannedSec, blockHeight, timelineHeight]);
-
-  const showPlayhead = sessionState !== 'idle';
+  const leadLabel = credit.lead >= 0 ? 'обгон' : 'отставание';
+  const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
   return (
     <div className="app">
@@ -1147,814 +327,322 @@ function App() {
         >
           🚪 Выйти
         </button>
-        <div className="view-toggle" role="group" aria-label="View mode">
-          <button
-            type="button"
-            className={`view-toggle-btn ${view === 'timeline' ? 'active' : ''}`}
-            onClick={() => setView('timeline')}
-            title="Таймлайн в виде термометра"
-          >
-            🌡️<span className="view-toggle-label">Timeline</span>
-          </button>
-          <button
-            type="button"
-            className={`view-toggle-btn ${view === 'spiral' ? 'active' : ''}`}
-            onClick={() => setView('spiral')}
-            title="Спиральная траектория в космосе"
-          >
-            🌀<span className="view-toggle-label">Spiral</span>
-          </button>
-          <button
-            type="button"
-            className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
-            onClick={() => setView('list')}
-            title="Список задач с разворачивающимся термометром"
-          >
-            📜<span className="view-toggle-label">List</span>
-          </button>
-        </div>
+
+        {page === 'tracker' && (
+          <div className="view-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'timeline' ? 'active' : ''}`}
+              onClick={() => setView('timeline')}
+              title="Таймлайн в виде термометра"
+            >
+              🌡️<span className="view-toggle-label">Timeline</span>
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'spiral' ? 'active' : ''}`}
+              onClick={() => setView('spiral')}
+              title="Спиральная траектория в космосе"
+            >
+              🌀<span className="view-toggle-label">Spiral</span>
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
+              onClick={() => setView('list')}
+              title="Список задач с разворачивающимся термометром"
+            >
+              📜<span className="view-toggle-label">List</span>
+            </button>
+          </div>
+        )}
+
+        <button
+          className={`btn btn-stats-nav ${page === 'calendar' ? 'active' : ''}`}
+          onClick={() => (page === 'home' ? leaveHome('calendar') : setPage('calendar'))}
+          title="Календарь: план дня, недели и месяца"
+        >
+          📅<span className="view-toggle-label">Календарь</span>
+        </button>
         <button
           className={`btn btn-stats-nav ${page === 'home' ? 'active' : ''}`}
-          onClick={() => setPage('home')}
-          title="Главная: канбан, дни и статистика"
+          onClick={goHome}
+          title="Главная: канбан, сессии и статистика"
         >
           🏠<span className="view-toggle-label">Главная</span>
         </button>
-        <button
-          className={`btn btn-stats-nav ${page === 'tracker' ? 'active' : ''}`}
-          onClick={() => setPage('tracker')}
-          title="Трекер: таймлайн и запуск сессий"
-        >
-          ⏱<span className="view-toggle-label">Трекер</span>
-        </button>
-        <button
-          className="btn btn-sidebar"
-          onClick={() => setShowSidebar(!showSidebar)}
-          title="Task Templates"
-        >
-          📋 {showSidebar ? 'Hide' : 'Templates'}
-        </button>
-        {viewingRun ? (
+        {openChain && (
+          <button
+            className={`btn btn-stats-nav ${page === 'tracker' ? 'active' : ''}`}
+            onClick={() => (page === 'home' ? leaveHome('tracker') : setPage('tracker'))}
+            title="Трекер: открытая секвенция"
+          >
+            ⏱<span className="view-toggle-label">Секвенция</span>
+          </button>
+        )}
+
+        {page === 'tracker' && openChain && (
           <div className="session-controls">
             <span className="viewing-run-label">
-              👁 Сессия {formatWallTime(viewingRun.startedAt)}–{formatWallTime(viewingRun.endedAt)}
+              ▶ {wallTime(openChain.startMs)}–{wallTime(openChain.endMs)} · {leadLabel}{' '}
+              {formatDelta(-credit.lead * 1000)}
             </span>
-            <button className="btn btn-reset" onClick={closeRun} title="Выйти из просмотра сессии">
-              ✕ Выйти
+            {previewSec !== null && (
+              <button
+                className="btn btn-resume"
+                onClick={() => setPreviewSec(null)}
+                title="Вернуться к текущему времени"
+              >
+                ⟲ Сейчас
+              </button>
+            )}
+            <button
+              className="btn btn-reset"
+              onClick={() => {
+                setOpenTaskId(null);
+                setPage('calendar');
+              }}
+              title="Закрыть секвенцию"
+            >
+              ✕ Закрыть
             </button>
           </div>
-        ) : (
-        <div className="session-controls">
-          {sessionState === 'idle' && (
-            <>
-              <button
-                className="btn btn-start"
-                onClick={handleSessionAction}
-                disabled={sortedTasks.length === 0}
-              >
-                ▶ Start Run
-              </button>
-              {sortedTasks.length > 0 && (
-                <>
-                  <button className="btn btn-clear" onClick={clearAllTasks} title="Remove all tasks">
-                    🗑 Clear All
-                  </button>
-                </>
-              )}
-            </>
-          )}
-          {sessionState === 'running' && (
-            <button className="btn btn-pause" onClick={handleSessionAction}>
-              ⏸ Pause
-            </button>
-          )}
-          {sessionState === 'paused' && (
-            <>
-              <button className="btn btn-resume" onClick={handleSessionAction}>
-                ▶ Resume
-              </button>
-              <button className="btn btn-reset" onClick={handleReset}>
-                ↺ Reset
-              </button>
-            </>
-          )}
-          {sessionState === 'finished' && (
-            <>
-              <button className="btn btn-reset" onClick={handleReset}>
-                ↺ New Run
-              </button>
-            </>
-          )}
-        </div>
         )}
       </header>
 
-      {page === 'home' ? (
-        <HomePage
-          activeDay={dayDate}
-          liveActiveTasks={viewingRun ? null : tasks}
-          mutateActive={mutateActiveTasks}
-          onOpenTimeline={() => setPage('tracker')}
-          onOpenRun={openRun}
+      {page === 'calendar' && (
+        <CalendarPage
+          store={store}
+          now={now}
+          credit={credit}
+          chains={chains}
+          onOpenChain={openSequence}
         />
-      ) : (
+      )}
+
+      {page === 'home' && (
+        <HomePage
+          onOpenCalendar={() => leaveHome('calendar')}
+          onOpenChain={(chain) => {
+            void store.reload();
+            openSequence(chain);
+          }}
+          chains={chains}
+        />
+      )}
+
+      {page === 'tracker' && (
         <>
-      {(sessionState === 'idle' || sessionState === 'paused') && (
-        <div className="add-section">
-          <form className="add-form" onSubmit={handleSubmit}>
-            <div className="picker-row">
-              <div className="emoji-picker">
-                {TASK_EMOJIS.map((em) => (
-                  <button
-                    key={em}
-                    type="button"
-                    className={`emoji-opt ${newEmoji === em ? 'active' : ''}`}
-                    onClick={() => setNewEmoji(em)}
-                  >
-                    {em}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="emoji-opt emoji-more"
-                  onClick={() => setShowEmojiPopup(!showEmojiPopup)}
-                  title="More emojis"
-                >
-                  ＋
-                </button>
-                {showEmojiPopup && (
-                  <div className="emoji-popup">
-                    <input
-                      type="text"
-                      className="emoji-search-input"
-                      placeholder="Search emojis..."
-                      value={emojiSearch}
-                      onChange={(e) => setEmojiSearch(e.target.value)}
-                      autoFocus
-                    />
-                    <div className="emoji-popup-grid">
-                      {filteredEmojis.map((em) => (
-                        <button
-                          key={em}
-                          type="button"
-                          className={`emoji-popup-item ${newEmoji === em ? 'active' : ''}`}
-                          onClick={() => { setNewEmoji(em); setShowEmojiPopup(false); }}
-                        >
-                          {em}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          <footer className="footer">
+            <div className="timer-block timer-next">
+              <span className="timer-label">⏳ Осталось по плану</span>
+              <span className="timer-value">{formatTime(remainingSec * 1000, false)}</span>
+            </div>
+            <div className="timer-block timer-clock">
+              <span className="timer-label">🕐 Текущее время</span>
+              <span className="timer-value timer-clock-value">{wallTime(now)}</span>
+            </div>
+            <div className="timer-block timer-finish">
+              <span className="timer-label">🎯 Вы закончите в</span>
+              <span className="timer-value timer-finish-value">
+                {openChain ? wallTime(openChain.endMs - credit.lead * 1000) : '—'}
+              </span>
+            </div>
+            <div className="timer-block timer-session">
+              <span className="timer-label">🏁 {leadLabel}</span>
+              <span className="timer-value timer-main">{formatDelta(-credit.lead * 1000)}</span>
+              <span className="timer-planned">
+                Planned: {formatTime(totalPlannedSec * 1000, false)}
+              </span>
+            </div>
+          </footer>
+
+          <div className="timeline-container" ref={timelineRef}>
+            {runTasks.length === 0 ? (
+              <div className="empty-state">
+                <p>Секвенция пуста</p>
+                <p className="hint">Поставь задачи подряд в календаре и открой их здесь.</p>
               </div>
-              <div className="color-picker">
-                {TASK_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`color-opt ${newColor === c ? 'active' : ''}`}
-                    style={{ background: c }}
-                    onClick={() => setNewColor(c)}
-                  />
-                ))}
-                <input
-                  type="color"
-                  className="color-input"
-                  value={newColor}
-                  onChange={(e) => setNewColor(e.target.value)}
-                  title="Pick any color"
+            ) : view === 'list' ? (
+              <ListView
+                tasks={runTasks}
+                cumulativeTimes={cumulativeTimes}
+                elapsedSec={elapsedSec}
+                sessionState={sessionState}
+                currentTaskIdx={currentTaskIdx}
+                deltaMs={currentDeltaMs}
+                onCompleteTask={completeTask}
+                onSeek={seek}
+                formatEnd={formatEnd}
+              />
+            ) : view === 'spiral' ? (
+              <div className="spiral-view">
+                <SpiralThermometer
+                  tasks={runTasks}
+                  cumulativeTimes={cumulativeTimes}
+                  totalPlannedSec={totalPlannedSec}
+                  elapsedSec={elapsedSec}
+                  sessionState={sessionState}
+                  currentTaskColor={currentTask?.color ?? DEFAULT_COLOR}
+                  currentTaskIdx={currentTaskIdx}
+                  deltaMs={currentDeltaMs}
+                  onCompleteTask={completeTask}
+                  onUncompleteTask={uncompleteTask}
+                  onRenameTask={renameTask}
+                  onChangeTaskTime={changeTaskTime}
+                  onChangeTaskColor={changeTaskColor}
+                  onSeek={seek}
                 />
               </div>
-              <button
-                type="button"
-                className="type-toggle"
-                onClick={() => addTask('Rest', 600, '😴', DEFAULT_COLOR, 'rest')}
-                title="Add a 10-minute rest / break task"
-              >
-                ☕ Rest
-              </button>
-            </div>
-            <div className="add-row">
-              <span className="selected-emoji">{newEmoji}</span>
-              <input
-                type="text"
-                placeholder="Task name..."
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="input-name"
-              />
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="min"
-                value={newMinutes}
-                onChange={(e) => setNewMinutes(e.target.value)}
-                className="input-minutes"
-              />
-              <span className="input-label">min</span>
-              <button type="submit" className="btn btn-add">
-                + Add
-              </button>
-            </div>
-          </form>
-
-          <div className="templates-section">
-            <div className="templates-header">
-              <span className="templates-title">Templates</span>
-              <div className="templates-global-actions">
-                {showPresets && sortedTasks.length === 0 && (
-                  <button className="btn btn-presets" onClick={loadPresets}>
-                    🎮 Load Example Splits
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="templates-grid">
-              {savedTemplates.map((tpl) => (
-                <div key={tpl.id} className="template-card">
-                  <div className="template-info">
-                    <span className="template-name">{tpl.name}</span>
-                    <span className="template-count">{tpl.tasks.length} tasks</span>
+            ) : (
+              <div className="timeline-inner">
+                <div
+                  className="timeline-thermo"
+                  style={
+                    {
+                      height: timelineHeight,
+                      '--thermo-color': currentTask?.color,
+                    } as React.CSSProperties
+                  }
+                >
+                  <div className="thermo-fill" style={{ height: playheadPx }} />
+                  <div className="thermo-marks">
+                    <div className="thermo-mark" style={{ top: 12 }}>
+                      <span className="thermo-mark-label">0:00</span>
+                    </div>
+                    {rulerMarks.map((m) => (
+                      <div key={m.sec} className="thermo-mark" style={{ top: m.px }}>
+                        <span className="thermo-mark-label">{m.label}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="template-actions">
-                    <button className="btn btn-load-tpl" onClick={() => loadTemplate(tpl)}>
-                      Load
-                    </button>
-                    <button className="btn btn-del-tpl" onClick={() => deleteTemplate(tpl.id)}>
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {savedTemplates.length === 0 && !showPresets && (
-                <p className="templates-empty">No saved templates yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <footer className="footer">
-        <div className="timer-block timer-next">
-          <span className="timer-label">⏳ Осталось работать</span>
-          <span className="timer-value">
-            {formatTime(remainingWorkSec * 1000, true)}
-          </span>
-        </div>
-        <div className="timer-block timer-clock">
-          <span className="timer-label">🕐 Текущее время</span>
-          <span className="timer-value timer-clock-value">
-            {(() => {
-              const utc3 = new Date(currentTime.getTime() + 3 * 60 * 60 * 1000);
-              const hh = String(utc3.getUTCHours()).padStart(2, '0');
-              const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
-              const ss = String(utc3.getUTCSeconds()).padStart(2, '0');
-              return `${hh}:${mm}:${ss}`;
-            })()}
-          </span>
-        </div>
-        <div className="timer-block timer-finish">
-          <span className="timer-label">🎯 Вы закончите в</span>
-          <span className="timer-value timer-finish-value">
-            {(() => {
-              const utc3 = new Date(
-                currentTime.getTime() + 3 * 60 * 60 * 1000 + remainingWorkSec * 1000
-              );
-              const hh = String(utc3.getUTCHours()).padStart(2, '0');
-              const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
-              const ss = String(utc3.getUTCSeconds()).padStart(2, '0');
-              return `${hh}:${mm}:${ss}`;
-            })()}
-          </span>
-        </div>
-        <div className="timer-block timer-session">
-          <span className="timer-label">⏱ Сколько длится сессия</span>
-          <span className="timer-value timer-main">{formatTime(elapsed, true)}</span>
-          <div className="timer-jump">
-            <input
-              className="jump-input"
-              type="text"
-              inputMode="decimal"
-              placeholder="+5 or -2"
-              value={jumpStr}
-              onChange={(e) => setJumpStr(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleJump(); }}
-              disabled={sessionState === 'idle' || sessionState === 'finished'}
-            />
-            <button
-              className="btn btn-jump"
-              onClick={handleJump}
-              disabled={sessionState === 'idle' || sessionState === 'finished'}
-              title="Jump to time"
-            >
-              ⏩
-            </button>
-          </div>
-          <span className="timer-planned">
-            Planned: {formatTime(totalPlannedSec * 1000, false)}
-          </span>
-        </div>
-        {(sessionState === 'running' || sessionState === 'paused') && (
-          <button
-            className={`end-run-btn${showAllDone ? ' all-done' : ''}`}
-            onClick={handleReset}
-            title={
-              showAllDone
-                ? 'Все задачи выполнены — сохранить день и начать новый ран'
-                : 'Окончить ран и начать новый в этот же день'
-            }
-            aria-label="End run"
-          >
-            ✓
-          </button>
-        )}
-      </footer>
-
-      {showAllDone && (
-        <div className="all-done-banner" role="status">
-          <span className="all-done-emoji">🏁</span>
-          <span className="all-done-text">
-            Все задачи выполнены! Нажмите <strong>✓</strong>, чтобы сохранить день.
-          </span>
-          <button className="btn btn-all-done" onClick={handleReset}>
-            ✓ Сохранить день
-          </button>
-        </div>
-      )}
-
-      <div className="timeline-container" ref={timelineRef} onDragOver={handleTimelineDragOver} onDrop={handleTimelineDrop}>
-        {sortedTasks.length === 0 && sessionState === 'idle' ? (
-          <div className="empty-state">
-            <p>Add tasks to create your speedrun splits</p>
-            <p className="hint">Each task = one split with a planned time. Height = sqrt-scaled for visual balance.</p>
-          </div>
-        ) : view === 'list' ? (
-          <ListView
-            tasks={sortedTasks}
-            cumulativeTimes={cumulativeTimes}
-            elapsedSec={sessionElapsedSec}
-            sessionState={sessionState}
-            currentTaskIdx={currentTaskIdx}
-            deltaMs={currentDeltaMs}
-            onCompleteTask={(id) => completeTask(id)}
-            onSeek={(ms) => seek(ms)}
-            formatEnd={formatRealTime}
-          />
-        ) : view === 'spiral' ? (
-          <div className="spiral-view">
-            <SpiralThermometer
-              tasks={sortedTasks}
-              cumulativeTimes={cumulativeTimes}
-              totalPlannedSec={totalPlannedSec}
-              elapsedSec={sessionElapsedSec}
-              sessionState={sessionState}
-              currentTaskColor={currentTask?.color ?? DEFAULT_COLOR}
-              currentTaskIdx={currentTaskIdx}
-              deltaMs={currentDeltaMs}
-              onCompleteTask={(id) => completeTask(id)}
-              onUncompleteTask={(id) => uncompleteTask(id)}
-              onRenameTask={renameTask}
-              onChangeTaskTime={changeTaskTime}
-              onChangeTaskColor={changeTaskColor}
-              onSeek={(ms) => seek(ms)}
-            />
-          </div>
-        ) : (
-          <div className="timeline-inner">
-            {/* Thermometer column (planned) — glass tube with elapsed-time ticks */}
-            <div
-              className="timeline-thermo"
-              style={{ height: timelineHeight, '--thermo-color': currentTask?.color } as React.CSSProperties}
-            >
-              <div className="thermo-fill" ref={fillRef} />
-              <div className="thermo-marks">
-                <div className="thermo-mark" style={{ top: 12 }}>
-                  <span className="thermo-mark-label">0:00</span>
-                </div>
-                {rulerMarks.map((m) => (
-                  <div key={m.sec} className="thermo-mark" style={{ top: m.px }}>
-                    <span className="thermo-mark-label">{m.label}</span>
-                  </div>
-                ))}
-              </div>
-              {sortedTasks.map((task, idx) => {
-                const dotSec = cumulativeTimes[idx];
-                const dotPx = taskLayout[idx].offset;
-                const filled = sessionState !== 'idle' && sessionElapsedSec >= dotSec;
-                return (
-                  <div
-                    key={idx}
-                    className={`thermo-dot ${filled ? 'filled' : ''}`}
-                    style={{ top: dotPx, '--dot-color': task.color } as React.CSSProperties}
-                    title={task.name}
-                  >
-                    <span className="thermo-dot-emoji">{task.emoji}</span>
-                  </div>
-                );
-              })}
-              {showPlayhead && (
-                <div className="thermo-marker" ref={playheadRef} />
-              )}
-            </div>
-
-            {/* Task blocks */}
-            <div className="timeline-tracks" style={{ height: timelineHeight }}>
-              {/* thermo-fill moved to thermo column */}
-
-              {sortedTasks.map((task, idx) => {
-                const layout = taskLayout[idx];
-                const isCompleted = task.completedAt !== null;
-                const isCurrent = idx === currentTaskIdx && sessionState !== 'idle';
-                const plannedStartSec = cumulativeTimes[idx];
-                const plannedEndSec = plannedStartSec + task.plannedTime;
-
-                let delta: number | null = null;
-                let remaining: number | null = null;
-                if (isCompleted && task.completedAt !== null) {
-                  delta = (task.completedAt - plannedEndSec) * 1000;
-                } else if (sessionState === 'running' || sessionState === 'paused') {
-                  if (isCurrent) {
-                    // Start from the latest completed task's actual completion time
-                    let taskStart = 0;
-                    for (const st of sortedTasks) {
-                      if (st.completedAt !== null && st.completedAt > taskStart) {
-                        taskStart = st.completedAt;
+                  {runTasks.map((task, idx) => (
+                    <div
+                      key={task.id}
+                      className={`thermo-dot ${elapsedSec >= cumulativeTimes[idx] ? 'filled' : ''}`}
+                      style={
+                        {
+                          top: taskLayout[idx].offset,
+                          '--dot-color': task.color,
+                        } as React.CSSProperties
                       }
-                    }
-                    const elapsedInTask = Math.max(0, sessionElapsedSec - taskStart);
-                    remaining = (task.plannedTime - elapsedInTask) * 1000;
-                  }
-                  if (isCurrent && sessionState === 'running') {
-                    const actualProgressSec = sessionElapsedSec - plannedStartSec;
-                    const remainingPlanned = task.plannedTime - actualProgressSec;
-                    delta = -(remainingPlanned + timeCredit) * 1000;
-                  }
-                }
-
-                let segmentTime: string | null = null;
-                if (isCompleted && task.completedAt !== null) {
-                  let prevCompletedAt = 0;
-                  for (let i = idx - 1; i >= 0; i--) {
-                    if (sortedTasks[i].completedAt !== null) {
-                      prevCompletedAt = sortedTasks[i].completedAt!;
-                      break;
-                    }
-                  }
-                  segmentTime = formatTime((task.completedAt - prevCompletedAt) * 1000, true);
-                }
-
-                let displayRealTime = formatRealTime(plannedEndSec);
-                if (!isCompleted) {
-                  const currentIdx = sortedTasks.findIndex(t => t.completedAt === null);
-                  if (currentIdx !== -1 && idx >= currentIdx) {
-                    let lastCompletedAt = 0;
-                    for (const st of sortedTasks) {
-                      if (st.completedAt !== null && st.completedAt > lastCompletedAt) {
-                        lastCompletedAt = st.completedAt;
-                      }
-                    }
-                    const elapsedInCurrent = Math.max(0, sessionElapsedSec - lastCompletedAt);
-                    const remainingOfCurrent = sortedTasks[currentIdx].plannedTime - elapsedInCurrent;
-                    
-                    let totalRemainingSec = remainingOfCurrent;
-                    for (let i = currentIdx + 1; i <= idx; i++) {
-                      totalRemainingSec += sortedTasks[i].plannedTime;
-                    }
-                    
-                    displayRealTime = formatWallTime(now + (totalRemainingSec - timeCredit) * 1000);
-                  }
-                }
-
-                return (
+                      title={task.name}
+                    >
+                      <span className="thermo-dot-emoji">{task.emoji}</span>
+                    </div>
+                  ))}
                   <div
-                    key={task.id}
-                    className={`task-block ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''} ${task.type === 'rest' ? 'rest' : ''} ${dragIdx === idx ? 'dragging' : ''} ${dragOverIdx === idx && dragIdx !== idx ? 'drag-over' : ''}`}
-                    style={{ top: layout.offset, height: layout.height, '--task-color': task.color } as React.CSSProperties}
-                    draggable={sessionState === 'idle' || sessionState === 'paused'}
-                    onDragStart={() => onDragStart(idx)}
-                    onDragOver={(e) => onDragOver(e, idx)}
-                    onDrop={() => onDrop(idx)}
-                    onDragEnd={onDragEnd}
-                  >
-                    <div className="block-left">
-                      {sessionState === 'idle' && (
-                        <span className="drag-handle" title="Drag to reorder">⠿</span>
-                      )}
-                      <span
-                        className="task-emoji"
-                        onClick={() => {
-                          if (sessionState === 'idle' || sessionState === 'paused') {
-                            setEditingEmojiId(task.id);
-                            setEmojiEditSearch('');
-                          }
-                        }}
-                        title="Click to change emoji"
-                        style={{ cursor: sessionState === 'idle' || sessionState === 'paused' ? 'pointer' : 'default' }}
+                    className="thermo-marker"
+                    style={{ transform: `translateY(${playheadPx}px)` }}
+                  />
+                </div>
+
+                <div className="timeline-tracks" style={{ height: timelineHeight }}>
+                  {runTasks.map((task, idx) => {
+                    const layout = taskLayout[idx];
+                    const completed = task.completedAt !== null;
+                    const isCurrent = idx === currentTaskIdx && sessionState !== 'idle';
+                    const plannedEndSec = cumulativeTimes[idx] + task.plannedTime;
+
+                    // A closed block's delta is measured against its own slot;
+                    // the running one shows the live overtake of the sequence.
+                    const delta = completed
+                      ? (task.completedAt! - plannedEndSec) * 1000
+                      : isCurrent
+                        ? currentDeltaMs
+                        : null;
+
+                    const segmentTime = completed
+                      ? formatTime(
+                          (task.completedAt! -
+                            (idx > 0 ? (runTasks[idx - 1].completedAt ?? cumulativeTimes[idx]) : 0)) *
+                            1000,
+                          true
+                        )
+                      : null;
+
+                    // When the block will really end: its planned end, pulled
+                    // forward by the lead that has already been won.
+                    const endMs = completed
+                      ? run!.toWallMs(task.completedAt!)
+                      : taskEndMs(task) - credit.lead * 1000;
+
+                    return (
+                      <div
+                        key={task.id}
+                        className={`task-block ${completed ? 'completed' : ''} ${
+                          isCurrent ? 'current' : ''
+                        } ${task.type === 'rest' ? 'rest' : ''}`}
+                        style={
+                          {
+                            top: layout.offset,
+                            height: layout.height,
+                            '--task-color': task.color,
+                          } as React.CSSProperties
+                        }
                       >
-                        {task.emoji}
-                      </span>
-                      <span
-                        className="task-color-swatch"
-                        onClick={() => {
-                          if (sessionState === 'idle' || sessionState === 'paused') {
-                            setEditingColorId(task.id);
-                          }
-                        }}
-                        title="Click to change color"
-                        style={{
-                          background: task.color,
-                          cursor: sessionState === 'idle' || sessionState === 'paused' ? 'pointer' : 'default',
-                        }}
-                      />
-                      {task.type === 'rest' && (
-                        <span className="task-type-badge" title="Rest / break">☕ Rest</span>
-                      )}
-                      <div className="block-info">
-                        {editingNameId === task.id ? (
-                          <input
-                            className="edit-name-input"
-                            type="text"
-                            value={editNameStr}
-                            onChange={(e) => setEditNameStr(e.target.value)}
-                            onBlur={() => commitEditName(task.id)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') commitEditName(task.id); if (e.key === 'Escape') setEditingNameId(null); }}
-                            autoFocus
-                          />
-                        ) : (
-                          <span
-                            className="task-name"
-                            onClick={() => {
-                              if (sessionState === 'idle' || sessionState === 'paused') {
-                                startEditName(task.id, task.name);
-                              }
-                            }}
-                            title="Click to rename"
-                            style={{ cursor: sessionState === 'idle' || sessionState === 'paused' ? 'pointer' : 'default' }}
-                          >
-                            {task.name}
-                          </span>
-                        )}
-                        <div className="block-timers">
-                          {remaining !== null && (
-                            <div className="timer-stack">
-                              <span className="timer-caption">Времени на задачу осталось</span>
-                              <span className={`task-remaining ${remaining < 0 ? 'overdue' : ''}`}>
-                                {formatTime(Math.abs(remaining), true)}
-                              </span>
-                            </div>
-                          )}
-                          {editingTimeId === task.id ? (
-                            <input
-                              className="edit-time-input"
-                              placeholder="m:ss or h:mm:ss"
-                              type="text"
-                              inputMode="decimal"
-                              value={editTimeStr}
-                              onChange={(e) => setEditTimeStr(e.target.value)}
-                              onBlur={() => commitEditTime(task.id)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') commitEditTime(task.id); if (e.key === 'Escape') setEditingTimeId(null); }}
-                              autoFocus
-                            />
-                          ) : (
-                            <span
-                              className="task-planned-lg task-planned-clickable"
-                              onClick={() => { if (sessionState === 'idle' || sessionState === 'paused') startEditTime(task.id, task.plannedTime); }}
-                              title="Click to edit time"
-                            >
-                              {formatTime(task.plannedTime * 1000, false)}
+                        <div className="block-left">
+                          <span className="task-emoji">{task.emoji}</span>
+                          <span className="task-color-swatch" style={{ background: task.color }} />
+                          {task.type === 'rest' && (
+                            <span className="task-type-badge" title="Rest / break">
+                              ☕ Rest
                             </span>
                           )}
+                          <div className="block-info">
+                            <span className="task-name">{task.name}</span>
+                            <div className="block-timers">
+                              <span className="task-planned-lg">
+                                {formatTime(task.plannedTime * 1000, false)}
+                              </span>
+                            </div>
+                            <span
+                              className={`task-delta ${delta !== null && delta < 0 ? 'ahead' : ''} ${
+                                delta !== null && delta > 0 ? 'behind' : ''
+                              }`}
+                            >
+                              {delta !== null ? formatDelta(delta) : '—'}
+                            </span>
+                          </div>
                         </div>
-                        <span
-                          className={`task-delta ${delta !== null && delta < 0 ? 'ahead' : ''} ${delta !== null && delta > 0 ? 'behind' : ''}`}
-                        >
-                          {delta !== null ? formatDelta(delta) : '—'}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="block-right">
-                      <span className="task-segment">{segmentTime ?? '—'}</span>
-                      <span className="task-realtime">
-                        {displayRealTime}
-                      </span>
-                      <div className="task-actions">
-                        {!isCompleted && sessionState === 'running' && (
-                          <button
-                            className="btn btn-complete"
-                            onClick={() => completeTask(task.id)}
-                            title="Complete split"
-                          >
-                            ✓
-                          </button>
-                        )}
-                        {isCompleted && (sessionState === 'running' || sessionState === 'paused') && (
-                          <button
-                            className="btn btn-undo"
-                            onClick={() => uncompleteTask(task.id)}
-                            title="Undo"
-                          >
-                            ↩
-                          </button>
-                        )}
-                        {(sessionState === 'idle' || sessionState === 'paused') && (
-                          <>
-                            <button
-                              className="btn btn-copy"
-                              onClick={() => copyTask(task.id)}
-                              title="Copy task"
-                            >
-                              📋
-                            </button>
-                            <button
-                              className="btn btn-remove"
-                              onClick={() => removeTask(task.id)}
-                              title="Remove"
-                            >
-                              ✕
-                            </button>
-                          </>
-                        )}
-                        {sessionState === 'paused' && isCurrent && (
-                          <button
-                            className="btn btn-split"
-                            onClick={splitTask}
-                            title="Split task at current time"
-                          >
-                            ✂
-                          </button>
-                        )}
+                        <div className="block-right">
+                          <span className="task-segment">{segmentTime ?? '—'}</span>
+                          <span className="task-realtime">{wallTime(endMs)}</span>
+                          <div className="task-actions">
+                            {!completed ? (
+                              <button
+                                className="btn btn-complete"
+                                onClick={() => completeTask(task.id)}
+                                title="Закрыть задачу"
+                              >
+                                ✓
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-undo"
+                                onClick={() => uncompleteTask(task.id)}
+                                title="Вернуть в работу"
+                              >
+                                ↩
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  {(sessionState === 'idle' || sessionState === 'paused') && (
-                    <div
-                      className="resize-handle"
-                      onMouseDown={(e) => handleResizeStart(e, task.id, layout.height)}
-                    />
-                  )}
+                    );
+                  })}
+
+                  <div className="finish-line" style={{ top: timelineHeight }}>
+                    <span className="finish-label">🏁 Finish</span>
                   </div>
-                );
-              })}
-
-              {sortedTasks.length > 0 && (
-                <div className="finish-line" style={{ top: timelineHeight }}>
-                  <span className="finish-label">🏁 Finish</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-        </>
-      )}
-
-      {showSidebar && (
-        <div className="sidebar">
-          <div className="sidebar-header">
-            <span>📋 Task Templates</span>
-            <button className="btn btn-sidebar-close" onClick={() => setShowSidebar(false)}>✕</button>
-          </div>
-          <div className="sidebar-form">
-            <span className="sidebar-emoji">{tplEmoji}</span>
-            <input className="sidebar-input" placeholder="Name" value={tplName} onChange={e => setTplName(e.target.value)} />
-            <input className="sidebar-input sidebar-input-sm" placeholder="min" value={tplMinutes} onChange={e => setTplMinutes(e.target.value)} />
-            <button
-              type="button"
-              className={`type-toggle type-toggle-sm ${tplType === 'rest' ? 'active' : ''}`}
-              onClick={() => setTplType(tplType === 'rest' ? 'task' : 'rest')}
-              title={tplType === 'rest' ? 'Regular task' : 'Rest / break — no congratulations on completion'}
-            >
-              ☕
-            </button>
-            <button className="btn btn-add btn-add-sm" onClick={addTaskTemplate}>+</button>
-          </div>
-          <div className="sidebar-emoji-row">
-            {TASK_EMOJIS.map(em => (
-              <button key={em} type="button" className={`emoji-opt ${tplEmoji===em?'active':''}`} onClick={()=>setTplEmoji(em)}>{em}</button>
-            ))}
-            <button type="button" className="emoji-opt emoji-more" onClick={()=>setShowTplEmojiPopup(!showTplEmojiPopup)} title="More">＋</button>
-            {showTplEmojiPopup && (
-              <div className="emoji-popup tpl-popup">
-                <input
-                  type="text"
-                  className="emoji-search-input"
-                  placeholder="Search emojis..."
-                  value={tplEmojiSearch}
-                  onChange={(e) => setTplEmojiSearch(e.target.value)}
-                  autoFocus
-                />
-                <div className="emoji-popup-grid">
-                  {filteredTplEmojis.map(em => (
-                    <button key={em} type="button" className={`emoji-popup-item ${tplEmoji===em?'active':''}`} onClick={()=>{setTplEmoji(em);setShowTplEmojiPopup(false)}}>{em}</button>
-                  ))}
                 </div>
               </div>
             )}
           </div>
-          <div className="sidebar-color-row">
-            {TASK_COLORS.map(c => (
-              <button key={c} className={`color-opt ${tplColor===c?'active':''}`} style={{background:c}} onClick={()=>setTplColor(c)} />
-            ))}
-            <input type="color" className="color-input" value={tplColor} onChange={e=>setTplColor(e.target.value)} title="Pick any color" />
-          </div>
-          <div className="sidebar-list">
-            {taskTemplates.map(tpl => (
-              <div
-                key={tpl.id}
-                className="sidebar-card"
-                draggable
-                onDragStart={e => { e.dataTransfer.setData('text/plain', tpl.id); e.dataTransfer.effectAllowed = 'copy'; }}
-              >
-                <span className="sidebar-card-emoji">{tpl.emoji}</span>
-                <span className="sidebar-card-name">{tpl.name}</span>
-                {tpl.type === 'rest' && <span className="sidebar-type-badge" title="Rest / break">☕</span>}
-                <span className="sidebar-card-time">{formatTime(tpl.plannedTime*1000, false)}</span>
-                <button className="btn btn-sidebar-del" onClick={()=>deleteTaskTemplate(tpl.id)}>✕</button>
-              </div>
-            ))}
-            {taskTemplates.length === 0 && <p className="sidebar-empty">No templates yet. Create one above.</p>}
-          </div>
-          <p className="sidebar-hint">Drag cards onto timeline to add tasks</p>
-        </div>
+        </>
       )}
 
-      {/* Global emoji picker overlay */}
-      {editingEmojiTask && (
-        <div className="emoji-overlay" onClick={() => { setEditingEmojiId(null); setEmojiEditSearch(''); }}>
-          <div className="emoji-overlay-popup" onClick={e => e.stopPropagation()}>
-            <div className="emoji-overlay-header">
-              <span>Choose emoji for <strong>{editingEmojiTask.name}</strong></span>
-              <button
-                className="emoji-overlay-close"
-                onClick={() => { setEditingEmojiId(null); setEmojiEditSearch(''); }}
-                title="Cancel"
-              >
-                ✕
-              </button>
-            </div>
-            <input
-              type="text"
-              className="emoji-search-input"
-              placeholder="Search emojis..."
-              value={emojiEditSearch}
-              onChange={(e) => setEmojiEditSearch(e.target.value)}
-              autoFocus
-            />
-            <div className="emoji-popup-grid">
-              {filteredEditEmojis.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  className={`emoji-popup-item ${editingEmojiTask.emoji === em ? 'active' : ''}`}
-                  onClick={() => changeTaskEmoji(editingEmojiTask.id, em)}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Global color picker overlay */}
-      {editingColorTask && (
-        <div className="emoji-overlay" onClick={() => setEditingColorId(null)}>
-          <div className="emoji-overlay-popup" onClick={e => e.stopPropagation()}>
-            <div className="emoji-overlay-header">
-              <span>Choose color for <strong>{editingColorTask.name}</strong></span>
-              <button
-                className="emoji-overlay-close"
-                onClick={() => setEditingColorId(null)}
-                title="Cancel"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="color-picker color-picker-overlay">
-              {TASK_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`color-opt ${editingColorTask.color === c ? 'active' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => changeTaskColor(editingColorTask.id, c)}
-                />
-              ))}
-              <input
-                type="color"
-                className="color-input"
-                value={editingColorTask.color}
-                onChange={(e) => {
-                  setTasks(prev => prev.map(t => t.id === editingColorTask.id ? { ...t, color: e.target.value } : t));
-                }}
-                title="Pick any color"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Congratulations on completing a regular task */}
       {congrats && (
         <div className="congrats-overlay" key={congrats.id} aria-hidden="true">
           <div className="congrats-text">
@@ -1967,9 +655,13 @@ function App() {
         </div>
       )}
 
-      {/* Edge glow flash when switching to the next task — decorative overlay, never intercepts clicks */}
       {glow && (
-        <div key={glow.id} className="task-glow" style={{ '--glow-color': glow.color } as React.CSSProperties} aria-hidden="true" />
+        <div
+          key={glow.id}
+          className="task-glow"
+          style={{ '--glow-color': glow.color } as React.CSSProperties}
+          aria-hidden="true"
+        />
       )}
     </div>
   );

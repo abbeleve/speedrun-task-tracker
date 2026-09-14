@@ -8,6 +8,8 @@ function task(partial: Partial<Task>): Task {
     name: 'Task',
     plannedTime: 300,
     completedAt: null,
+    start: null,
+    finishedAt: null,
     order: 0,
     emoji: '📋',
     color: '#3498db',

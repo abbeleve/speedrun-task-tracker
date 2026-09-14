@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RunRecord } from './types';
-import * as api from './api';
+import type { Chain } from './schedule';
+import { dayKeyOf, isDone } from './schedule';
 
-// How many session nodes are rendered up front; the timeline lazily appends
-// more as the user scrolls towards the bottom of the list.
+// How many sequences are rendered up front; the timeline lazily appends more as
+// the user scrolls towards the bottom of the list.
 const PAGE_SIZE = 10;
 
 function parseKey(key: string): Date {
@@ -35,141 +35,103 @@ function fmtWall(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// One completed session, drawn as a single gray line on the timeline: the day it
-// belongs to, when it started and ended, how long it lasted, and the schedule
-// delta versus the plan (the "обгон"). The task breakdown is collapsed by
-// default and slides open on hover, focus or tap.
-function RunCard({ run, onOpenRun }: { run: RunRecord; onOpenRun: (run: RunRecord) => void }) {
+// One worked sequence, drawn as a single gray line: the day it belongs to, the
+// slot it occupied, how long it was planned for, and the overtake — how far
+// before (or after) its planned end the last block was actually closed. The
+// task breakdown is collapsed by default and slides open on click.
+function ChainCard({ chain, onOpenChain }: { chain: Chain; onOpenChain: (c: Chain) => void }) {
   const [expanded, setExpanded] = useState(false);
 
-  const durSec = (run.endedAt - run.startedAt) / 1000;
-  const tasks = run.tasks ?? [];
-  const hasTasks = tasks.length > 0;
-  const plannedSec = run.plannedSec;
+  const plannedSec = (chain.endMs - chain.startMs) / 1000;
+  const lastDoneMs = chain.tasks.reduce(
+    (max, t) => (t.finishedAt !== null && t.finishedAt > max ? t.finishedAt : max),
+    0
+  );
+  const allDone = chain.tasks.every(isDone);
+  const deltaSec = allDone && lastDoneMs > 0 ? Math.round((chain.endMs - lastDoneMs) / 1000) : null;
 
-  // Signed difference between the actual session length and the plan.
-  const deltaSec = plannedSec > 0 ? Math.round(durSec) - plannedSec : null;
   const deltaText =
     deltaSec === null
-      ? '—'
-      : deltaSec === 0
+      ? 'в работе'
+      : Math.abs(deltaSec) < 30
         ? 'в график'
-        : deltaSec < 0
-          ? `обгон ${fmtDur(-deltaSec)}`
-          : `отставание ${fmtDur(deltaSec)}`;
-  const deltaTitle =
-    deltaSec === null
-      ? 'Плановое время не задано'
-      : deltaSec === 0
-        ? 'Закончено ровно по плану'
-        : deltaSec < 0
-          ? `Обгон: на ${fmtDur(-deltaSec)} быстрее плана`
-          : `Отставание: на ${fmtDur(deltaSec)} дольше плана`;
+        : deltaSec > 0
+          ? `обгон ${fmtDur(deltaSec)}`
+          : `отставание ${fmtDur(-deltaSec)}`;
 
   const toggle = () => setExpanded((v) => !v);
 
   return (
     <div
-      className={`run-row${hasTasks ? ' has-tasks' : ''}${expanded ? ' expanded' : ''}`}
-      role={hasTasks ? 'button' : undefined}
-      tabIndex={hasTasks ? 0 : undefined}
-      aria-expanded={hasTasks ? expanded : undefined}
-      onClick={hasTasks ? toggle : undefined}
-      onKeyDown={
-        hasTasks
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                toggle();
-              }
-            }
-          : undefined
-      }
-      title={hasTasks ? 'Показать задачи сессии' : 'Нет сохранённых задач'}
+      className={`run-row has-tasks${expanded ? ' expanded' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onClick={toggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      }}
+      title="Показать задачи секвенции"
     >
       <div className="run-line">
-        <span className="run-day">{fmtDate(run.date)}</span>
-        <span className="run-sep" aria-hidden="true">
-          ·
-        </span>
+        <span className="run-day">{fmtDate(dayKeyOf(chain.startMs))}</span>
+        <span className="run-sep" aria-hidden="true">·</span>
         <span className="run-time">
-          {fmtWall(run.startedAt)}–{fmtWall(run.endedAt)}
+          {fmtWall(chain.startMs)}–{fmtWall(chain.endMs)}
         </span>
-        <span className="run-sep" aria-hidden="true">
-          ·
-        </span>
-        <span className="run-dur">{fmtDur(durSec)}</span>
-        <span className="run-sep" aria-hidden="true">
-          ·
-        </span>
-        <span className="run-delta" title={deltaTitle}>
-          {deltaText}
-        </span>
-        {hasTasks && (
-          <span className="dc-sess-chevron" aria-hidden="true">
-            ▾
-          </span>
-        )}
+        <span className="run-sep" aria-hidden="true">·</span>
+        <span className="run-dur">{fmtDur(plannedSec)}</span>
+        <span className="run-sep" aria-hidden="true">·</span>
+        <span className="run-delta">{deltaText}</span>
+        <span className="dc-sess-chevron" aria-hidden="true">▾</span>
       </div>
-      {hasTasks && (
-        <div className="dc-sess-details">
-          <div className="dc-sess-details-inner">
-            <ul className="day-card-tasks">
-              {tasks.map((t) => (
-                <li key={t.id} className={t.completedAt !== null ? 'done' : ''}>
-                  <span className="dc-emoji">{t.emoji}</span>
-                  <span className="dc-name">{t.name}</span>
-                  <span className="dc-time">{fmtDur(t.plannedTime)}</span>
-                  <span className="dc-status">{t.completedAt !== null ? '✓' : '○'}</span>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="dc-sess-open"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenRun(run);
-              }}
-            >
-              ↗ Открыть сессию в трекере
-            </button>
-          </div>
+      <div className="dc-sess-details">
+        <div className="dc-sess-details-inner">
+          <ul className="day-card-tasks">
+            {chain.tasks.map((t) => (
+              <li key={t.id} className={isDone(t) ? 'done' : ''}>
+                <span className="dc-emoji">{t.emoji}</span>
+                <span className="dc-name">{t.name}</span>
+                <span className="dc-time">{fmtDur(t.plannedTime)}</span>
+                <span className="dc-status">{isDone(t) ? '✓' : '○'}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="dc-sess-open"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChain(chain);
+            }}
+          >
+            ↗ Открыть секвенцию в трекере
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-function DaysPage({ onOpenRun }: { onOpenRun: (run: RunRecord) => void }) {
-  const [runs, setRuns] = useState<RunRecord[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+interface DaysPageProps {
+  chains: Chain[];
+  onOpenChain: (chain: Chain) => void;
+}
 
-  useEffect(() => {
-    let active = true;
-    api
-      .loadRuns()
-      .then((r) => {
-        if (active) setRuns(r);
-      })
-      .catch((e) => {
-        console.error('Failed to load runs', e);
-        if (active) setError('Не удалось загрузить сессии');
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Newest sessions first.
+// Every sequence that was actually worked, newest first — the history the
+// saved-runs list used to show, now read straight off the calendar.
+function DaysPage({ chains, onOpenChain }: DaysPageProps) {
   const sessions = useMemo(
-    () => (runs ? [...runs].sort((a, b) => b.startedAt - a.startedAt) : []),
-    [runs]
+    () =>
+      chains
+        .filter((c) => c.tasks.some(isDone))
+        .sort((a, b) => b.startMs - a.startMs),
+    [chains]
   );
 
-  // ── Lazy loading (infinite scroll) ──
-  // Only the first batch of nodes is mounted; a sentinel at the bottom of the
-  // timeline appends the next batch once it scrolls into view.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -199,17 +161,15 @@ function DaysPage({ onOpenRun }: { onOpenRun: (run: RunRecord) => void }) {
     <div className="days-page">
       <h2 className="days-title">🗓 Таймлайн дней</h2>
 
-      {error && <p className="days-empty">{error}</p>}
-      {runs === null && !error && <p className="days-empty">Загрузка…</p>}
-      {runs !== null && sessions.length === 0 && (
+      {sessions.length === 0 && (
         <p className="days-empty">
-          Пока нет сохранённых сессий. Начни спринт — и они появятся здесь.
+          Пока нет проработанных секвенций. Закрой задачу в календаре — и она появится здесь.
         </p>
       )}
 
       <div className="days-timeline">
-        {visibleSessions.map((run) => (
-          <RunCard key={run.id} run={run} onOpenRun={onOpenRun} />
+        {visibleSessions.map((chain) => (
+          <ChainCard key={`${chain.startMs}-${chain.id}`} chain={chain} onOpenChain={onOpenChain} />
         ))}
         {hasMore && <div ref={sentinelRef} className="days-sentinel" aria-hidden="true" />}
       </div>

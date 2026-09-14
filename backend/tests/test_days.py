@@ -201,3 +201,44 @@ def test_day_state_user_isolation(client):
     # Alice still sees hers
     assert client.get('/api/day/2026-09-10', headers=alice_h).json()['tasks'][0]['name'] == 'Dev'
     assert client.get('/api/day-dates', headers=alice_h).json() == ['2026-09-10']
+
+
+def test_day_state_keeps_calendar_slots(client, auth_headers):
+    """A task's wall-clock slot and real finish timestamp round-trip."""
+    body = {
+        'tasks': [
+            {
+                'id': 'a',
+                'name': 'Dev',
+                'plannedTime': 3600,
+                'start': 600,  # 10:00
+                'finishedAt': 1_772_000_000_000,
+                'order': 0,
+                'emoji': '💻',
+                'color': '#3498db',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'done',
+            },
+            {
+                'id': 'b',
+                'name': 'Planned later',
+                'plannedTime': 1800,
+                'order': 1,
+                'emoji': '📋',
+                'color': '#2ecc71',
+                'type': 'task',
+                'day': '2026-09-10',
+                'status': 'open',
+            },
+        ]
+    }
+    assert client.put('/api/day/2026-09-10', headers=auth_headers, json=body).status_code == 200
+
+    tasks = client.get('/api/day/2026-09-10', headers=auth_headers).json()['tasks']
+    assert tasks[0]['start'] == 600
+    assert tasks[0]['finishedAt'] == 1_772_000_000_000
+    assert tasks[0]['status'] == 'done'
+    # An unplaced backlog task simply has no slot.
+    assert tasks[1]['start'] is None
+    assert tasks[1]['finishedAt'] is None

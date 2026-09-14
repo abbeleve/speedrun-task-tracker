@@ -22,9 +22,19 @@ export function newTaskId(): string {
 // already sat on a day's timeline defaults to in-progress (or done when it was
 // completed), and its day defaults to the day it is stored under.
 export function normalizeTask(task: Task, day: string): Task {
-  const completed = task.completedAt !== null && task.completedAt !== undefined;
+  const completed =
+    (task.completedAt !== null && task.completedAt !== undefined) ||
+    (task.finishedAt !== null && task.finishedAt !== undefined);
   const status = (task.status as TaskStatus | undefined) ?? (completed ? 'done' : 'in-progress');
-  return { ...task, day: task.day || day, status };
+  return {
+    ...task,
+    day: task.day || day,
+    status,
+    // Calendar fields, absent on rows written before the slot model. The slot
+    // itself is filled in by migrateDayTasks() once the whole day is known.
+    start: task.start ?? null,
+    finishedAt: task.finishedAt ?? null,
+  };
 }
 
 export function normalizeTasks(tasks: Task[] | undefined | null, day: string): Task[] {
@@ -78,9 +88,11 @@ export function scheduledDayFor(task: Task, fallbackDay: string): string | null 
 }
 
 // The next occurrence of a recurring task, scheduled `interval` days after this
-// one's day and returned to the Open backlog. `makeId` supplies the new id and
-// `fromDay` is the fallback day for legacy rows without one. Returns null for a
-// one-off task or once an increasing series has run out of steps.
+// one's day. A task that sits on the calendar keeps its slot — the occurrence
+// lands on the same time of day, like a repeating calendar event; one that was
+// only ever in the backlog comes back to the backlog. `makeId` supplies the new
+// id and `fromDay` is the fallback day for legacy rows without one. Returns
+// null for a one-off task or once an increasing series has run out of steps.
 export function spawnNextOccurrence(
   task: Task,
   makeId: () => string,
@@ -91,17 +103,20 @@ export function spawnNextOccurrence(
   const interval = nextRepeatIntervalDays(task.repeat, index);
   if (interval === null) return null;
   const baseDay = task.day || fromDay || todayKey();
+  const placed = task.start !== null && task.start !== undefined;
   return {
     id: makeId(),
     name: task.name,
     plannedTime: task.plannedTime,
     completedAt: null,
+    start: placed ? task.start : null,
+    finishedAt: null,
     order: 0,
     emoji: task.emoji,
     color: task.color,
     type: task.type,
     day: shiftDayKey(baseDay, interval),
-    status: 'open',
+    status: placed ? 'in-progress' : 'open',
     repeat: task.repeat,
     repeatIndex: index + 1,
     repeatOf: task.id,
