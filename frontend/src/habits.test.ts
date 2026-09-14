@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Habit, HabitEntry, Task } from './types';
 import {
+  dayCompletion,
   defaultUnit,
   habitAuto,
   habitHistory,
@@ -8,6 +9,7 @@ import {
   habitProgress,
   habitTotal,
   isHabitComplete,
+  isHabitDoneOn,
   formatHabit,
 } from './habits';
 
@@ -110,6 +112,64 @@ describe('progress / completion', () => {
     expect(isHabitComplete(9, 10)).toBe(false);
     expect(isHabitComplete(10, 10)).toBe(true);
     expect(isHabitComplete(4, 0)).toBe(false);
+  });
+});
+
+describe('isHabitDoneOn', () => {
+  it('is true when total hits the target on that day', () => {
+    const h = habit({ target: 10 });
+    expect(isHabitDoneOn(h, DAY, [], [entry(10)])).toBe(true);
+  });
+
+  it('is false when total falls short', () => {
+    const h = habit({ target: 10 });
+    expect(isHabitDoneOn(h, DAY, [], [entry(9)])).toBe(false);
+  });
+
+  it('combines manual + auto parts (linked task)', () => {
+    const h = habit({ format: 'time', target: 60, unit: 'мин' });
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, plannedTime: 3600, day: DAY });
+    expect(isHabitDoneOn(h, DAY, [done], [])).toBe(true);
+  });
+
+  it('returns false for a zero-target habit', () => {
+    const h = habit({ target: 0 });
+    expect(isHabitDoneOn(h, DAY, [], [entry(5)])).toBe(false);
+  });
+});
+
+describe('dayCompletion', () => {
+  it('returns 0/0/0 for an empty habit list', () => {
+    expect(dayCompletion([], DAY, [], [])).toEqual({ done: 0, total: 0, rate: 0 });
+  });
+
+  it('counts done habits and reports the rate', () => {
+    const h1 = habit({ id: 'h1', target: 10 });
+    const h2 = habit({ id: 'h2', target: 5 });
+    const h3 = habit({ id: 'h3', target: 1 });
+    const habits = [h1, h2, h3];
+    // h1 met, h2 met, h3 not met — note each entry is bound to a specific
+    // habit id, otherwise the helper factory collides on h1.
+    const entries = [
+      { habitId: 'h1', date: DAY, manual: 10 },
+      { habitId: 'h2', date: DAY, manual: 5 },
+      { habitId: 'h3', date: DAY, manual: 0 },
+    ];
+    expect(dayCompletion(habits, DAY, [], entries)).toEqual({
+      done: 2,
+      total: 3,
+      rate: 2 / 3,
+    });
+  });
+
+  it('clamps the rate into 0..1', () => {
+    const h = habit({ target: 1 });
+    // Far over the target — still 1.0, not bigger.
+    expect(dayCompletion([h], DAY, [], [entry(99)])).toEqual({
+      done: 1,
+      total: 1,
+      rate: 1,
+    });
   });
 });
 

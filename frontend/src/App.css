@@ -3775,24 +3775,36 @@
   }
 }
 
-/* ===== Habit tracker (home page) ===== */
+/* ===== Habit tracker (home page) — rainbow dial ===== */
 
 .home-panel--habits {
   margin-top: 20px;
 }
 
+/* ── Head row ─────────────────────────────────────────────────── */
 .habits-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .habits-title {
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.habits-title em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .habits-empty {
@@ -3801,193 +3813,382 @@
   background: var(--bg-secondary);
   border: 1px dashed var(--border);
   border-radius: var(--radius);
+  text-align: center;
 }
 
-/* The reorderable grid: cards flow responsively and can be dragged to a new
-   spot — dropping one reorders the rest around it. */
-.habits-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 16px;
+.habits-empty strong {
+  color: var(--text-primary);
 }
 
-.habit-card {
+/* ── Hero dial ──────────────────────────────────────────────────
+   The hero is the visual anchor of the tracker: a half-rainbow of dots
+   framing a single oversized number. The dial sits behind the text
+   via a vertical stack, so the SVG and the typography share the same
+   column instead of needing absolute positioning. */
+
+.habit-hero {
   position: relative;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--habit-color, var(--accent-blue));
-  border-radius: var(--radius);
-  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  cursor: grab;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 280px;
+  padding: 18px 24px 22px;
+  margin: 8px 0 22px;
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      120% 100% at 50% 100%,
+      color-mix(in srgb, var(--accent-cyan) 8%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--bg-surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.habit-card.dragging {
-  opacity: 0.45;
+/* The dial SVG sits at the top of the hero stack. It is allowed to
+   overflow slightly to the sides on narrow screens so the arc never
+   gets squashed into an ellipse. */
+.habit-hero-dial {
+  display: block;
+  margin-bottom: -52px;
+  pointer-events: none;
+  max-width: 100%;
+  height: auto;
+}
+
+/* The number + eyebrow + yesterday line sit on top of the dial, in
+   the gap the SVG deliberately leaves at the bottom. */
+.habit-hero-copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.habit-hero-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.habit-hero-number {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+
+.habit-hero-number-value {
+  font-size: clamp(4.5rem, 11vw, 7.5rem);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+}
+
+.habit-hero-number-unit {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.habit-hero-yesterday {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.habit-hero-yesterday-value {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.habit-hero-yesterday-label {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.habit-hero-trend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.habit-hero-trend--up {
+  color: var(--accent-green);
+  border-color: color-mix(in srgb, var(--accent-green) 40%, var(--border));
+}
+
+.habit-hero-trend--down {
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 40%, var(--border));
+}
+
+/* The empty state keeps the hero shape but mutes everything: dim
+   dots, a dash where the number goes, a single line of explanation. */
+.habit-hero.is-empty .habit-hero-dial circle {
+  opacity: 0.12;
+}
+
+.habit-hero.is-empty .habit-hero-number-value {
+  color: var(--text-dim);
+}
+
+/* ── Habit list ─────────────────────────────────────────────────
+   The rows take over once the hero has set the context. Each row
+   is a horizontal strip: identity on the left, a tiny copy of the
+   hero dial in the middle (the past 7 days), the +/- steppers on
+   the right. */
+
+.habits-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.habit-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto minmax(0, auto);
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: grab;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.habit-row:hover {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 45%, var(--border));
+}
+
+.habit-row.dragging {
+  opacity: 0.4;
   cursor: grabbing;
 }
 
-.habit-card.done {
-  border-left-color: var(--accent-green);
+/* The completed row gets a soft glow in the habit's own colour, not a
+   generic green — the colour belongs to the habit. */
+.habit-row.done {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 55%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--habit-color, var(--accent-blue)) 28%, transparent),
+    0 2px 12px color-mix(in srgb, var(--habit-color, var(--accent-blue)) 14%, transparent);
 }
 
-.habit-card-head {
+/* Identity column: emoji + name + numeric read-out */
+.habit-row-identity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
 }
 
 .habit-emoji {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 16%, transparent);
+  border-radius: 10px;
 }
 
-.habit-name {
-  flex: 1;
-  font-weight: 700;
+.habit-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.habit-row-name {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  letter-spacing: -0.005em;
 }
 
-.habit-value {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.habit-row-name:hover {
+  color: var(--habit-color, var(--accent-blue));
 }
 
-.habit-num {
-  font-family: var(--font-mono);
-  font-size: 1.05rem;
+.habit-row-target {
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.habit-row-target-value {
+  font-weight: 700;
   color: var(--text-primary);
 }
 
-.habit-num.ok {
-  color: var(--accent-green);
+.habit-row-target-value.ok {
+  color: var(--habit-color, var(--accent-blue));
 }
 
-.habit-meta {
-  font-size: 0.78rem;
+.habit-row-target-unit {
+  font-size: 0.72rem;
+  font-weight: 500;
   color: var(--text-secondary);
+  margin-left: 2px;
 }
 
-.habit-bar {
-  height: 8px;
-  background: var(--bg-secondary);
-  border-radius: 999px;
+.habit-row-target-sep {
+  color: var(--text-dim);
+}
+
+.habit-row-target-goal {
+  color: var(--text-dim);
+}
+
+/* Mini-dial: the 7-day history, a small copy of the hero. The
+   dial itself is the visual; the marks underneath are a fallback
+   for screen readers and hover affordance, but visually hidden. */
+.habit-row-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.habit-row-dial {
+  display: block;
+}
+
+.habit-row-strip-marks {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+  /* Visually hidden but kept in the DOM for assistive tech parity. */
+  opacity: 0;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
 }
 
-.habit-bar-fill {
-  height: 100%;
-  background: var(--habit-color, var(--accent-blue));
-  border-radius: 999px;
-  transition: width 0.2s ease;
+.habit-row-mark {
+  /* nothing — kept as a hook for future tooling. */
 }
 
-.habit-actions {
+/* Stepper: − step + on the right edge. Quiet by default; the
+   active colour belongs to the habit, not the global accent. */
+.habit-row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .habit-btn {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  font-size: 0.9rem;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 5px 11px;
+  font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s ease;
+  font-variant-numeric: tabular-nums;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.1s ease;
+  min-width: 32px;
 }
 
 .habit-btn:hover {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
+  color: var(--habit-color, var(--accent-cyan));
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-cyan)) 60%, var(--border));
 }
 
-.habit-btn--icon {
-  padding: 2px 6px;
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.habit-btn--icon:hover {
-  color: var(--accent-gold);
-  border-color: var(--accent-gold);
+.habit-btn:active {
+  transform: translateY(1px);
 }
 
 .habit-step {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
-  min-width: 34px;
+  padding: 0 4px;
+  min-width: 42px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.habit-toggle {
-  margin-left: auto;
-  font-size: 0.8rem;
+/* ── Layout: shrink gracefully on narrow screens ─────────────── */
+
+@media (max-width: 720px) {
+  .habit-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "identity actions"
+      "strip strip";
+    row-gap: 10px;
+  }
+  .habit-row-identity { grid-area: identity; }
+  .habit-row-actions { grid-area: actions; }
+  .habit-row-strip {
+    grid-area: strip;
+    justify-content: flex-start;
+  }
 }
 
-.habit-toggle.active {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
+@media (prefers-reduced-motion: reduce) {
+  .habit-row,
+  .habit-btn {
+    transition: none;
+  }
 }
 
-.habit-history {
-  list-style: none;
-  margin: 0;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.habit-history li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-}
-
-.habit-history li.today {
-  font-weight: 700;
-}
-
-.habit-history-day {
-  flex: 1;
-  color: var(--text-secondary);
-  text-transform: capitalize;
-}
-
-.habit-history li.ok .habit-history-day {
-  color: var(--text-primary);
-}
-
-.habit-history-value {
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-}
-
-.habit-history-mark {
-  width: 14px;
-  text-align: center;
-  color: var(--text-dim);
-}
-
-.habit-history li.ok .habit-history-mark {
-  color: var(--accent-green);
-}
 
 .hab-modal {
   width: 460px;

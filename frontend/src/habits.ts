@@ -67,6 +67,41 @@ export function isHabitComplete(value: number, target: number): boolean {
   return target > 0 && value >= target;
 }
 
+// A habit's completion status on a single day — the dial and the hero summary
+// both care about "was it hit that day", not the raw number. Habits with a
+// zero target count as not done (avoid div-by-zero + never-met).
+export function isHabitDoneOn(
+  habit: Habit,
+  date: string,
+  tasks: Task[],
+  entries: HabitEntry[]
+): boolean {
+  return isHabitComplete(habitTotal(habit, date, tasks, entries), habit.target);
+}
+
+// Counts of done / total on a given day, plus the completion rate 0..1.
+// Empty habit lists return 0/0/0 so the dial renders its empty state instead
+// of NaN.
+export interface DayCompletion {
+  done: number;
+  total: number;
+  rate: number; // 0..1, clamped
+}
+
+export function dayCompletion(
+  habits: Habit[],
+  date: string,
+  tasks: Task[],
+  entries: HabitEntry[]
+): DayCompletion {
+  if (habits.length === 0) return { done: 0, total: 0, rate: 0 };
+  let done = 0;
+  for (const h of habits) {
+    if (isHabitDoneOn(h, date, tasks, entries)) done++;
+  }
+  return { done, total: habits.length, rate: Math.max(0, Math.min(1, done / habits.length)) };
+}
+
 // Human-readable "value unit target" line, e.g. "7 / 10 раз" or "245 / 300 мин".
 export function formatHabit(value: number, target: number, unit: string): string {
   const u = unit ? ` ${unit}` : '';
