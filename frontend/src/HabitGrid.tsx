@@ -207,9 +207,6 @@ function HabitCard({
 
   const yesterday = shiftDayKey(date, -1);
   const yesterdayTotal = habitTotal(habit, yesterday, tasks, entries);
-  const yesterdayProgress = habit.target > 0
-    ? Math.max(0, Math.min(1, yesterdayTotal / habit.target))
-    : 0;
   const yesterdayPct = habit.target > 0 ? Math.round(Math.max(0, yesterdayTotal / habit.target) * 100) : 0;
 
   return (
