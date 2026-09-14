@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { RepeatMode, Task, TaskType } from './types';
+import type { Habit, RepeatMode, Task, TaskType } from './types';
 import { ALL_EMOJIS, EMOJI_DATA, TASK_COLORS, resolveTaskEmoji } from './types';
 import { INCREASING_SERIES } from './tasks';
 import { DAY_MIN } from './schedule';
@@ -19,6 +19,9 @@ interface TaskDialogProps {
   // Name of the session the task is glued into, when it is in one.
   sessionName?: string | null;
   onLeaveSession?: () => void;
+  // The habits a task can be linked to (see Habit). Completing a linked task
+  // grows that habit's daily progress.
+  habits?: Habit[];
   // Fires on every edit so the calendar can redraw the block being described.
   onPreview?: (task: Task) => void;
   onSave: (task: Task) => void;
@@ -69,6 +72,7 @@ function TaskDialog({
   anchor,
   sessionName,
   onLeaveSession,
+  habits,
   onPreview,
   onSave,
   onDelete,
@@ -81,6 +85,7 @@ function TaskDialog({
   const [emoji, setEmoji] = useState(task.emoji);
   const [color, setColor] = useState(task.color);
   const [type, setType] = useState<TaskType>(task.type);
+  const [habitId, setHabitId] = useState(task.habitId ?? '');
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(task.repeat?.mode ?? 'fixed');
   const [repeatBase, setRepeatBase] = useState(String(task.repeat?.baseDays ?? 7));
@@ -118,8 +123,9 @@ function TaskDialog({
       emoji,
       color,
       type,
+      habitId: habitId || null,
     });
-  }, [name, day, time, minutes, emoji, color, type]);
+  }, [name, day, time, minutes, emoji, color, type, habitId]);
 
   const formRef = useRef<HTMLFormElement>(null);
   const [popHeight, setPopHeight] = useState(0);
@@ -150,6 +156,7 @@ function TaskDialog({
       emoji: resolveTaskEmoji(emoji),
       color,
       type,
+      habitId: habitId || null,
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
         : null,
@@ -283,6 +290,22 @@ function TaskDialog({
             </div>
           </div>
         </div>
+
+        {habits && habits.length > 0 && (
+          <div className="cal-modal-row">
+            <label className="cal-field cal-field--grow">
+              <span>Привычка</span>
+              <select value={habitId} onChange={(e) => setHabitId(e.target.value)}>
+                <option value="">— без привычки —</option>
+                {habits.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.emoji} {h.name} · {h.format === 'time' ? '⏱' : '🔢'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
 
         <div className="cal-modal-row cal-modal-row--repeat">
           <label className="cal-check">

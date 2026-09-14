@@ -19,6 +19,8 @@ from .deps import bearer_scheme, get_current_user, get_db
 from .schemas import (
     DayStateIn,
     DayStatsIn,
+    HabitEntryIn,
+    HabitIn,
     LoginIn,
     RegisterIn,
     RunIn,
@@ -440,5 +442,96 @@ def delete_task_template(
     conn.execute(
         'DELETE FROM task_templates WHERE user_id = ? AND id = ?', (user['id'], tpl_id)
     )
+    conn.commit()
+    return {'ok': True}
+
+
+# ── Habits (home-page tracker) ──────────────────────────────────────
+
+@app.get('/api/habits')
+def get_habits(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    rows = conn.execute(
+        'SELECT data FROM habits WHERE user_id = ?', (user['id'],)
+    ).fetchall()
+    return [json.loads(r['data']) for r in rows]
+
+
+@app.put('/api/habits/{habit_id}')
+def put_habit(
+    habit_id: str,
+    body: HabitIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    conn.execute(
+        """
+        INSERT INTO habits (user_id, id, data) VALUES (?, ?, ?)
+        ON CONFLICT(user_id, id) DO UPDATE SET data = excluded.data
+        """,
+        (user['id'], habit_id, body.model_dump_json()),
+    )
+    conn.commit()
+    return {'ok': True}
+
+
+@app.delete('/api/habits/{habit_id}')
+def delete_habit(
+    habit_id: str,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    conn.execute(
+        'DELETE FROM habits WHERE user_id = ? AND id = ?', (user['id'], habit_id)
+    )
+    # History is meaningless once the habit itself is gone.
+    conn.execute(
+        'DELETE FROM habit_entries WHERE user_id = ? AND habit_id = ?',
+        (user['id'], habit_id),
+    )
+    conn.commit()
+    return {'ok': True}
+
+
+# Per-day habit progress: only the hand-entered part is persisted; the
+# task-linked part is derived live from the day's plan on the frontend.
+@app.get('/api/habit-entries')
+def get_habit_entries(
+    user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
+):
+    rows = conn.execute(
+        """
+        SELECT habit_id, date, manual
+        FROM habit_entries WHERE user_id = ? ORDER BY date
+        """,
+        (user['id'],),
+    ).fetchall()
+    return [
+        {'habitId': r['habit_id'], 'date': r['date'], 'manual': r['manual']}
+        for r in rows
+    ]
+
+
+@app.put('/api/habit-entries/{habit_id}/{date}')
+def put_habit_entry(
+    habit_id: str,
+    date: str,
+    body: HabitEntryIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    if body.manual == 0:
+        conn.execute(
+            'DELETE FROM habit_entries WHERE user_id = ? AND habit_id = ? AND date = ?',
+            (user['id'], habit_id, date),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO habit_entries (user_id, habit_id, date, manual)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, habit_id, date) DO UPDATE SET manual = excluded.manual
+            """,
+            (user['id'], habit_id, date, body.manual),
+        )
     conn.commit()
     return {'ok': True}

@@ -74,6 +74,27 @@ CREATE TABLE IF NOT EXISTS task_templates (
     data TEXT NOT NULL,
     PRIMARY KEY (user_id, id)
 );
+
+-- Habit tracker. A habit's definition (name, format, target...) is stored as a
+-- JSON blob keyed by client-generated id, mirroring the templates tables.
+CREATE TABLE IF NOT EXISTS habits (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+
+-- Per-day habit progress. Only the hand-entered contribution is stored here:
+-- the task-linked part is derived live from that day's plan, so it never
+-- double-counts and stays consistent with re-opened tasks. `manual` is 0 when
+-- the user added nothing by hand that day.
+CREATE TABLE IF NOT EXISTS habit_entries (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    habit_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    manual REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, habit_id, date)
+);
 """
 
 
@@ -88,7 +109,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 def init_db() -> None:

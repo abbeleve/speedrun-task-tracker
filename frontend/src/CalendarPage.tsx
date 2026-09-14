@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Task } from './types';
+import type { Habit, Task } from './types';
 import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
 import type { DayStore } from './dayStore';
 import type { Chain } from './schedule';
@@ -37,6 +37,7 @@ interface CalendarPageProps {
   credit: CreditSnapshot;
   chains: Chain[];
   onOpenChain: (chain: Chain) => void;
+  habits: Habit[];
 }
 
 const PX_PER_HOUR = 52;
@@ -106,7 +107,7 @@ type Gesture =
   // delta, so the gaps inside the session are kept.
   | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean };
 
-function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageProps) {
+function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: CalendarPageProps) {
   const [view, setView] = useState<CalView>(() => {
     const saved = localStorage.getItem('speedrun_cal_view');
     return saved === 'day' || saved === 'month' ? saved : 'week';
@@ -1061,6 +1062,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain }: CalendarPageP
           onLeaveSession={
             dialog.task.sessionId ? () => leaveSession(dialog.task) : undefined
           }
+          habits={habits}
           onPreview={setPreview}
           onSave={saveFromDialog}
           onDelete={dialog.isNew ? undefined : deleteFromDialog}

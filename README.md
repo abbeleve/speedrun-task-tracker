@@ -21,7 +21,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
 - **Sequences** — blocks that follow each other with no gap form a sequence, marked by a spine on the left of the day column. Click the spine to open the session editor, drag it to move the whole run at once.
-- **Sessions** — blocks that nearly touch (a gap of 5 minutes or less) get a 🔗 handle in the gap: press it and they are pulled together into one named session. A session holds together however its blocks are later moved, can be renamed, dragged as a whole (gaps intact, across midnight too) and pulled apart again.
+- **Sessions** — blocks that nearly touch (a gap of 5 minutes or less) get a 🔗 handle in the gap: press it and they are pulled together into one named session. A session holds together however its blocks are later moved, can be renamed, dragged as a whole (gaps intact, across midnight too) and pulled apart again. If the blocks of a session are pushed further apart than the merge gap, the hole is filled automatically with a ☕ rest block — a session never sits with an empty stretch in the middle. Pull a block back until it covers that rest completely and the rest disappears again.
 - **Start a session early** — the session editor (and the tracker header) offers ▶ *Начать сейчас*: the whole run slides to the current moment and opens in the tracker views.
 - **Thermometer timeline** — vertical fill bar that grows as the sequence's time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
@@ -35,6 +35,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Time scrubbing** — drag the thermometer or the spiral route to inspect another moment of a sequence; one click returns to now
 - **Per-user accounts** — register / log in; the plan, the daily totals and the sleep log are stored server-side per user
 - **Task customization** — emoji and color per task; reflected in the thermometer dots
+- **Habits** — per-user habit tracker on the home page. Each habit is either *count* (a daily quota of units, e.g. 10 отжиманий) or *time* (a daily quota of minutes, e.g. 300 ≈ 5 часов). The habit cards live in a draggable grid you can reorder; each card shows today's progress vs its quota and a per-day history. Link a task to a habit in the block editor: closing that task adds the block's minutes to a *time* habit automatically, and count habits are advanced by hand with +/−.
 
 ## The overtake
 

@@ -8,6 +8,7 @@ import { primeMotivationImages } from './motivation';
 import HomePage from './HomePage';
 import CalendarPage from './CalendarPage';
 import { useDayStore } from './dayStore';
+import { useHabits } from './habitStore';
 import type { Chain } from './schedule';
 import {
   MIN_MS,
@@ -41,6 +42,7 @@ function wallTime(ms: number): string {
 function App() {
   const { user, logout } = useAuth();
   const store = useDayStore();
+  const habits = useHabits();
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -443,6 +445,7 @@ function App() {
           credit={credit}
           chains={chains}
           onOpenChain={openSequence}
+          habits={habits.habits}
         />
       )}
 
@@ -454,6 +457,8 @@ function App() {
             openSequence(chain);
           }}
           chains={chains}
+          habits={habits}
+          tasks={store.tasks}
         />
       )}
 

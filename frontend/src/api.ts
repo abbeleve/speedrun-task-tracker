@@ -4,7 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
-import type { DayState, DayStats, RunRecord, TaskTemplate, Template } from './types';
+import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
 
@@ -68,6 +68,7 @@ export interface SleepLogData {
 
 // Re-export the shared entities so callers can import them uniformly from ./api.
 export type { DayState, DayStats, RunRecord, Template, TaskTemplate } from './types';
+export type { Habit, HabitEntry } from './types';
 
 // ── Auth ───────────────────────────────────────────────────────────
 
@@ -198,4 +199,34 @@ export async function saveTaskTemplate(tpl: TaskTemplate): Promise<void> {
 
 export async function deleteTaskTemplate(id: string): Promise<void> {
   await apiFetch(`/task-templates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+// ── Habits (home-page tracker) ─────────────────────────────────────
+
+export async function loadHabits(): Promise<Habit[]> {
+  return apiFetch('/habits');
+}
+
+export async function saveHabit(habit: Habit): Promise<void> {
+  await apiFetch(`/habits/${encodeURIComponent(habit.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(habit),
+  });
+}
+
+export async function deleteHabit(id: string): Promise<void> {
+  await apiFetch(`/habits/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function loadHabitEntries(): Promise<HabitEntry[]> {
+  return apiFetch('/habit-entries');
+}
+
+// The hand-entered portion of a habit's progress for a day. A `manual` of 0
+// clears the entry (leaving only whatever the linked tasks contributed).
+export async function saveHabitEntry(habitId: string, date: string, manual: number): Promise<void> {
+  await apiFetch(`/habit-entries/${encodeURIComponent(habitId)}/${encodeURIComponent(date)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ manual }),
+  });
 }

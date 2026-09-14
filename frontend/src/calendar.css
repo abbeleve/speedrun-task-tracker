@@ -414,17 +414,9 @@
   z-index: 2;
 }
 
-.cal-block.in-session {
-  border-right: 2px solid color-mix(in srgb, var(--accent-cyan) 70%, transparent);
-}
-
 .cal-block.active {
   box-shadow: 0 0 0 2px var(--task-color, #3498db), var(--shadow);
   z-index: 4;
-}
-
-.cal-block.done {
-  opacity: 0.62;
 }
 
 .cal-block.done .cal-block-name {
@@ -494,6 +486,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  color: var(--bg-secondary);
 }
 
 .cal-block-check {
@@ -521,7 +514,7 @@
   justify-content: space-between;
   gap: 6px;
   font-size: 0.68rem;
-  color: var(--text-secondary);
+  color: var(--bg-secondary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -702,7 +695,6 @@
 }
 
 .cal-chip.done {
-  opacity: 0.55;
   text-decoration: line-through;
 }
 
@@ -718,6 +710,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--bg-secondary);
+}
+
+/* In the light theme the task names stay dark/readable over the colored blocks. */
+[data-theme="light"] .cal-block-name,
+[data-theme="light"] .cal-chip-name {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .cal-block-meta {
+  color: var(--text-secondary);
 }
 
 .cal-cell-more {
@@ -878,7 +881,8 @@
   width: 84px;
 }
 
-.cal-field input {
+.cal-field input,
+.cal-field select {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 4px;

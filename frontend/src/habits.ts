@@ -1,0 +1,96 @@
+// Pure helpers for the habit tracker (home page).
+//
+// A habit's daily progress has two parts:
+//   • auto — derived live from that day's plan: every *completed* task linked to
+//            the habit adds its duration (in minutes) to a 'time' habit. Count
+//            habits have no auto part — they are advanced by hand.
+//   • manual — the hand-entered portion stored per day (see HabitEntry).
+// Keeping the task-linked part derived (not stored) follows the rest of the app:
+// one source of truth, re-opened tasks immediately take the same credit back.
+
+import type { Habit, HabitEntry, HabitFormat, Task } from './types';
+import { isDone } from './schedule';
+
+export function newHabitId(): string {
+  return `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// The 'time' 'count' → unit label fallback used when a habit has none.
+export function defaultUnit(format: HabitFormat): string {
+  return format === 'time' ? 'мин' : '';
+}
+
+// The auto part of a habit's progress on one day, in the habit's own units
+// (minutes for 'time', integer count for 'count'). Linked-but-open tasks are
+// ignored — only really completed ones count, so the number is honest.
+export function habitAuto(habit: Habit, date: string, tasks: Task[]): number {
+  if (habit.format !== 'time') return 0;
+  let sec = 0;
+  for (const task of tasks) {
+    if (task.day !== date) continue;
+    if (task.habitId !== habit.id) continue;
+    if (!isDone(task)) continue;
+    sec += Math.max(0, task.plannedTime);
+  }
+  return Math.round(sec / 60);
+}
+
+// The hand-entered portion for a day (0 when the user added nothing by hand).
+export function habitManual(
+  entries: HabitEntry[],
+  habitId: string,
+  date: string
+): number {
+  for (const entry of entries) {
+    if (entry.habitId === habitId && entry.date === date) return entry.manual;
+  }
+  return 0;
+}
+
+// Today's total progress for a habit, in its own units.
+export function habitTotal(
+  habit: Habit,
+  date: string,
+  tasks: Task[],
+  entries: HabitEntry[]
+): number {
+  return habitManual(entries, habit.id, date) + habitAuto(habit, date, tasks);
+}
+
+// Progress 0…1, clamped: how far the habit is towards its daily quota.
+export function habitProgress(value: number, target: number): number {
+  if (target <= 0) return 0;
+  return Math.max(0, Math.min(1, value / target));
+}
+
+export function isHabitComplete(value: number, target: number): boolean {
+  return target > 0 && value >= target;
+}
+
+// Human-readable "value unit target" line, e.g. "7 / 10 раз" or "245 / 300 мин".
+export function formatHabit(value: number, target: number, unit: string): string {
+  const u = unit ? ` ${unit}` : '';
+  return `${trimZero(value)} / ${trimZero(target)}${u}`;
+}
+
+export interface HabitDayValue {
+  date: string; // 'YYYY-MM-DD' (local)
+  value: number; // total progress that day, in the habit's own units
+}
+
+// A habit's progress across a run of days (today and the past ones), so the
+// tracker can show "what I did last Tuesday". Each past day re-derives the
+// task-linked part from that day's plan, exactly as today does.
+export function habitHistory(
+  habit: Habit,
+  days: string[],
+  tasks: Task[],
+  entries: HabitEntry[]
+): HabitDayValue[] {
+  return days.map((date) => ({ date, value: habitTotal(habit, date, tasks, entries) }));
+}
+
+function trimZero(n: number): string {
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}

@@ -74,6 +74,9 @@ class DayTask(BaseModel):
     # name, so the sequence survives a reload and can be moved as one block.
     sessionId: Optional[str] = None
     sessionName: Optional[str] = None
+    # Optional link to a habit: completing this task grows that habit's daily
+    # progress (time habits add the block's duration; count habits are manual).
+    habitId: Optional[str] = None
 
 
 class RunIn(BaseModel):
@@ -126,3 +129,24 @@ class TaskTemplateIn(BaseModel):
     emoji: str = ''
     color: str = ''
     type: str = 'task'
+
+
+# A habit definition. `format` is 'count' (quota of units/day, e.g. 10 отжиманий)
+# or 'time' (quota of minutes/day, e.g. 300 ≈ 5 часов). `target` is in those
+# same units; `unit` is the human-readable label ('раз', 'мин', ...). `order`
+# is the habit's position in the home-page grid.
+class HabitIn(BaseModel):
+    id: str
+    name: str
+    emoji: str = ''
+    color: str = ''
+    format: str = 'count'
+    target: float = 1
+    unit: str = ''
+    order: int = 0
+
+
+# The hand-entered portion of a habit's progress for one day. The task-linked
+# auto portion is derived live from the day's plan on the frontend.
+class HabitEntryIn(BaseModel):
+    manual: float = 0

@@ -3,6 +3,7 @@ import type { Task } from './types';
 import {
   buildChains,
   buildGroups,
+  coveredRests,
   dayStartMs,
   fillSessionGaps,
   layoutTasks,
@@ -242,6 +243,36 @@ describe('session rest gaps', () => {
       task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }),
     ];
     expect(sessionGapRestTasks(tasks)).toEqual([]);
+  });
+});
+
+describe('covered rests', () => {
+  it('drops a rest that another task now spans completely', () => {
+    const rest = task({ start: hm(10), plannedTime: 3600, type: 'rest' }); // 10–11
+    const covering = task({ start: hm(9), plannedTime: 3 * 3600 }); // 9–12 covers it
+    expect(coveredRests([rest, covering]).map((t) => t.id)).toEqual([rest.id]);
+  });
+
+  it('keeps a rest that is only partially covered', () => {
+    const rest = task({ start: hm(10), plannedTime: 3600, type: 'rest' }); // 10–11
+    const partial = task({ start: hm(10, 30), plannedTime: 1800 }); // 10:30–11 only
+    expect(coveredRests([rest, partial])).toEqual([]);
+  });
+
+  it('cleans up a rest through fillSessionGaps when a block covers it', () => {
+    // Auto-insert the rest between 09:00–10:00 and 10:30–11:00 of the session.
+    const filled = fillSessionGaps([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's1' }),
+    ]);
+    const rest = filled.find((t) => t.type === 'rest')!;
+    expect(rest).toBeDefined();
+    // Pull the second block left until it covers the whole rest (10:00–10:30).
+    const second = filled.find((t) => t.id !== rest.id && t.start !== hm(9))!;
+    const after = fillSessionGaps(
+      filled.map((t) => (t.id === second.id ? { ...t, start: hm(10) } : t))
+    );
+    expect(after.filter((t) => t.type === 'rest')).toHaveLength(0);
   });
 });
 

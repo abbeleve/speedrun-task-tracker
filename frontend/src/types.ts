@@ -46,6 +46,10 @@ export interface Task {
   // sequence its neighbours happen to form.
   sessionId?: string | null;
   sessionName?: string | null;
+  // Optional link to a habit tracker (see Habit). Completing a linked task
+  // grows that habit's daily progress: a time habit gains the block's duration,
+  // a count habit is advanced by hand.
+  habitId?: string | null;
 }
 
 // Minutes from midnight a freshly planned task defaults to, when nothing
@@ -118,6 +122,33 @@ export interface RunRecord {
 export interface SleepEntry {
   bed: number | null; // minutes from midnight when the person went to bed
   wake: number | null; // minutes from midnight when the person woke up
+}
+
+// How a habit's daily progress is counted. 'count' = quota of units per day
+// (e.g. 10 отжиманий); 'time' = quota of minutes per day (e.g. 300 ≈ 5 часов).
+export type HabitFormat = 'count' | 'time';
+
+// A habit a user wants to keep doing every day. `target` and the derived daily
+// value are in the same units: count units for 'count', minutes for 'time'.
+// `order` is the habit's position in the home-page grid (drag to reorder).
+export interface Habit {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  format: HabitFormat;
+  target: number; // quota per day
+  unit: string; // human label: 'раз', 'мин', …
+  order: number;
+}
+
+// The hand-entered portion of a habit's progress for one day (count habits,
+// and extra manual time on top of linked tasks). The task-linked portion is
+// derived live from that day's plan, so it is not stored here.
+export interface HabitEntry {
+  habitId: string;
+  date: string; // 'YYYY-MM-DD' (local)
+  manual: number;
 }
 
 export interface EmojiEntry {

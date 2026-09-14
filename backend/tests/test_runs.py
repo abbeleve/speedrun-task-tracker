@@ -104,7 +104,7 @@ def test_migrates_old_run_sessions_table(tmp_path, monkeypatch):
     conn = sqlite3.connect(path)
     cols = {row[1] for row in conn.execute('PRAGMA table_info(run_sessions)')}
     assert {'planned_sec', 'tasks'} <= cols
-    assert conn.execute('PRAGMA user_version').fetchone()[0] == 2
+    assert conn.execute('PRAGMA user_version').fetchone()[0] == 3
 
 
 def test_runs_empty(client, auth_headers):

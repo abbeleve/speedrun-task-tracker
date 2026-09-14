@@ -1,0 +1,144 @@
+import { describe, it, expect } from 'vitest';
+import type { Habit, HabitEntry, Task } from './types';
+import {
+  defaultUnit,
+  habitAuto,
+  habitHistory,
+  habitManual,
+  habitProgress,
+  habitTotal,
+  isHabitComplete,
+  formatHabit,
+} from './habits';
+
+const DAY = '2026-03-10';
+
+function habit(patch: Partial<Habit> = {}): Habit {
+  return {
+    id: 'h1',
+    name: 'Подтягивания',
+    emoji: '💪',
+    color: '#2ecc71',
+    format: 'count',
+    target: 10,
+    unit: 'раз',
+    order: 0,
+    ...patch,
+  };
+}
+
+function task(patch: Partial<Task> & { id: string }): Task {
+  return {
+    name: 'task',
+    plannedTime: 3600, // 60 мин
+    completedAt: null,
+    start: 600,
+    finishedAt: null,
+    order: 0,
+    emoji: '📋',
+    color: '#3498db',
+    type: 'task',
+    status: 'in-progress',
+    day: DAY,
+    ...patch,
+  };
+}
+
+const entry = (manual: number): HabitEntry => ({ habitId: 'h1', date: DAY, manual });
+
+describe('habitAuto', () => {
+  it('count habits have no auto part — they are manual', () => {
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
+    expect(habitAuto(habit(), DAY, [done])).toBe(0);
+  });
+
+  it('a completed linked task adds its minutes to a time habit', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
+    expect(habitAuto(h, DAY, [done])).toBe(60);
+  });
+
+  it('several completed linked tasks sum up', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const a = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, plannedTime: 3600, day: DAY });
+    const b = task({ id: 'b', habitId: 'h1', status: 'done', finishedAt: 2, plannedTime: 9000, day: DAY });
+    expect(habitAuto(h, DAY, [a, b])).toBe(210); // 60 + 150
+  });
+
+  it('open or unlinked tasks do not count', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const open = task({ id: 'a', habitId: 'h1', status: 'in-progress', finishedAt: null, day: DAY });
+    const other = task({ id: 'b', status: 'done', finishedAt: 1, day: DAY });
+    expect(habitAuto(h, DAY, [open, other])).toBe(0);
+  });
+
+  it('only counts tasks of that date', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const otherDay = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: '2026-03-11' });
+    expect(habitAuto(h, DAY, [otherDay])).toBe(0);
+  });
+});
+
+describe('habitManual / habitTotal', () => {
+  it('habitManual falls back to 0 without an entry', () => {
+    expect(habitManual([], 'h1', DAY)).toBe(0);
+    expect(habitManual([entry(7)], 'h1', '2026-03-11')).toBe(0);
+  });
+
+  it('habitTotal is manual + auto', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, plannedTime: 3600, day: DAY });
+    expect(habitTotal(h, DAY, [done], [entry(30)])).toBe(90);
+  });
+
+  it('a count habit total equals its manual value', () => {
+    const h = habit();
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
+    expect(habitTotal(h, DAY, [done], [entry(5)])).toBe(5);
+  });
+});
+
+describe('progress / completion', () => {
+  it('clamps progress to 0…1', () => {
+    expect(habitProgress(0, 10)).toBe(0);
+    expect(habitProgress(5, 10)).toBe(0.5);
+    expect(habitProgress(15, 10)).toBe(1);
+    expect(habitProgress(3, 0)).toBe(0);
+  });
+
+  it('completion needs target met', () => {
+    expect(isHabitComplete(9, 10)).toBe(false);
+    expect(isHabitComplete(10, 10)).toBe(true);
+    expect(isHabitComplete(4, 0)).toBe(false);
+  });
+});
+
+describe('formatting', () => {
+  it('formats value / target with its unit', () => {
+    expect(formatHabit(7, 10, 'раз')).toBe('7 / 10 раз');
+    expect(formatHabit(245, 300, 'мин')).toBe('245 / 300 мин');
+  });
+
+  it('defaultUnit mirrors format', () => {
+    expect(defaultUnit('time')).toBe('мин');
+    expect(defaultUnit('count')).toBe('');
+  });
+});
+
+describe('habitHistory', () => {
+  it('re-derives each past day independently', () => {
+    const h = habit({ format: 'time', target: 300, unit: 'мин' });
+    const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, plannedTime: 3600, day: DAY });
+    const days = [DAY, '2026-03-11'];
+    const hist = habitHistory(h, days, [done], [entry(30)]);
+    expect(hist[0]).toEqual({ date: DAY, value: 90 }); // 60 auto + 30 manual
+    expect(hist[1]).toEqual({ date: '2026-03-11', value: 0 }); // no tasks that day
+  });
+
+  it('count habits read only the manual portion per day', () => {
+    const h = habit();
+    const hist = habitHistory(h, [DAY, '2026-03-09'], [], [entry(5)]);
+    expect(hist[0].value).toBe(5);
+    expect(hist[1].value).toBe(0);
+  });
+});

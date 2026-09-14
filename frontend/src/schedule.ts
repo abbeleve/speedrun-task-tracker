@@ -266,8 +266,32 @@ export function sessionGapRestTasks(tasks: Task[]): Task[] {
 
 // The tasks of a day with every hole inside a session filled with a rest block.
 export function fillSessionGaps(tasks: Task[]): Task[] {
-  const extra = sessionGapRestTasks(tasks);
-  return extra.length === 0 ? tasks : [...tasks, ...extra];
+  const covered = new Set(coveredRests(tasks).map((t) => t.id));
+  const kept = covered.size > 0 ? tasks.filter((t) => !covered.has(t.id)) : tasks;
+  const extra = sessionGapRestTasks(kept);
+  return extra.length === 0 ? kept : [...kept, ...extra];
+}
+
+// The rest tasks of a day that some task now spans completely. The reverse of
+// sessionGapRestTasks: closing a session back up — pulling a block all the way
+// over the rest — makes the rest redundant, so it is dropped.
+export function coveredRests(tasks: Task[]): Task[] {
+  const scheduled = tasks.filter(isScheduled);
+  const out: Task[] = [];
+  for (const rest of scheduled) {
+    if (rest.type !== 'rest') continue;
+    const rStart = taskStartMs(rest);
+    const rEnd = taskEndMs(rest);
+    const covered = scheduled.some(
+      (t) =>
+        t.id !== rest.id &&
+        t.type !== 'rest' &&
+        taskStartMs(t) <= rStart &&
+        taskEndMs(t) >= rEnd
+    );
+    if (covered) out.push(rest);
+  }
+  return out;
 }
 
 function restTaskFor(
