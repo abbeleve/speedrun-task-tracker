@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Chain } from './schedule';
-import { dayKeyOf, isDone } from './schedule';
+import { dayKeyOf, isDone, isSession } from './schedule';
 
 // How many sequences are rendered up front; the timeline lazily appends more as
 // the user scrolls towards the bottom of the list.
@@ -127,7 +127,7 @@ function DaysPage({ chains, onOpenChain }: DaysPageProps) {
   const sessions = useMemo(
     () =>
       chains
-        .filter((c) => c.tasks.some(isDone))
+        .filter((c) => isSession(c) && c.tasks.some(isDone))
         .sort((a, b) => b.startMs - a.startMs),
     [chains]
   );
