@@ -53,6 +53,9 @@ const SNAP_MIN = 5;
 const DEFAULT_LENGTH_MIN = 60;
 const MIN_LENGTH_MIN = 10;
 const GUTTER_PX = 56; // hour labels on the left of the grid
+// A right-drag shorter than this is a plain right-click — it resets the zoom
+// instead of setting a (pointlessly thin) one.
+const ZOOM_MIN_MINUTES = 15;
 
 const WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 const MONTHS = [
@@ -112,7 +115,10 @@ type Gesture =
   | { kind: 'resize'; task: Task; day: string; lengthMin: number }
   // Dragging a session by its spine: every block of it moves by the same
   // delta, so the gaps inside the session are kept.
-  | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean };
+  | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean }
+  // Right-drag on the canvas: a vertical time band, ignoring which day/column
+  // it started or wandered over — only the minute-of-day matters.
+  | { kind: 'zoom'; anchorMin: number; startMin: number; endMin: number };
 
 function CalendarPage({
   store,
@@ -148,9 +154,33 @@ function CalendarPage({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const backlogRef = useRef<HTMLDivElement>(null);
 
+  // Right-drag zoom: picks a vertical minutes-per-pixel scale that makes the
+  // selected band fill the scroller, but the day is still rendered in full
+  // (0..DAY_MIN) at that scale and stays normally scrollable — zooming only
+  // changes *how much* an hour takes up, never what's reachable. Null means
+  // the default scale.
+  const [zoomRange, setZoomRange] = useState<{ startMin: number; endMin: number } | null>(null);
+  const [scrollerHeight, setScrollerHeight] = useState(0);
+
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
   }, [view]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h) setScrollerHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const zoomLenMin = zoomRange ? Math.max(1, zoomRange.endMin - zoomRange.startMin) : DAY_MIN;
+  const pxPerMin = zoomRange && scrollerHeight > 0 ? scrollerHeight / zoomLenMin : PX_PER_MIN;
+  const minToPx = useCallback((min: number) => min * pxPerMin, [pxPerMin]);
+  const lenToPx = useCallback((lenMin: number) => lenMin * pxPerMin, [pxPerMin]);
 
   const today = todayKey();
   const tasks = store.tasks;
@@ -165,16 +195,23 @@ function CalendarPage({
     return monthCells(anchor);
   }, [view, anchor]);
 
-  // Scroll the working hours into view when the grid is first shown.
+  // Scroll the working hours into view when the grid is first shown. Zooming
+  // in changes the scale, not what's reachable, so scroll to bring the band
+  // that was just selected to the top instead — the rest of the (now taller)
+  // day is still one scroll away.
   useEffect(() => {
     if (view === 'month') return;
     const el = scrollerRef.current;
     if (!el) return;
+    if (zoomRange) {
+      el.scrollTop = zoomRange.startMin * pxPerMin;
+      return;
+    }
     const nowDate = new Date();
     const focusMin = visibleDays.includes(today) ? nowDate.getHours() * 60 : 8 * 60;
     el.scrollTop = Math.max(0, (focusMin - 60) * PX_PER_MIN);
     // Only when the layout changes, not on every task edit.
-  }, [view, today, visibleDays]);
+  }, [view, today, visibleDays, zoomRange, pxPerMin]);
 
   const openTasks = useMemo(
     () =>
@@ -186,23 +223,69 @@ function CalendarPage({
 
   // ── task mutations ───────────────────────────────────────────────
 
+  // Tasks mid-way through the "just completed" flourish — grown slightly
+  // while a gold dashed line sweeps clockwise around them. Kept in sync with
+  // the CSS animation durations in calendar.css (cal-block-pop / cal-sweep-*)
+  // so the sweep overlay unmounts right as the animation finishes.
+  const COMPLETE_FX_MS = 1400;
+  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
+  const completingTimers = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const timers = completingTimers.current;
+    return () => {
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
+  const markCompleting = useCallback((taskId: string) => {
+    const prevTimer = completingTimers.current.get(taskId);
+    if (prevTimer) window.clearTimeout(prevTimer);
+    setCompletingIds((prev) => new Set(prev).add(taskId));
+    const timer = window.setTimeout(() => {
+      completingTimers.current.delete(taskId);
+      setCompletingIds((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }, COMPLETE_FX_MS);
+    completingTimers.current.set(taskId, timer);
+  }, []);
+
+  const clearCompleting = useCallback((taskId: string) => {
+    const timer = completingTimers.current.get(taskId);
+    if (timer) {
+      window.clearTimeout(timer);
+      completingTimers.current.delete(taskId);
+    }
+    setCompletingIds((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
+
   const completeTask = useCallback(
     (task: Task) => {
+      markCompleting(task.id);
       store.patchTask(task.id, { status: 'done', finishedAt: Date.now() });
       const child = spawnNextOccurrence(task, newTaskId, task.day);
       if (child) store.upsertTask(child);
     },
-    [store]
+    [store, markCompleting]
   );
 
   const reopenTask = useCallback(
     (task: Task) => {
+      clearCompleting(task.id);
       store.patchTask(task.id, { status: 'in-progress', finishedAt: null, completedAt: null });
       // Drop the occurrence this completion had scheduled ahead.
       const child = store.tasks.find((t) => t.repeatOf === task.id && !isDone(t));
       if (child) store.removeTask(child.id);
     },
-    [store]
+    [store, clearCompleting]
   );
 
   const closeDialog = useCallback(() => {
@@ -341,10 +424,10 @@ function CalendarPage({
         0,
         Math.min(visibleDays.length - 1, Math.floor((clientX - rect.left) / colWidth))
       );
-      const min = Math.max(0, Math.min(DAY_MIN, (clientY - rect.top) / PX_PER_MIN));
+      const min = Math.max(0, Math.min(DAY_MIN, (clientY - rect.top) / pxPerMin));
       return { day: visibleDays[idx], min };
     },
-    [visibleDays]
+    [visibleDays, pxPerMin]
   );
 
   const setGestureState = useCallback((next: Gesture | null) => {
@@ -392,6 +475,13 @@ function CalendarPage({
       } else if (g.kind === 'chain') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
+      } else if (g.kind === 'zoom') {
+        const min = snap(slot.min);
+        setGestureState({
+          ...g,
+          startMin: Math.min(g.anchorMin, min),
+          endMin: Math.max(g.anchorMin, min),
+        });
       } else {
         const lengthMin = Math.max(MIN_LENGTH_MIN, snap(slot.min - (g.task.start ?? 0)));
         setGestureState({ ...g, lengthMin });
@@ -420,6 +510,14 @@ function CalendarPage({
       } else if (g.kind === 'chain') {
         if (!g.moved) openSession(g.chain, e);
         else if (g.deltaMs !== 0) store.patchTasks(shiftPatches(g.chain.tasks, g.deltaMs));
+      } else if (g.kind === 'zoom') {
+        // A real drag zooms into the band; a plain right-click (no meaningful
+        // drag) just snaps back to the full day.
+        if (g.endMin - g.startMin >= ZOOM_MIN_MINUTES) {
+          setZoomRange({ startMin: g.startMin, endMin: g.endMin });
+        } else {
+          setZoomRange(null);
+        }
       } else if (g.lengthMin * 60 !== g.task.plannedTime) {
         store.patchTask(g.task.id, { plannedTime: g.lengthMin * 60 });
       }
@@ -504,6 +602,20 @@ function CalendarPage({
       });
     },
     [setGestureState]
+  );
+
+  // Right-drag anywhere on the canvas selects a time band to zoom into —
+  // which day/column it happens over doesn't matter, only the vertical
+  // position. A drag too short to be deliberate is handled as a reset in onUp.
+  const startZoomSelect = useCallback(
+    (e: React.PointerEvent) => {
+      const slot = slotAt(e.clientX, e.clientY);
+      if (!slot) return;
+      e.preventDefault();
+      const anchorMin = snap(slot.min);
+      setGestureState({ kind: 'zoom', anchorMin, startMin: anchorMin, endMin: anchorMin });
+    },
+    [slotAt, setGestureState]
   );
 
   // Dropping a backlog card on the grid gives it a slot.
@@ -623,27 +735,46 @@ function CalendarPage({
 
   // ── grid ─────────────────────────────────────────────────────────
 
-  const renderGrid = () => (
-    <div className="cal-grid" ref={scrollerRef}>
-      <div className="cal-grid-inner" style={{ height: DAY_MIN * PX_PER_MIN }}>
-        <div className="cal-hours" style={{ width: GUTTER_PX }}>
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="cal-hour" style={{ top: h * PX_PER_HOUR }}>
-              <span>{String(h).padStart(2, '0')}:00</span>
+  const renderGrid = () => {
+    const g = gesture;
+    return (
+      <div
+        className="cal-grid"
+        ref={scrollerRef}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <div className="cal-grid-inner" style={{ height: DAY_MIN * pxPerMin }}>
+          <div className="cal-hours" style={{ width: GUTTER_PX }}>
+            {Array.from({ length: 24 }, (_, h) => (
+              <div key={h} className="cal-hour" style={{ top: minToPx(h * 60) }}>
+                <span>{String(h).padStart(2, '0')}:00</span>
+              </div>
+            ))}
+          </div>
+          <div className="cal-lines">
+            {Array.from({ length: 24 }, (_, h) => (
+              <div key={h} className="cal-line" style={{ top: minToPx(h * 60) }} />
+            ))}
+          </div>
+          <div
+            className="cal-columns"
+            ref={columnsRef}
+            style={{ left: GUTTER_PX }}
+          >
+            {visibleDays.map((day) => renderColumn(day))}
+          </div>
+          {g?.kind === 'zoom' && (
+            <div
+              className="cal-zoom-select"
+              style={{ top: minToPx(g.startMin), height: lenToPx(g.endMin - g.startMin) }}
+            >
+              <span>{hhmm(g.startMin)}–{hhmm(g.endMin)}</span>
             </div>
-          ))}
-        </div>
-        <div className="cal-lines">
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="cal-line" style={{ top: h * PX_PER_HOUR }} />
-          ))}
-        </div>
-        <div className="cal-columns" ref={columnsRef} style={{ left: GUTTER_PX }}>
-          {visibleDays.map((day) => renderColumn(day))}
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderColumn = (day: string) => {
     const dayFrom = dayStartMs(day);
@@ -742,6 +873,12 @@ function CalendarPage({
         className={`cal-col${isToday ? ' today' : ''}`}
         data-day={day}
         onPointerDown={(e) => {
+          // Right-drag selects a time band to zoom into, regardless of what's
+          // underneath — left-click still ignores existing blocks/chains.
+          if (e.button === 2) {
+            startZoomSelect(e);
+            return;
+          }
           if ((e.target as HTMLElement).closest('.cal-block, .cal-chain, .cal-glue, .cal-reminder')) return;
           startCreate(e, day);
         }}
@@ -749,8 +886,8 @@ function CalendarPage({
         onDrop={(e) => dropFromBacklog(e, day)}
       >
         {daySessions.map(({ chain, startMs, endMs }) => {
-          const top = Math.max(0, (startMs - dayFrom) / MIN_MS) * PX_PER_MIN;
-          const bottom = Math.min(DAY_MIN, (endMs - dayFrom) / MIN_MS) * PX_PER_MIN;
+          const top = minToPx(Math.max(0, (startMs - dayFrom) / MIN_MS));
+          const bottom = minToPx(Math.min(DAY_MIN, (endMs - dayFrom) / MIN_MS));
           const height = Math.max(12, bottom - top);
           return (
             <div
@@ -782,14 +919,14 @@ function CalendarPage({
         {reminderSegments.map((seg) => {
           const task = seg.task;
           const lengthMin = seg.bottomMin - seg.topMin;
-          const height = Math.max(MIN_BLOCK_PX, lengthMin * PX_PER_MIN);
+          const height = Math.max(MIN_BLOCK_PX, lenToPx(lengthMin));
           const expired = taskEndMs(task) <= now;
           return (
             <div
               key={task.id}
               className={`cal-reminder${expired ? ' expired' : ''}`}
               style={{
-                top: seg.topMin * PX_PER_MIN,
+                top: minToPx(seg.topMin),
                 height,
                 right: 2 + seg.col * 11,
                 '--task-color': task.color,
@@ -807,8 +944,8 @@ function CalendarPage({
             key={ghost.key}
             className={ghost.live ? 'cal-reminder live' : 'cal-reminder dragging'}
             style={{
-              top: ghost.startMin * PX_PER_MIN,
-              height: Math.max(MIN_BLOCK_PX, ghost.lengthMin * PX_PER_MIN),
+              top: minToPx(ghost.startMin),
+              height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
               right: 2,
               '--task-color': ghost.task.color,
             } as React.CSSProperties}
@@ -821,12 +958,13 @@ function CalendarPage({
           const resizing = g?.kind === 'resize' && g.task.id === task.id;
           const topMin = seg.topMin;
           const lengthMin = resizing ? g.lengthMin : seg.bottomMin - seg.topMin;
-          const height = Math.max(MIN_BLOCK_PX, lengthMin * PX_PER_MIN);
+          const height = Math.max(MIN_BLOCK_PX, lenToPx(lengthMin));
           const done = isDone(task);
+          // Just clicked: the block plays its grow-and-sweep flourish while
+          // the bullet itself already reflects the real (instant) done state.
+          const justCompleted = completingIds.has(task.id);
           const active = activeIds.has(task.id);
           const width = 100 / seg.cols;
-          const delta =
-            done && task.finishedAt !== null ? (taskEndMs(task) - task.finishedAt) / 1000 : null;
 
           return (
             <div
@@ -834,6 +972,7 @@ function CalendarPage({
               className={[
                 'cal-block',
                 done ? 'done' : '',
+                justCompleted ? 'completing' : '',
                 active ? 'active' : '',
                 task.type === 'rest' ? 'rest' : '',
                 task.sessionId ? 'in-session' : '',
@@ -844,7 +983,7 @@ function CalendarPage({
                 .filter(Boolean)
                 .join(' ')}
               style={{
-                top: topMin * PX_PER_MIN,
+                top: minToPx(topMin),
                 height,
                 left: `${seg.col * width}%`,
                 width: `${width}%`,
@@ -866,20 +1005,13 @@ function CalendarPage({
                     else completeTask(task);
                   }}
                   title={done ? 'Вернуть в работу' : 'Закрыть задачу'}
-                >
-                  {done ? '↺' : '✓'}
-                </button>
+                />
               </div>
               {height > 34 && (
                 <div className="cal-block-meta">
                   <span>
                     {hhmm(seg.topMin)}–{hhmm(seg.topMin + lengthMin)}
                   </span>
-                  {delta !== null && (
-                    <span className={`cal-block-delta ${delta >= 0 ? 'ahead' : 'behind'}`}>
-                      {signedDur(delta)}
-                    </span>
-                  )}
                 </div>
               )}
               {done && task.finishedAt !== null && task.finishedAt < taskEndMs(task) && (
@@ -888,7 +1020,7 @@ function CalendarPage({
                   style={{
                     top: Math.max(
                       0,
-                      ((task.finishedAt - taskStartMs(task)) / MIN_MS) * PX_PER_MIN
+                      lenToPx((task.finishedAt - taskStartMs(task)) / MIN_MS)
                     ),
                   }}
                   title={`Закрыто в ${wallTime(task.finishedAt)}`}
@@ -899,6 +1031,14 @@ function CalendarPage({
                 onPointerDown={(e) => startResize(e, task)}
                 title="Потянуть — изменить длительность"
               />
+              {justCompleted && (
+                <div className="cal-block-sweep" aria-hidden="true">
+                  <span className="cal-sweep-top" />
+                  <span className="cal-sweep-right" />
+                  <span className="cal-sweep-bottom" />
+                  <span className="cal-sweep-left" />
+                </div>
+              )}
             </div>
           );
         })}
@@ -908,8 +1048,8 @@ function CalendarPage({
             key={ghost.key}
             className={ghost.live ? 'cal-block live' : 'cal-block dragging'}
             style={{
-              top: ghost.startMin * PX_PER_MIN,
-              height: Math.max(MIN_BLOCK_PX, ghost.lengthMin * PX_PER_MIN),
+              top: minToPx(ghost.startMin),
+              height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
               '--task-color': ghost.task.color,
             } as React.CSSProperties}
           >
@@ -929,8 +1069,8 @@ function CalendarPage({
           <div
             className="cal-block draft"
             style={{
-              top: g.startMin * PX_PER_MIN,
-              height: Math.max(MIN_BLOCK_PX, (g.endMin - g.startMin) * PX_PER_MIN),
+              top: minToPx(g.startMin),
+              height: Math.max(MIN_BLOCK_PX, lenToPx(g.endMin - g.startMin)),
             }}
           >
             <div className="cal-block-meta">
@@ -946,8 +1086,8 @@ function CalendarPage({
             type="button"
             className="cal-block cal-gap-slot"
             style={{
-              top: ((gapSlot.startMs - dayFrom) / MIN_MS) * PX_PER_MIN,
-              height: Math.max(16, ((gapSlot.endMs - gapSlot.startMs) / MIN_MS) * PX_PER_MIN),
+              top: minToPx((gapSlot.startMs - dayFrom) / MIN_MS),
+              height: Math.max(16, lenToPx((gapSlot.endMs - gapSlot.startMs) / MIN_MS)),
             }}
             title={`Свободно ${dur(gapSlot.gapMs / 1000)} до следующей задачи — выбрать задачу из бэклога`}
             onPointerDown={(e) => e.stopPropagation()}
@@ -962,7 +1102,7 @@ function CalendarPage({
             key={`${spot.before.id}-${spot.after.id}`}
             type="button"
             className="cal-glue"
-            style={{ top: ((spot.atMs - dayFrom) / MIN_MS) * PX_PER_MIN }}
+            style={{ top: minToPx((spot.atMs - dayFrom) / MIN_MS) }}
             title={`Между блоками ${dur(spot.gapMs / 1000)} — склеить в одну сессию`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => glueChains(spot.before, spot.after)}
@@ -988,11 +1128,11 @@ function CalendarPage({
         {bandHeight >= 1 && (
           <div
             className={`cal-lead-band ${leadMin >= 0 ? 'ahead' : 'behind'}`}
-            style={{ top: bandTop * PX_PER_MIN, height: bandHeight * PX_PER_MIN }}
+            style={{ top: minToPx(bandTop), height: lenToPx(bandHeight) }}
             title={`Обгон ${signedDur(credit.lead)}`}
           />
         )}
-        <div className="cal-now" style={{ top: nowMin * PX_PER_MIN }}>
+        <div className="cal-now" style={{ top: minToPx(nowMin) }}>
           <span className="cal-now-dot" />
         </div>
       </>
@@ -1098,6 +1238,16 @@ function CalendarPage({
             ›
           </button>
           <h2 className="cal-title">{title}</h2>
+          {zoomRange && view !== 'month' && (
+            <button
+              type="button"
+              className="cal-btn cal-zoom-badge"
+              onClick={() => setZoomRange(null)}
+              title="Сбросить приближение — вернуться к суткам целиком"
+            >
+              🔍 {hhmm(zoomRange.startMin)}–{hhmm(zoomRange.endMin)} · ПКМ — сброс
+            </button>
+          )}
         </div>
         <div className="cal-seg cal-seg--views">
           {(['day', '3day', 'week', 'month'] as CalView[]).map((v) => (

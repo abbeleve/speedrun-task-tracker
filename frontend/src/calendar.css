@@ -318,6 +318,36 @@
   background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
 }
 
+/* ── right-drag zoom selection ──────────────────────────────── */
+
+.cal-zoom-select {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  border-top: 1px dashed var(--accent-blue);
+  border-bottom: 1px dashed var(--accent-blue);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-zoom-select span {
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 0.75rem;
+  font-family: var(--font-sans);
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-zoom-badge {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── sequence spine ──────────────────────────────────────────── */
 
 .cal-chain {
@@ -486,8 +516,112 @@
   z-index: 4;
 }
 
-.cal-block.done .cal-block-name {
-  text-decoration: line-through;
+/* Faded via background + text alpha rather than the `opacity` property —
+   `opacity` on .cal-block would dim the bullet along with everything else,
+   and a dimmed bullet is exactly what got lost against a same-hue task
+   colour earlier. This keeps the bullet at full strength no matter how
+   translucent the rest of the card gets. */
+.cal-block.done {
+  background: color-mix(in srgb, var(--task-color, #3498db) 45%, var(--bg-secondary));
+  transition: background 0.3s ease;
+}
+
+.cal-block.done .cal-block-emoji,
+.cal-block.done .cal-block-name,
+.cal-block.done .cal-block-meta {
+  opacity: 0.65;
+}
+
+/* The one-shot "just completed" flourish: the block grows in step with a
+   gold dashed line sweeping clockwise around its four edges — both reach
+   their peak together right as the sweep closes the rectangle, then the
+   block quickly settles back to size. The done state itself lives entirely
+   on the bullet (.cal-block-check below) — no strike-through, no overlay. */
+.cal-block.completing {
+  animation: cal-block-pop 1400ms linear;
+  z-index: 5;
+}
+
+@keyframes cal-block-pop {
+  0% { transform: scale(1); }
+  88% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+
+.cal-block-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cal-block-sweep span {
+  position: absolute;
+  opacity: 0.95;
+}
+
+.cal-block-sweep .cal-sweep-top,
+.cal-block-sweep .cal-sweep-bottom {
+  height: 2px;
+  background-image: repeating-linear-gradient(
+    to right,
+    #ffd24a 0,
+    #ffd24a 6px,
+    transparent 6px,
+    transparent 10px
+  );
+}
+
+.cal-block-sweep .cal-sweep-right,
+.cal-block-sweep .cal-sweep-left {
+  width: 2px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    #ffd24a 0,
+    #ffd24a 6px,
+    transparent 6px,
+    transparent 10px
+  );
+}
+
+/* Clockwise from the top-left corner: top edge left→right, right edge
+   top→bottom, bottom edge right→left, left edge bottom→top — closing exactly
+   where it started. */
+.cal-block-sweep .cal-sweep-top {
+  top: 0;
+  left: 0;
+  width: 0;
+  animation: cal-sweep-grow-w 350ms linear both;
+}
+
+.cal-block-sweep .cal-sweep-right {
+  top: 0;
+  right: 0;
+  height: 0;
+  animation: cal-sweep-grow-h 350ms linear 350ms both;
+}
+
+.cal-block-sweep .cal-sweep-bottom {
+  bottom: 0;
+  right: 0;
+  width: 0;
+  animation: cal-sweep-grow-w 350ms linear 700ms both;
+}
+
+.cal-block-sweep .cal-sweep-left {
+  bottom: 0;
+  left: 0;
+  height: 0;
+  animation: cal-sweep-grow-h 350ms linear 1050ms both;
+}
+
+@keyframes cal-sweep-grow-w {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes cal-sweep-grow-h {
+  from { height: 0; }
+  to { height: 100%; }
 }
 
 .cal-block.rest {
@@ -585,24 +719,35 @@
   color: var(--bg-secondary);
 }
 
+/* The completion control: an empty bullet that fills solid black once the
+   task is done. Black (rather than one keyed to --task-color) is what keeps
+   it legible against every block colour in the palette — none of them are
+   dark, so a black dot always reads as a distinct mark rather than blending
+   into the background. */
 .cal-block-check {
   flex: none;
-  background: rgba(0, 0, 0, 0.18);
-  color: inherit;
-  border: none;
-  border-radius: 4px;
-  width: 18px;
-  height: 18px;
-  font-size: 0.72rem;
-  line-height: 1;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.25);
   cursor: pointer;
-  opacity: 0.55;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .cal-block-check:hover {
-  opacity: 1;
-  background: var(--accent-green);
-  color: #fff;
+  border-color: rgba(0, 0, 0, 0.65);
+  transform: scale(1.15);
+}
+
+.cal-block.done .cal-block-check {
+  /* Deliberately not var(--accent-green) — that's the exact same hex as the
+     palette's own green task colour, so a green task would swallow the dot
+     whole. This shade is brighter/more saturated than any palette entry, and
+     the dark ring still gives it an edge against every background. */
+  border-color: rgba(0, 0, 0, 0.55);
+  background: #00c853;
 }
 
 .cal-block-meta {
@@ -612,14 +757,6 @@
   font-size: 0.68rem;
   color: var(--bg-secondary);
   font-variant-numeric: tabular-nums;
-}
-
-.cal-block-delta.ahead {
-  color: var(--accent-green);
-}
-
-.cal-block-delta.behind {
-  color: var(--accent-red);
 }
 
 /* Where the block was actually closed, inside its planned slot. */
