@@ -339,6 +339,62 @@ export function shiftPatches(
   return tasks.map((task) => ({ id: task.id, patch: shiftedSlot(task, deltaMs) }));
 }
 
+// ── Editing a sequence from its own timeline ────────────────────────
+
+// `tasks` must already be one chain's tasks, ordered by start (as
+// `Chain.tasks` and `ChainRun.tasks` are) — the two views below are the only
+// ones that let a sequence be edited from its own thermometer/spiral/list.
+
+// The patches that move one task to a new position inside its sequence: every
+// task is repacked back to back, in the new order, from the sequence's own
+// start — each one keeping its own duration.
+export function reorderPatches(
+  tasks: Task[],
+  fromIdx: number,
+  toIdx: number
+): { id: string; patch: { day: string; start: number } }[] {
+  if (
+    fromIdx === toIdx ||
+    fromIdx < 0 ||
+    toIdx < 0 ||
+    fromIdx >= tasks.length ||
+    toIdx >= tasks.length
+  ) {
+    return [];
+  }
+  const reordered = [...tasks];
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(toIdx, 0, moved);
+
+  let cursor = taskStartMs(tasks[0]);
+  const patches: { id: string; patch: { day: string; start: number } }[] = [];
+  for (const t of reordered) {
+    patches.push({ id: t.id, patch: shiftedSlot(t, cursor - taskStartMs(t)) });
+    cursor += Math.max(0, t.plannedTime) * 1000;
+  }
+  return patches;
+}
+
+// The patches that change one task's planned duration, pushing every task
+// after it in the sequence by the same delta so the whole thing stays back to
+// back.
+export function resizePatches(
+  tasks: Task[],
+  taskId: string,
+  plannedTime: number
+): { id: string; patch: Partial<Task> }[] {
+  const idx = tasks.findIndex((t) => t.id === taskId);
+  if (idx === -1 || plannedTime <= 0) return [];
+  const deltaMs = (plannedTime - tasks[idx].plannedTime) * 1000;
+  const patches: { id: string; patch: Partial<Task> }[] = [
+    { id: tasks[idx].id, patch: { plannedTime } },
+  ];
+  for (let i = idx + 1; i < tasks.length && deltaMs !== 0; i++) {
+    patches.push({ id: tasks[i].id, patch: shiftedSlot(tasks[i], deltaMs) });
+  }
+  return patches;
+}
+
 // ── Calendar layout (side-by-side columns) ─────────────────────────
 
 export interface Placement {
@@ -433,9 +489,17 @@ export interface DaySegment {
 // Everything visible in a day's column, clipped to that day and packed into
 // side-by-side columns. A block that runs past midnight is returned for every
 // day it touches, so the two halves line up across the seam.
-export function daySegments(tasks: Task[], day: string): DaySegment[] {
+//
+// `minDurationMin` is how short a block can be drawn before the calendar
+// clamps its pixel height to stay readable (see the `Math.max(16, …)` at the
+// call site). A block shorter than that visually reaches further down than
+// its real end time, so — like Google Calendar — the very next block must be
+// packed into its own column rather than drawn underneath it, or the two
+// would appear to overlap even though nothing actually does.
+export function daySegments(tasks: Task[], day: string, minDurationMin = 0): DaySegment[] {
   const from = dayStartMs(day);
   const to = from + DAY_MIN * MIN_MS;
+  const minDurationMs = minDurationMin * MIN_MS;
 
   const visible = tasks
     .filter(isScheduled)
@@ -461,15 +525,18 @@ export function daySegments(tasks: Task[], day: string): DaySegment[] {
   for (const { task, startMs, endMs } of visible) {
     const top = Math.max(startMs, from);
     const bottom = Math.min(endMs, to);
+    // Only for deciding column overlap — the segment itself still reports the
+    // real bottom, so times and labels stay accurate.
+    const visualBottom = Math.max(bottom, top + minDurationMs);
     if (top >= clusterEnd) closeCluster();
     let col = colEnds.findIndex((end) => end <= top);
     if (col === -1) {
       col = colEnds.length;
-      colEnds.push(bottom);
+      colEnds.push(visualBottom);
     } else {
-      colEnds[col] = bottom;
+      colEnds[col] = visualBottom;
     }
-    clusterEnd = Math.max(clusterEnd, bottom);
+    clusterEnd = Math.max(clusterEnd, visualBottom);
     cluster.push({
       task,
       topMin: (top - from) / MIN_MS,

@@ -98,11 +98,21 @@ export async function loadHistory(): Promise<Record<string, DayStats>> {
   return apiFetch('/history');
 }
 
-export async function saveDayStats(date: string, stats: DayStats): Promise<void> {
+// A field left out is kept as-is by the backend rather than zeroed, so a
+// caller that only knows about one of them (the overtake engine, say) can
+// PUT just that field without clobbering the rest of the day's row.
+export async function saveDayStats(date: string, stats: Partial<Omit<DayStats, 'date'>>): Promise<void> {
   await apiFetch(`/history/${encodeURIComponent(date)}`, {
     method: 'PUT',
     body: JSON.stringify(stats),
   });
+}
+
+// The overtake engine's final lead for a day that has closed (credit.ts's
+// `closedDays`) — persisted so the history survives without re-deriving it
+// from the whole plan every time.
+export async function saveOvertakeSec(date: string, overtakeSec: number): Promise<void> {
+  await saveDayStats(date, { overtakeSec });
 }
 
 // Mirrors the old localStorage behaviour: accumulate a run's work/rest and session
@@ -111,13 +121,11 @@ export async function saveDayStats(date: string, stats: DayStats): Promise<void>
 export async function addSessionToHistory(workSec: number, restSec: number, date: string = todayKey()): Promise<void> {
   const hist = await loadHistory();
   const cur = hist[date];
-  const next: DayStats = {
-    date,
+  await saveDayStats(date, {
     workSec: (cur?.workSec ?? 0) + workSec,
     restSec: (cur?.restSec ?? 0) + restSec,
     sessions: (cur?.sessions ?? 0) + 1,
-  };
-  await saveDayStats(date, next);
+  });
 }
 
 // Individual completed runs (one row per session), so a day can list them.

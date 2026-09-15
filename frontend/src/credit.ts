@@ -8,31 +8,32 @@
 //     sooner from here on.
 //  2. The next block starts immediately (a *sequence*) → the lead simply keeps
 //     running against that block, exactly like the old sequential tracker.
-//  3. The next block is far away → nothing happens in between: the lead is
-//     frozen and waits, the way a `rest` block used to hold it. When the block
-//     is reached it may be started `lead` earlier, so the lead is kept rather
-//     than spent.
+//  3. The next block is far away but still the same day → nothing happens in
+//     between: the lead is frozen and waits, the way a `rest` block used to
+//     hold it. When the block is reached it may be started `lead` earlier, so
+//     the lead is kept rather than spent.
 //  4. Parallel blocks count as one group: the group closes with its *last*
 //     task, and the lead is measured against the latest planned end in it.
 //  5. Closing a group before its (shifted) slot even begins wins the whole
 //     block: the lead grows by the group's duration instead.
-//  6. A lead belongs to a "day" — a working session, not a date. It survives
-//     past midnight while the blocks keep coming, and is only dropped at the
-//     first gap of EPOCH_GAP_MS or more that falls on a later date than the one
-//     the lead was earned on. Inside one date even a long gap keeps it: an
-//     evening block still answers to the morning's plan.
+//  6. A lead belongs to one calendar day. It only survives past midnight while
+//     an actual *sequence* is running through the seam — schedule.ts's chain:
+//     blocks that follow each other with no real gap, or blocks glued into the
+//     same explicit session, however far apart their times land. The moment
+//     that chain closes (or, if nothing was running at midnight, at midnight
+//     itself) the day is over: whatever comes next starts the new day's plan
+//     fresh, at zero — even if the chain that carried yesterday's lead across
+//     the seam happens to finish well into today.
 //
 // Everything here is derived from the plan + the current time, so nothing has
-// to be stored: reload the page mid-day and the lead is exactly what it was.
+// to be stored to keep the live number right: reload the page mid-day and the
+// lead is exactly what it was. `closedDays` is the one exception — it reports
+// the final lead of every day that has fully closed while scanning `groups`,
+// purely so the caller can persist that number as history (see api.ts); it is
+// still recomputed from the plan every time, never read back.
 
 import type { TaskGroup } from './schedule';
-import { MIN_MS, dayKeyOf } from './schedule';
-
-// A gap of this size or more, once the date has changed, closes the lead's
-// epoch: the next block starts a fresh "day" with a clean sheet. Ten minutes is
-// about as long as a session survives being put down — anything longer on a new
-// date is a new working day, however late the previous one ran.
-export const EPOCH_GAP_MS = 10 * MIN_MS;
+import { buildChains, dayKeyOf } from './schedule';
 
 export interface CreditSnapshot {
   // Seconds of lead carried out of the last closed group (negative = behind).
@@ -48,11 +49,15 @@ export interface CreditSnapshot {
   frozen: boolean;
   // The group the clock is currently inside, if any.
   active: TaskGroup | null;
-  // Start of the current lead's epoch — the first block it was earned from.
+  // Start of the current day's lead, if any day is currently open.
   epochStartMs: number | null;
-  // Groups of the current epoch still to be closed (the running one included),
+  // Groups of the current day still to be closed (the running one included),
   // stopping at the boundary where this lead would be dropped.
   remaining: TaskGroup[];
+  // The final banked lead of every calendar day that closed while scanning
+  // `groups`, oldest first — everything strictly before the day that is
+  // either still open or not yet reached. The caller persists these.
+  closedDays: { day: string; overtakeSec: number }[];
 }
 
 const EMPTY: CreditSnapshot = {
@@ -63,11 +68,21 @@ const EMPTY: CreditSnapshot = {
   active: null,
   epochStartMs: null,
   remaining: [],
+  closedDays: [],
 };
 
 // `groups` must be chronological (buildGroups returns them that way).
 export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapshot {
-  if (groups.length === 0) return { ...EMPTY };
+  if (groups.length === 0) return { ...EMPTY, closedDays: [] };
+
+  // Which schedule.ts chain each group belongs to. Two groups in the same
+  // chain are "идущие подряд" (or explicitly glued into one session) and never
+  // take a day boundary between them, however far their times land from
+  // midnight — that is exactly a "sequence crossing into the next day".
+  const chainIndexByGroup = new Map<TaskGroup, number>();
+  buildChains(groups).forEach((chain, idx) => {
+    for (const g of chain.groups) chainIndexByGroup.set(g, idx);
+  });
 
   let banked = 0;
   let epochDay: string | null = null;
@@ -75,29 +90,38 @@ export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapsho
   let prevEndMs: number | null = null;
   let active: TaskGroup | null = null;
   // Set once an unfinished group is reached: nothing after it can be credited
-  // yet, because its own time has not been spent. Only an epoch boundary
-  // (rule 6) clears it — otherwise a day abandoned halfway would block the
-  // lead forever.
+  // yet, because its own time has not been spent. Only a day boundary clears
+  // it — otherwise a day abandoned halfway would block the lead forever.
   let blocked = false;
   let firstOpenIdx = -1;
   let endIdx = groups.length;
+  const closedDays: { day: string; overtakeSec: number }[] = [];
 
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     const groupDay = dayKeyOf(group.startMs);
-    const boundary =
-      prevEndMs !== null &&
-      group.startMs - prevEndMs >= EPOCH_GAP_MS &&
-      groupDay !== epochDay;
+    const sameChain =
+      i > 0 && chainIndexByGroup.get(groups[i - 1]) === chainIndexByGroup.get(group);
+    const boundary = prevEndMs !== null && !sameChain && groupDay !== epochDay;
 
     if (boundary) {
-      // The epoch only really ends when the clock gets there: until tomorrow's
-      // first block begins, today's lead is still today's lead, and nothing
-      // beyond the boundary belongs to it.
-      if (nowMs < group.startMs) {
+      // Two different reasons a day is not over yet, depending on what it is
+      // waiting on:
+      //  - the last group is still open (`blocked`): nothing has actually
+      //    closed to judge the date against, so give it the benefit of the
+      //    doubt until the clock reaches *this* block's own start — otherwise
+      //    a task simply left unfinished would abandon the lead the instant
+      //    a later day happens to appear in the plan.
+      //  - the last group is closed: it closed at a real moment in the past,
+      //    so the day is over as soon as the wall clock itself is on a later
+      //    date — a lead that survived a sequence past midnight does not get
+      //    to wait for the next block to actually start before letting go.
+      const stillToday = blocked ? nowMs < group.startMs : dayKeyOf(nowMs) === epochDay;
+      if (stillToday) {
         endIdx = i;
         break;
       }
+      closedDays.push({ day: epochDay!, overtakeSec: banked });
       banked = 0;
       epochDay = groupDay;
       epochStartMs = group.startMs;
@@ -126,6 +150,15 @@ export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapsho
     if (nowMs >= shiftedStartMs) active = group;
   }
 
+  // Real time may already be a day (or several) past the plan's last group,
+  // with nothing open to carry it further — that day is closed too, exactly
+  // as if a boundary had fired right against it.
+  if (!blocked && epochDay !== null && dayKeyOf(nowMs) !== epochDay) {
+    closedDays.push({ day: epochDay, overtakeSec: banked });
+    // That lead belonged to the closed day — today opens with a clean sheet.
+    banked = 0;
+  }
+
   const projected = active ? (active.endMs - nowMs) / 1000 : banked;
   return {
     banked,
@@ -135,6 +168,7 @@ export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapsho
     active,
     epochStartMs,
     remaining: firstOpenIdx >= 0 ? groups.slice(firstOpenIdx, endIdx) : [],
+    closedDays,
   };
 }
 

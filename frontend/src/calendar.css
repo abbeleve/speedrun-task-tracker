@@ -143,6 +143,26 @@
   color: var(--accent-red);
 }
 
+.cal-hud-week {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.cal-hud-week-value {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-green);
+}
+
+.cal-hud-week.behind .cal-hud-week-value {
+  color: var(--accent-red);
+}
+
 .cal-hud-lines {
   display: flex;
   flex-direction: column;
@@ -455,6 +475,35 @@
   pointer-events: none;
 }
 
+/* Offered when you are running ahead of the plan with the next task still a
+   while off: an empty slot, sized to the largest backlog task that would
+   still fit in the gap. Picking a task from its menu is what actually books
+   the slot — this is just the outline of the room available. */
+.cal-gap-slot {
+  appearance: none;
+  font: inherit;
+  background: transparent;
+  border: 2px dashed var(--text-dim);
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  padding: 4px;
+}
+
+.cal-gap-slot:hover {
+  border-color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+}
+
+.cal-gap-slot-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
 .cal-block.cont-top {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
@@ -742,6 +791,12 @@
   background: var(--bg-secondary);
   padding: 8px;
   min-height: 0;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.cal-backlog.drop-target {
+  background: var(--accent-dim, rgba(52, 152, 219, 0.15));
+  border-color: var(--accent, #3498db);
 }
 
 .cal-backlog-head {
@@ -1059,4 +1114,33 @@
 .cal-session-hint {
   font-size: 0.68rem;
   color: var(--text-dim);
+}
+
+/* The list of backlog tasks offered for a free gap — one click books it. */
+.cal-gap-menu .cal-session-actions {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cal-gap-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-gap-menu-item .cal-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* .cal-chip-name normally sits on a bright task-colored chip and takes a
+     dark color for contrast there; here it's on the popover's own dark
+     background, so it needs the page's regular text color instead. */
+  color: var(--text-primary);
+}
+
+.cal-gap-menu-item .cal-chip-time {
+  color: var(--text-dim);
+  flex: none;
 }

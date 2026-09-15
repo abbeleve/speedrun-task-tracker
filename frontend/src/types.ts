@@ -105,6 +105,7 @@ export interface DayStats {
   workSec: number; // total time spent on regular tasks
   restSec: number; // time spent on 'rest'-type tasks
   sessions: number; // how many sessions were logged that day
+  overtakeSec: number; // the overtake engine's final lead for that day (negative = lag)
 }
 
 // A single completed run (session), tied to the day it started.

@@ -24,9 +24,13 @@ class UserOut(BaseModel):
 
 
 class DayStatsIn(BaseModel):
-    workSec: int = 0
-    restSec: int = 0
-    sessions: int = 0
+    # Optional/partial: a field left out keeps the day's existing value rather
+    # than being zeroed, so a caller that only knows about one of them (the
+    # overtake engine saving its per-day result, say) can PUT just that field.
+    workSec: Optional[int] = None
+    restSec: Optional[int] = None
+    sessions: Optional[int] = None
+    overtakeSec: Optional[float] = None
 
 
 class DayStatsOut(BaseModel):
@@ -34,6 +38,7 @@ class DayStatsOut(BaseModel):
     workSec: int
     restSec: int
     sessions: int
+    overtakeSec: float
 
 
 class RepeatConfig(BaseModel):

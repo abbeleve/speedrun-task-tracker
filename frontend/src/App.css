@@ -32,6 +32,7 @@
   --heat-4: #39d353;
   --font-mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 [data-theme="light"] {
@@ -965,6 +966,21 @@
   text-overflow: ellipsis;
   line-height: 1.3;
   color: var(--text-primary);
+  cursor: text;
+}
+
+.block-info .task-name-input {
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  color: var(--text-primary);
+  background: var(--bg-row-hover);
+  border: 1px solid var(--accent-purple);
+  border-radius: 4px;
+  padding: 0 4px;
+  min-width: 0;
+  width: 100%;
 }
 
 .block-info .task-delta {
@@ -2181,26 +2197,17 @@
 
 /* ===== Stats page: daily activity heatmap + sleep tracker ===== */
 
-.stats-page {
-  flex: 1;
-  overflow-y: auto;
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px 20px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-
-  --heat-cell: 13px;
-  --heat-gap: 3px;
-  --sleep-cell: 22px;
-}
-
 .stats-title {
   font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-primary);
+  margin: 0;
+}
+
+.stats-summary-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .stats-summary {
@@ -2239,6 +2246,11 @@
 }
 
 /* --- Heatmap --- */
+
+.heat-card {
+  --heat-cell: 13px;
+  --heat-gap: 3px;
+}
 
 .heat-scroll {
   overflow-x: auto;
@@ -2311,18 +2323,15 @@
 
 /* --- Sleep tracker --- */
 
+.sleep-card {
+  --sleep-cell: 22px;
+}
+
 .sleep-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
-}
-
-.sleep-header h3,
-.heat-header h3 {
-  font-size: 1.05rem;
-  color: var(--text-primary);
-  margin: 0;
 }
 
 .heat-header {
@@ -2559,11 +2568,13 @@
 }
 
 @media (max-width: 720px) {
-  .stats-page {
+  .heat-card {
     --heat-cell: 10px;
     --heat-gap: 2px;
+  }
+
+  .sleep-card {
     --sleep-cell: 16px;
-    padding: 12px 10px 24px;
   }
 
   .sleep-month-scroll {
@@ -3512,36 +3523,46 @@
 .kanban-board {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
   align-items: start;
 }
 
 .kanban-col {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  padding: 0 18px;
   min-height: 160px;
-  transition: border-color 0.15s, background 0.15s;
+  transition: background 0.15s;
+}
+
+.kanban-col:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.kanban-col:last-child {
+  padding-right: 0;
 }
 
 .kanban-col.drag-over {
-  border-color: var(--accent-blue);
-  background: var(--bg-surface);
+  background: var(--bg-row-hover);
 }
 
 .kanban-col-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
   font-weight: 600;
+  font-size: 0.9rem;
   color: var(--text-primary);
 }
 
 .kanban-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex: 0 0 auto;
 }
@@ -3561,21 +3582,17 @@
 .kanban-count {
   margin-left: auto;
   font-size: 0.8rem;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  border-radius: 10px;
-  padding: 1px 8px;
+  font-weight: 400;
+  color: var(--text-dim);
 }
 
 .kanban-cards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   /* Cap the column at roughly 5–6 cards; the rest scroll inside it so the
      board stops stretching and pushing the rest of the page down. */
-  max-height: 400px;
+  max-height: 460px;
   overflow-y: auto;
-  padding-right: 4px;
 }
 
 .kanban-cards::-webkit-scrollbar {
@@ -3605,13 +3622,22 @@
 .kanban-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--task-color, var(--accent-blue));
-  border-radius: var(--radius);
+  gap: 10px;
+  padding: 9px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 4px;
   cursor: grab;
+  transition: background 0.12s;
+}
+
+.kanban-cards .kanban-card:last-child {
+  border-bottom: none;
+}
+
+.kanban-card:hover {
+  background: var(--bg-row-hover);
 }
 
 .kanban-card.locked {
@@ -3620,7 +3646,7 @@
 }
 
 .kanban-card.offered {
-  box-shadow: 0 0 0 1px var(--accent-blue) inset;
+  box-shadow: inset 2px 0 0 var(--accent-blue);
 }
 
 .kanban-card.dragging {
@@ -3628,9 +3654,14 @@
 }
 
 .kanban-card-emoji {
-  font-size: 1.2rem;
-  width: 24px;
-  text-align: center;
+  font-size: 1rem;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--task-color, var(--accent-blue)) 22%, transparent);
   flex: 0 0 auto;
 }
 
@@ -3655,20 +3686,18 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
 
 .kanban-day-badge {
-  background: var(--bg-surface);
-  border-radius: 8px;
-  padding: 0 6px;
+  color: var(--text-dim);
 }
 
 .kanban-day-badge.is-today {
-  background: var(--accent-blue);
-  color: #fff;
+  color: var(--accent-blue);
+  font-weight: 600;
 }
 
 .kanban-rest {
@@ -3680,6 +3709,13 @@
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.kanban-card:hover .kanban-card-actions,
+.kanban-card:focus-within .kanban-card-actions {
+  opacity: 1;
 }
 
 .kanban-card-actions .btn {
@@ -3721,19 +3757,27 @@
 }
 
 .kanban-repeat {
-  background: var(--bg-surface);
-  border-radius: 8px;
-  padding: 0 6px;
   color: var(--accent-gold);
 }
 
 @media (max-width: 720px) {
   .kanban-board {
     grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .kanban-col {
+    border-left: none;
+    padding: 0;
+  }
+
+  .kanban-col:not(:first-child) {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
   }
 }
 
-/* ===== Home dashboard: kanban + days + stats on one page ===== */
+/* ===== Home dashboard: activity, habits, stats, sleep, kanban, days ===== */
 .home-page {
   flex: 1;
   overflow-y: auto;
@@ -3746,11 +3790,84 @@
   gap: 20px;
 }
 
-.home-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+/* ── Weekly overtake strip: a gray track centered on zero, one angled
+   block per hour. Ahead of plan fills blocks rightward from the center
+   (green); behind fills leftward (red); a partial hour partially fills
+   its block. The live lead/lag sits in big display type at the zero
+   point, right between the two sides. ── */
+.home-week-overtake {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.home-week-overtake-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.home-week-overtake-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 20px;
+}
+
+.ot-side {
+  display: flex;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.ot-center-value {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 6vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--accent-green);
+}
+
+.home-week-overtake.behind .ot-center-value {
+  color: var(--accent-red);
+}
+
+.ot-block {
+  position: relative;
+  width: 15px;
+  height: 58px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transform: skewX(-30deg);
+}
+
+.ot-block-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+}
+
+.ot-block-fill--pos {
+  background: var(--accent-green);
+}
+
+.ot-block-fill--neg {
+  left: auto;
+  right: 0;
+  background: var(--accent-red);
 }
 
 .home-panel {
@@ -3760,8 +3877,7 @@
 /* The embedded pages must not manage their own width/scroll — the dashboard
    owns the scroll, so each panel is a plain block inside it. */
 .home-page .kanban-page,
-.home-page .days-page,
-.home-page .stats-page {
+.home-page .days-page {
   max-width: none;
   margin: 0;
   padding: 0;
@@ -3769,17 +3885,7 @@
   flex: none;
 }
 
-@media (max-width: 900px) {
-  .home-top {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ===== Habit tracker (home page) — per-habit dial cards ===== */
-
-.home-panel--habits {
-  margin-top: 20px;
-}
 
 /* ── Head row ─────────────────────────────────────────────────── */
 .habits-head {

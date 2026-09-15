@@ -4,11 +4,14 @@ import {
   buildChains,
   buildGroups,
   coveredRests,
+  daySegments,
   dayStartMs,
   fillSessionGaps,
   layoutTasks,
   mergeSuggestions,
   migrateDayTasks,
+  reorderPatches,
+  resizePatches,
   sessionGapRestTasks,
   shiftPatches,
   shiftedSlot,
@@ -299,6 +302,56 @@ describe('shifting a sequence', () => {
   });
 });
 
+describe('reordering a sequence', () => {
+  it('repacks the tasks back to back in the new order', () => {
+    const a = task({ start: hm(9), plannedTime: 1800 }); // 9:00–9:30
+    const b = task({ start: hm(9, 30), plannedTime: 3600 }); // 9:30–10:30
+    const c = task({ start: hm(10, 30), plannedTime: 900 }); // 10:30–10:45
+    // Move c (idx 2) to the front: order becomes c, a, b.
+    const patches = reorderPatches([a, b, c], 2, 0);
+    const byId = new Map(patches.map((p) => [p.id, p.patch]));
+    expect(byId.get(c.id)).toEqual({ day: DAY, start: hm(9) });
+    expect(byId.get(a.id)).toEqual({ day: DAY, start: hm(9, 15) });
+    expect(byId.get(b.id)).toEqual({ day: DAY, start: hm(9, 45) });
+  });
+
+  it('does nothing when the index does not move', () => {
+    const a = task({ start: hm(9) });
+    const b = task({ start: hm(10) });
+    expect(reorderPatches([a, b], 0, 0)).toEqual([]);
+  });
+
+  it('carries a moved block over midnight', () => {
+    const a = task({ start: hm(23), plannedTime: 3600 }); // 23:00–00:00
+    const b = task({ start: hm(0), day: '2026-03-11', plannedTime: 1800 }); // 00:00–00:30
+    // Swap them: b (30min) now goes first, so a lands 30min later, spilling
+    // further into the next day.
+    const patches = reorderPatches([a, b], 0, 1);
+    const byId = new Map(patches.map((p) => [p.id, p.patch]));
+    expect(byId.get(b.id)).toEqual({ day: DAY, start: hm(23) });
+    expect(byId.get(a.id)).toEqual({ day: DAY, start: hm(23, 30) });
+  });
+});
+
+describe('resizing a task in a sequence', () => {
+  it('pushes every later task by the size change, leaving earlier ones alone', () => {
+    const a = task({ start: hm(9), plannedTime: 1800 });
+    const b = task({ start: hm(9, 30), plannedTime: 3600 });
+    const c = task({ start: hm(10, 30), plannedTime: 900 });
+    const patches = resizePatches([a, b, c], b.id, 1800);
+    expect(patches).toEqual([
+      { id: b.id, patch: { plannedTime: 1800 } },
+      { id: c.id, patch: { day: DAY, start: hm(10) } },
+    ]);
+  });
+
+  it('does nothing for an unknown task or a non-positive duration', () => {
+    const a = task({ start: hm(9) });
+    expect(resizePatches([a], 'missing', 60)).toEqual([]);
+    expect(resizePatches([a], a.id, 0)).toEqual([]);
+  });
+});
+
 describe('layoutTasks', () => {
   it('gives a lone block the full width', () => {
     const places = layoutTasks([
@@ -327,6 +380,48 @@ describe('layoutTasks', () => {
     ]);
     expect(places.map((p) => p.col)).toEqual([0, 1, 0]);
     expect(places.every((p) => p.cols === 2)).toBe(true);
+  });
+});
+
+describe('daySegments', () => {
+  it('stacks truly back-to-back blocks in one column when no min duration is given', () => {
+    const segs = daySegments(
+      [
+        task({ start: hm(10), plannedTime: 60 }), // 10:00–10:01
+        task({ start: hm(10, 1), plannedTime: 3600 }), // 10:01–11:01
+      ],
+      DAY
+    );
+    expect(segs.every((s) => s.cols === 1 && s.col === 0)).toBe(true);
+  });
+
+  it('splits a short block and its immediate follower into side-by-side columns once the short one would be drawn taller than its real duration', () => {
+    // A 1-minute task rendered at a 20-minute-tall minimum visually reaches
+    // into the next task's slot, so — like Google Calendar — the two should
+    // be laid out side by side instead of the second one appearing to sit on
+    // top of the first.
+    const segs = daySegments(
+      [
+        task({ start: hm(10), plannedTime: 60 }), // 10:00–10:01
+        task({ start: hm(10, 1), plannedTime: 3600 }), // 10:01–11:01
+      ],
+      DAY,
+      20
+    );
+    expect(segs.every((s) => s.cols === 2)).toBe(true);
+    expect(segs.map((s) => s.col).sort()).toEqual([0, 1]);
+  });
+
+  it('keeps real gaps wide enough to clear the minimum from splitting', () => {
+    const segs = daySegments(
+      [
+        task({ start: hm(10), plannedTime: 60 }), // 10:00–10:01
+        task({ start: hm(10, 30), plannedTime: 3600 }), // 10:30–11:30, well clear
+      ],
+      DAY,
+      20
+    );
+    expect(segs.every((s) => s.cols === 1 && s.col === 0)).toBe(true);
   });
 });
 

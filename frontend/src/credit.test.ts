@@ -129,13 +129,58 @@ describe('overtake (обгон)', () => {
     expect(min(credit([morning, evening], at(DAY, hm(12))).lead)).toBe(15);
   });
 
-  it('keeps the lead past midnight while the blocks keep coming', () => {
-    // 23:30 → 00:00 is a five-minute seam by 23:55, well inside EPOCH_GAP_MS.
-    const late = task({ start: hm(23), minutes: 55, done: at(DAY, hm(23, 45)) });
+  it('keeps the lead past midnight when the next block is a true sequence', () => {
+    // 23:00–00:00 NEXT, done 10 min early, and the next block starts exactly
+    // where it left off — one sequence straddling the seam.
+    const late = task({ start: hm(23), minutes: 60, done: at(DAY, hm(23, 50)) });
     const after = task({ day: NEXT, start: hm(0), minutes: 60 });
     const snap = credit([late, after], at(NEXT, hm(0, 10)));
     expect(min(snap.banked)).toBe(10);
     expect(snap.active?.tasks[0].id).toBe(after.id);
+    expect(snap.closedDays).toEqual([]);
+  });
+
+  it('drops the lead across midnight when the blocks are not one sequence', () => {
+    // Same lead as above, but a real 5-minute gap sits between the two
+    // blocks' slots — not a sequence, so the new date starts fresh even
+    // though the gap itself is short.
+    const late = task({ start: hm(23), minutes: 55, done: at(DAY, hm(23, 45)) });
+    const after = task({ day: NEXT, start: hm(0, 5), minutes: 60 });
+    const snap = credit([late, after], at(NEXT, hm(0, 15)));
+    expect(snap.banked).toBe(0);
+    expect(snap.active?.tasks[0].id).toBe(after.id);
+    expect(snap.closedDays).toEqual([{ day: DAY, overtakeSec: 600 }]);
+  });
+
+  it('holds the lead open while a block that crosses midnight is still running', () => {
+    // 23:00 DAY → 00:30 NEXT, still unfinished: a single block never takes a
+    // day boundary against itself, so it just keeps running past the seam.
+    const crossing = task({ start: hm(23), minutes: 90 });
+    const after = task({ day: NEXT, start: hm(9), minutes: 60 });
+    const running = credit([crossing, after], at(NEXT, hm(0, 10)));
+    expect(running.active?.tasks[0].id).toBe(crossing.id);
+    expect(running.closedDays).toEqual([]);
+  });
+
+  it('drops the lead the moment the crossing block closes, without waiting for the next one', () => {
+    // Same block, now closed 10 min early — well before `after` (09:00) even
+    // starts. NEXT still opens at zero: the lead is not held open just
+    // because nothing else has started yet.
+    const crossing = task({ start: hm(23), minutes: 90 }); // 23:00 → 00:30 NEXT
+    const after = task({ day: NEXT, start: hm(9), minutes: 60 });
+    const closed = { ...crossing, finishedAt: at(NEXT, hm(0, 20)), status: 'done' as const };
+
+    const snap = credit([closed, after], at(NEXT, hm(0, 25)));
+    expect(snap.banked).toBe(0);
+    expect(snap.frozen).toBe(true);
+    expect(snap.closedDays).toEqual([{ day: DAY, overtakeSec: 600 }]);
+  });
+
+  it('reports a day as closed once real time has moved past it with nothing open', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const snap = credit([a], at(NEXT, hm(9)));
+    expect(snap.banked).toBe(0);
+    expect(snap.closedDays).toEqual([{ day: DAY, overtakeSec: 900 }]);
   });
 
   it('drops the lead at a ten-minute gap on the new date', () => {

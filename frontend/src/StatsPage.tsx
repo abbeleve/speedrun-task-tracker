@@ -1,3 +1,9 @@
+/* eslint-disable react-refresh/only-export-components --
+   This module intentionally exports the shared `useStatsData` hook (plus its
+   `StatsData` type) alongside the three view sections that take it as a prop,
+   so the sections can be reordered independently on the home page. Fast
+   refresh for the components is sacrificed for that sharing on purpose. */
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DayStats } from './types';
 import { dateKey, heatLevel } from './history';
@@ -44,6 +50,13 @@ function fmtDurMin(min: number): string {
 }
 
 const fmtSec = (sec: number) => fmtDurMin(Math.round(sec / 60));
+
+function fmtSumSec(sec: number): string {
+  const hrs = sec / 3600;
+  if (hrs >= 100) return `${Math.round(hrs / 10) * 10}ч+`;
+  if (hrs >= 10) return `${Math.round(hrs)}ч`;
+  return fmtSec(sec);
+}
 
 function hoursWord(n: number): string {
   const abs = Math.abs(n) % 100;
@@ -216,9 +229,30 @@ function YearSelector({ value, onChange, years }: {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────
+// ── Shared data/state ────────────────────────────────────────────────
+// Everything below is one hook so the three sections that used to be a
+// single "Статистика активности" page (the heatmap, the summary cards and
+// the sleep tracker) can be reordered independently on the home page while
+// still sharing one load of history/sleep data and one scroll state.
 
-function StatsPage() {
+export interface StatsData {
+  selYear: number;
+  setSelYear: (y: number) => void;
+  availableYears: number[];
+  heatData: { cells: HeatCellInfo[][]; monthMarks: { col: number; label: string }[]; colsCount: number };
+  summary: { totalWorkSec: number; avgSleep: number | null; daysWithSleep: number; totalDays: number };
+  yearTotalHrs: number;
+  months: MonthBlock[];
+  sleepLog: Record<string, SleepData>;
+  today: Date;
+  toggleHour: (dayKey: string, hour: number) => void;
+  cycleQuality: (dayKey: string) => void;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+  targetMonth: (delta: number) => void;
+}
+
+export function useStatsData(): StatsData {
   const [history, setHistory] = useState<Record<string, DayStats>>({});
   const [sleepLog, setSleepLog] = useState<Record<string, SleepData>>({});
   const [selYear, setSelYear] = useState(() => new Date().getFullYear());
@@ -412,13 +446,6 @@ function StatsPage() {
     setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
   };
 
-  const fmtSumSec = (sec: number): string => {
-    const hrs = sec / 3600;
-    if (hrs >= 100) return `${Math.round(hrs / 10) * 10}ч+`;
-    if (hrs >= 10) return `${Math.round(hrs)}ч`;
-    return fmtSec(sec);
-  };
-
   // ── Lazy month loading (infinite scroll, both directions) ──
   // Months buffer around the current one. Scrolling near the top (older) or
   // bottom (newer) edge prepends/appends another batch. Prepending inserts
@@ -529,11 +556,76 @@ function StatsPage() {
     gotoMonth(d.getFullYear(), d.getMonth());
   };
 
-  return (
-    <div className="stats-page">
-      <h2 className="stats-title">📊 Статистика активности</h2>
+  return {
+    selYear,
+    setSelYear,
+    availableYears,
+    heatData,
+    summary,
+    yearTotalHrs,
+    months,
+    sleepLog,
+    today,
+    toggleHour,
+    cycleQuality,
+    scrollRef,
+    onScroll,
+    targetMonth,
+  };
+}
 
-      {/* Summary cards */}
+// ── Section 1: yearly activity heatmap ────────────────────────────────
+
+export function ActivityHeatmap({ stats }: { stats: StatsData }) {
+  const { selYear, setSelYear, availableYears, heatData } = stats;
+  return (
+    <section className="card heat-card">
+      <div className="heat-header">
+        <h2 className="stats-title">🔥 Активность</h2>
+        <YearSelector value={selYear} onChange={setSelYear} years={availableYears} />
+      </div>
+      <div className="heat-scroll">
+        <div
+          className="heat-months"
+          style={{ gridTemplateColumns: `repeat(${heatData.colsCount}, var(--heat-cell))` }}
+        >
+          {heatData.monthMarks.map((m) => (
+            <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
+              {m.label}
+            </span>
+          ))}
+        </div>
+        <div className="heat-body">
+          <div className="heat-days">
+            {DOW_LABELS.map((l, i) => (
+              <span key={i}>{l}</span>
+            ))}
+          </div>
+          <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
+            {heatData.cells.flat().map((c) => (
+              <div key={c.key} className={`heat-cell l${c.level}${c.future ? ' future' : ''}`} title={cellTitle(c)} />
+            ))}
+          </div>
+        </div>
+        <div className="heat-legend">
+          <span>Меньше</span>
+          {[0, 1, 2, 3, 4].map((l) => (
+            <span key={l} className={`heat-cell l${l}`} />
+          ))}
+          <span>Больше</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Section 2: yearly summary cards ────────────────────────────────────
+
+export function ActivityStatsSummary({ stats }: { stats: StatsData }) {
+  const { summary, yearTotalHrs } = stats;
+  return (
+    <div className="stats-summary-section">
+      <h2 className="stats-title">📊 Статистика активности</h2>
       <div className="stats-summary">
         <div className="stat-card">
           <span className="stat-value">{fmtSumSec(summary.totalWorkSec)}</span>
@@ -552,93 +644,58 @@ function StatsPage() {
           <span className="stat-label">Часов сна всего</span>
         </div>
       </div>
-
-      {/* Heatmap — full year */}
-      <section className="card heat-card">
-        <div className="heat-header">
-          <h3>🔥 Активность</h3>
-          <YearSelector value={selYear} onChange={setSelYear} years={availableYears} />
-        </div>
-        <div className="heat-scroll">
-          <div
-            className="heat-months"
-            style={{ gridTemplateColumns: `repeat(${heatData.colsCount}, var(--heat-cell))` }}
-          >
-            {heatData.monthMarks.map((m) => (
-              <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
-                {m.label}
-              </span>
-            ))}
-          </div>
-          <div className="heat-body">
-            <div className="heat-days">
-              {DOW_LABELS.map((l, i) => (
-                <span key={i}>{l}</span>
-              ))}
-            </div>
-            <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
-              {heatData.cells.flat().map((c) => (
-                <div key={c.key} className={`heat-cell l${c.level}${c.future ? ' future' : ''}`} title={cellTitle(c)} />
-              ))}
-            </div>
-          </div>
-          <div className="heat-legend">
-            <span>Меньше</span>
-            {[0, 1, 2, 3, 4].map((l) => (
-              <span key={l} className={`heat-cell l${l}`} />
-            ))}
-            <span>Больше</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Sleep tracker — monthly scroll, 24h per day */}
-      <section className="card sleep-card">
-        <div className="sleep-header">
-          <h3>😴 Трекер сна</h3>
-          <div className="sleep-controls-top">
-            <button
-              type="button"
-              className="btn btn-sleep-nav"
-              title="К следующему месяцу"
-              onClick={() => targetMonth(1)}
-            >
-              След. месяц →
-            </button>
-            <button
-              type="button"
-              className="btn btn-sleep-nav"
-              title="К предыдущему месяцу"
-              onClick={() => targetMonth(-1)}
-            >
-              ← Пред. месяц
-            </button>
-            <button
-              type="button"
-              className="btn btn-sleep-nav"
-              onClick={() => targetMonth(0)}
-            >
-              Сегодня
-            </button>
-            <span className="sleep-info-total">Итого: {yearTotalHrs} ч.</span>
-          </div>
-        </div>
-
-        <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScroll}>
-          {months.map((block) => (
-            <SleepMonth
-              key={block.key}
-              block={block}
-              entries={sleepLog}
-              disabledFrom={today}
-              onToggleHour={toggleHour}
-              onCycleQuality={cycleQuality}
-            />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
 
-export default StatsPage;
+// ── Section 3: sleep tracker — monthly scroll, 24h per day ─────────────
+
+export function SleepTracker({ stats }: { stats: StatsData }) {
+  const { months, sleepLog, today, toggleHour, cycleQuality, scrollRef, onScroll, targetMonth, yearTotalHrs } = stats;
+  return (
+    <section className="card sleep-card">
+      <div className="sleep-header">
+        <h2 className="stats-title">😴 Трекер сна</h2>
+        <div className="sleep-controls-top">
+          <button
+            type="button"
+            className="btn btn-sleep-nav"
+            title="К следующему месяцу"
+            onClick={() => targetMonth(1)}
+          >
+            След. месяц →
+          </button>
+          <button
+            type="button"
+            className="btn btn-sleep-nav"
+            title="К предыдущему месяцу"
+            onClick={() => targetMonth(-1)}
+          >
+            ← Пред. месяц
+          </button>
+          <button
+            type="button"
+            className="btn btn-sleep-nav"
+            onClick={() => targetMonth(0)}
+          >
+            Сегодня
+          </button>
+          <span className="sleep-info-total">Итого: {yearTotalHrs} ч.</span>
+        </div>
+      </div>
+
+      <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScroll}>
+        {months.map((block) => (
+          <SleepMonth
+            key={block.key}
+            block={block}
+            entries={sleepLog}
+            disabledFrom={today}
+            onToggleHour={toggleHour}
+            onCycleQuality={cycleQuality}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}

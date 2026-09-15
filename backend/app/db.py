@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS history (
     work_sec INTEGER NOT NULL DEFAULT 0,
     rest_sec INTEGER NOT NULL DEFAULT 0,
     sessions INTEGER NOT NULL DEFAULT 0,
+    overtake_sec REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, date)
 );
 
@@ -109,7 +110,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 def init_db() -> None:
@@ -126,23 +127,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     The base schema is written with ``CREATE TABLE IF NOT EXISTS``, so it is
     idempotent and safe to run on both fresh and existing files. SQLite has no
-    ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS``, so future column changes get a
-    numbered step guarded by the stored ``user_version`` — each runs exactly
-    once. New tables alone need no step here; they are covered by ``_SCHEMA``.
+    ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS``, so column additions go through
+    ``_add_column_if_missing`` instead, which checks ``PRAGMA table_info`` itself
+    — that check is what makes each step safe to repeat, not the stored
+    ``user_version``, so these run unconditionally rather than being gated by a
+    version number that could otherwise drift out of sync with the actual
+    columns (e.g. a database restored from an older copy). New tables alone
+    need no step here; they are covered by ``_SCHEMA``.
     """
     version = conn.execute('PRAGMA user_version').fetchone()[0]
     conn.executescript(_SCHEMA)
-    if version < 2:
-        # Existing databases already have run_sessions from the previous
-        # version, so ``_SCHEMA`` cannot add the new columns to them. Guard
-        # each ADD COLUMN so a freshly created table (which already has them)
-        # is left untouched.
-        _add_column_if_missing(
-            conn, 'run_sessions', 'planned_sec', 'INTEGER NOT NULL DEFAULT 0'
-        )
-        _add_column_if_missing(
-            conn, 'run_sessions', 'tasks', "TEXT NOT NULL DEFAULT '[]'"
-        )
+    _add_column_if_missing(
+        conn, 'run_sessions', 'planned_sec', 'INTEGER NOT NULL DEFAULT 0'
+    )
+    _add_column_if_missing(
+        conn, 'run_sessions', 'tasks', "TEXT NOT NULL DEFAULT '[]'"
+    )
+    _add_column_if_missing(
+        conn, 'history', 'overtake_sec', 'REAL NOT NULL DEFAULT 0'
+    )
     if version < _SCHEMA_VERSION:
         conn.execute(f'PRAGMA user_version = {_SCHEMA_VERSION}')
 

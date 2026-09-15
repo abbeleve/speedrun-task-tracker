@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionState } from './types';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { SessionState, Task } from './types';
 import { DEFAULT_COLOR } from './types';
 import { formatTime, formatDelta } from './format';
 import { SpiralThermometer } from './SpiralThermometer';
@@ -15,11 +16,16 @@ import {
   buildChains,
   buildGroups,
   chainOfTask,
+  dayKeyOf,
   isDone,
+  reorderPatches,
+  resizePatches,
   shiftPatches,
   taskEndMs,
 } from './schedule';
 import { computeCredit } from './credit';
+import { useOvertakeHistorySync } from './overtakeHistory';
+import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
 import { newTaskId, spawnNextOccurrence } from './tasks';
 import { useAuth } from './auth';
@@ -28,6 +34,27 @@ import './calendar.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
+
+// The shortest a task can be dragged down to, and the increment its length
+// snaps to once the resize handle is let go.
+const MIN_TASK_SEC = 60;
+const RESIZE_SNAP_SEC = 15;
+
+// Editing a sequence from its own timeline: dragging a block's grip
+// reorders it among its siblings, dragging its bottom edge resizes it. Both
+// ride one window-level pointer session (mirrors the calendar's own drag
+// gestures) so the gesture survives the pointer leaving the block it started
+// on.
+type TimelineGesture =
+  | { kind: 'reorder'; taskId: string; fromIdx: number; overIdx: number; moved: boolean }
+  | {
+      kind: 'resize';
+      taskId: string;
+      startY: number;
+      startHeight: number;
+      startPlanned: number;
+      deltaPx: number;
+    };
 
 // How often the wall clock is read. The whole app — the overtake, the playhead,
 // the now-line — is a function of this tick, so it is fast enough for the
@@ -78,6 +105,20 @@ function App() {
   const glowTimerRef = useRef<number | null>(null);
   const prevTaskIdRef = useRef<string | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const tracksRef = useRef<HTMLDivElement>(null);
+
+  // Renaming a block inline (timeline view): which task is being edited, and
+  // the draft text before it is committed.
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [editNameValue, setEditNameValue] = useState('');
+
+  // Reorder/resize gesture — see TimelineGesture above.
+  const [gesture, setGesture] = useState<TimelineGesture | null>(null);
+  const gestureRef = useRef<TimelineGesture | null>(null);
+  const setGestureState = useCallback((next: TimelineGesture | null) => {
+    gestureRef.current = next;
+    setGesture(next);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('speedrun_view', view);
@@ -97,6 +138,14 @@ function App() {
   const groups = useMemo(() => buildGroups(store.tasks), [store.tasks]);
   const chains = useMemo(() => buildChains(groups), [groups]);
   const credit = useMemo(() => computeCredit(groups, now), [groups, now]);
+
+  // Save each day's final lead to history once it closes — see overtakeHistory.ts.
+  const todayKey = useMemo(() => dayKeyOf(now), [now]);
+  const overtakeByDay = useOvertakeHistorySync(groups, todayKey);
+  const weekOvertakeSec = useMemo(
+    () => sumWeekOvertakeSec(overtakeByDay, todayKey, credit.lead),
+    [overtakeByDay, todayKey, credit.lead]
+  );
 
   const openChain: Chain | null = useMemo(
     () => (openTaskId ? chainOfTask(chains, openTaskId) : null),
@@ -186,6 +235,47 @@ function App() {
     [store]
   );
 
+  // ── editing the timeline view: rename inline, drag to reorder/resize ────
+
+  const startRename = useCallback((task: Task) => {
+    setEditingNameId(task.id);
+    setEditNameValue(task.name);
+  }, []);
+
+  const commitRename = useCallback(() => {
+    setEditingNameId((id) => {
+      if (id) renameTask(id, editNameValue);
+      return null;
+    });
+  }, [editNameValue, renameTask]);
+
+  const startReorder = useCallback(
+    (e: ReactPointerEvent, taskId: string, idx: number) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setGestureState({ kind: 'reorder', taskId, fromIdx: idx, overIdx: idx, moved: false });
+    },
+    [setGestureState]
+  );
+
+  const startResize = useCallback(
+    (e: ReactPointerEvent, task: Task, height: number) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setGestureState({
+        kind: 'resize',
+        taskId: task.id,
+        startY: e.clientY,
+        startHeight: height,
+        startPlanned: task.plannedTime,
+        deltaPx: 0,
+      });
+    },
+    [setGestureState]
+  );
+
   // ── the open sequence, as an elapsed-clock run ───────────────────
 
   const runTasks = useMemo(() => run?.tasks ?? [], [run]);
@@ -250,6 +340,97 @@ function App() {
     () => taskLayout.reduce((sum, l) => sum + l.height, 0),
     [taskLayout]
   );
+
+  // Where a task's block actually is on screen while it is being dragged: a
+  // reorder previews the new order in place, a resize previews the new
+  // height and pushes everything after it down. Nothing here is committed —
+  // it only reads back on pointer-up (see the gesture effect below).
+  const displayLayout = useMemo(() => {
+    if (gesture?.kind === 'reorder') {
+      const { fromIdx, overIdx } = gesture;
+      return runTasks.map((_, idx) => {
+        let target = idx;
+        if (idx === fromIdx) target = overIdx;
+        else if (fromIdx < overIdx && idx > fromIdx && idx <= overIdx) target = idx - 1;
+        else if (fromIdx > overIdx && idx >= overIdx && idx < fromIdx) target = idx + 1;
+        return taskLayout[target];
+      });
+    }
+    if (gesture?.kind === 'resize') {
+      const idx = runTasks.findIndex((t) => t.id === gesture.taskId);
+      if (idx === -1) return taskLayout;
+      const newHeight = Math.max(24, gesture.startHeight + gesture.deltaPx);
+      const deltaH = newHeight - taskLayout[idx].height;
+      return taskLayout.map((l, i) => {
+        if (i < idx) return l;
+        if (i === idx) return { offset: l.offset, height: newHeight };
+        return { offset: l.offset + deltaH, height: l.height };
+      });
+    }
+    return taskLayout;
+  }, [gesture, taskLayout, runTasks]);
+
+  const displayTimelineHeight = useMemo(
+    () => displayLayout.reduce((sum, l) => sum + l.height, 0),
+    [displayLayout]
+  );
+
+  // One window-level pointer session drives both the reorder and the resize
+  // gesture, so dragging keeps working once the pointer leaves the block (or
+  // even the timeline) it started on — same pattern as the calendar's own
+  // drag gestures.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g) return;
+      if (g.kind === 'reorder') {
+        const rect = tracksRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const y = e.clientY - rect.top;
+        let overIdx = taskLayout.length - 1;
+        for (let i = 0; i < taskLayout.length; i++) {
+          if (y < taskLayout[i].offset + taskLayout[i].height / 2) {
+            overIdx = i;
+            break;
+          }
+        }
+        if (overIdx !== g.overIdx || !g.moved) setGestureState({ ...g, overIdx, moved: true });
+      } else {
+        const deltaPx = e.clientY - g.startY;
+        if (deltaPx !== g.deltaPx) setGestureState({ ...g, deltaPx });
+      }
+    };
+
+    const onUp = () => {
+      const g = gestureRef.current;
+      if (!g) return;
+      setGestureState(null);
+      if (g.kind === 'reorder') {
+        if (g.moved && g.fromIdx !== g.overIdx) {
+          store.patchTasks(reorderPatches(runTasks, g.fromIdx, g.overIdx));
+        }
+      } else {
+        const pxPerSec = g.startHeight / Math.max(1, g.startPlanned);
+        const rawPlanned = g.startPlanned + g.deltaPx / pxPerSec;
+        const plannedTime = Math.max(
+          MIN_TASK_SEC,
+          Math.round(rawPlanned / RESIZE_SNAP_SEC) * RESIZE_SNAP_SEC
+        );
+        if (plannedTime !== g.startPlanned) {
+          store.patchTasks(resizePatches(runTasks, g.taskId, plannedTime));
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [taskLayout, runTasks, store, setGestureState]);
 
   const playheadPx = useMemo(() => {
     let sec = elapsedSec;
@@ -446,6 +627,7 @@ function App() {
           chains={chains}
           onOpenChain={openSequence}
           habits={habits.habits}
+          weekOvertakeSec={weekOvertakeSec}
         />
       )}
 
@@ -459,6 +641,7 @@ function App() {
           chains={chains}
           habits={habits}
           tasks={store.tasks}
+          weekOvertakeSec={weekOvertakeSec}
         />
       )}
 
@@ -568,10 +751,20 @@ function App() {
                   />
                 </div>
 
-                <div className="timeline-tracks" style={{ height: timelineHeight }}>
+                <div
+                  className="timeline-tracks"
+                  ref={tracksRef}
+                  style={{ height: displayTimelineHeight }}
+                >
                   {runTasks.map((task, idx) => {
-                    const layout = taskLayout[idx];
+                    const layout = displayLayout[idx];
                     const completed = task.completedAt !== null;
+                    const isDraggingThis =
+                      gesture !== null && gesture.taskId === task.id;
+                    const isDropTarget =
+                      gesture?.kind === 'reorder' &&
+                      gesture.overIdx === idx &&
+                      gesture.taskId !== task.id;
                     const isCurrent = idx === currentTaskIdx && sessionState !== 'idle';
                     const plannedEndSec = cumulativeTimes[idx] + task.plannedTime;
 
@@ -603,7 +796,9 @@ function App() {
                         key={task.id}
                         className={`task-block ${completed ? 'completed' : ''} ${
                           isCurrent ? 'current' : ''
-                        } ${task.type === 'rest' ? 'rest' : ''}`}
+                        } ${task.type === 'rest' ? 'rest' : ''} ${
+                          isDraggingThis ? 'dragging' : ''
+                        } ${isDropTarget ? 'drag-over' : ''}`}
                         style={
                           {
                             top: layout.offset,
@@ -613,6 +808,15 @@ function App() {
                         }
                       >
                         <div className="block-left">
+                          {task.type !== 'rest' && runTasks.length > 1 && (
+                            <span
+                              className="drag-handle"
+                              title="Перетащи, чтобы переместить задачу в секвенции"
+                              onPointerDown={(e) => startReorder(e, task.id, idx)}
+                            >
+                              ⠿
+                            </span>
+                          )}
                           <span className="task-emoji">{task.emoji}</span>
                           <span className="task-color-swatch" style={{ background: task.color }} />
                           {task.type === 'rest' && (
@@ -621,7 +825,28 @@ function App() {
                             </span>
                           )}
                           <div className="block-info">
-                            <span className="task-name">{task.name}</span>
+                            {editingNameId === task.id ? (
+                              <input
+                                className="task-name-input"
+                                autoFocus
+                                value={editNameValue}
+                                onChange={(e) => setEditNameValue(e.target.value)}
+                                onBlur={commitRename}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') commitRename();
+                                  if (e.key === 'Escape') setEditingNameId(null);
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <span
+                                className="task-name"
+                                title="Двойной клик — переименовать"
+                                onDoubleClick={() => startRename(task)}
+                              >
+                                {task.name}
+                              </span>
+                            )}
                             <div className="block-timers">
                               <span className="task-planned-lg">
                                 {formatTime(task.plannedTime * 1000, false)}
@@ -660,11 +885,17 @@ function App() {
                             )}
                           </div>
                         </div>
+
+                        <div
+                          className="resize-handle"
+                          title="Потяни, чтобы изменить длительность"
+                          onPointerDown={(e) => startResize(e, task, layout.height)}
+                        />
                       </div>
                     );
                   })}
 
-                  <div className="finish-line" style={{ top: timelineHeight }}>
+                  <div className="finish-line" style={{ top: displayTimelineHeight }}>
                     <span className="finish-label">🏁 Finish</span>
                   </div>
                 </div>

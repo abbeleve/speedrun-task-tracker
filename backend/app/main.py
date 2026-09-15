@@ -163,7 +163,7 @@ def me(user=Depends(get_current_user)):
 @app.get('/api/history')
 def get_history(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
     rows = conn.execute(
-        'SELECT date, work_sec, rest_sec, sessions FROM history WHERE user_id = ?',
+        'SELECT date, work_sec, rest_sec, sessions, overtake_sec FROM history WHERE user_id = ?',
         (user['id'],),
     ).fetchall()
     return {
@@ -172,6 +172,7 @@ def get_history(user=Depends(get_current_user), conn: sqlite3.Connection = Depen
             'workSec': r['work_sec'],
             'restSec': r['rest_sec'],
             'sessions': r['sessions'],
+            'overtakeSec': r['overtake_sec'],
         }
         for r in rows
     }
@@ -184,16 +185,30 @@ def put_history(
     user=Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    # A field left out of the body (None) keeps whatever the row already has,
+    # so a partial PUT (the overtake engine saving just `overtakeSec`, say)
+    # cannot clobber the other fields.
+    existing = conn.execute(
+        'SELECT work_sec, rest_sec, sessions, overtake_sec FROM history WHERE user_id = ? AND date = ?',
+        (user['id'], date),
+    ).fetchone()
+    work_sec = body.workSec if body.workSec is not None else (existing['work_sec'] if existing else 0)
+    rest_sec = body.restSec if body.restSec is not None else (existing['rest_sec'] if existing else 0)
+    sessions = body.sessions if body.sessions is not None else (existing['sessions'] if existing else 0)
+    overtake_sec = (
+        body.overtakeSec if body.overtakeSec is not None else (existing['overtake_sec'] if existing else 0)
+    )
     conn.execute(
         """
-        INSERT INTO history (user_id, date, work_sec, rest_sec, sessions)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO history (user_id, date, work_sec, rest_sec, sessions, overtake_sec)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, date) DO UPDATE SET
             work_sec = excluded.work_sec,
             rest_sec = excluded.rest_sec,
-            sessions = excluded.sessions
+            sessions = excluded.sessions,
+            overtake_sec = excluded.overtake_sec
         """,
-        (user['id'], date, body.workSec, body.restSec, body.sessions),
+        (user['id'], date, work_sec, rest_sec, sessions, overtake_sec),
     )
     conn.commit()
     return {'ok': True}

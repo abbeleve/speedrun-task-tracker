@@ -54,3 +54,10 @@ export function compactDur(totalSec: number): string {
   if (m > 0) return `${m} м`;
   return `${s} с`;
 }
+
+// A signed overtake/lag reading in seconds — "+1 ч 05 м" ahead, "−25 м"
+// behind, or "ровно" for anything under half a minute either way.
+export function signedDur(sec: number): string {
+  if (Math.abs(sec) < 30) return 'ровно';
+  return `${sec > 0 ? '+' : '−'}${compactDur(sec)}`;
+}

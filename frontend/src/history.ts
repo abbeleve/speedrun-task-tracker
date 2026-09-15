@@ -21,6 +21,14 @@ export function shiftDayKey(key: string, delta: number): string {
   return dateKey(new Date(y, m - 1, d + delta));
 }
 
+// The Monday of the calendar week `day` falls in.
+export function startOfWeek(day: string): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const shift = (date.getDay() + 6) % 7; // Monday-first
+  return shiftDayKey(day, -shift);
+}
+
 // Split finished session time into work vs rest using actual task completion
 // timestamps. An unfinished current task counts only its partial progress.
 export function splitSessionByType(

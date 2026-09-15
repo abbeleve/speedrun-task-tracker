@@ -21,6 +21,7 @@ def test_history_crud(client, auth_headers):
         'workSec': 3600,
         'restSec': 600,
         'sessions': 2,
+        'overtakeSec': 0,
     }
 
     # Upsert overwrites the day rather than accumulating
@@ -31,6 +32,22 @@ def test_history_crud(client, auth_headers):
     )
     got = client.get('/api/history', headers=auth_headers).json()
     assert got['2026-09-10']['workSec'] == 100
+
+    # A partial PUT (just the overtake, as the overtake engine sends it) keeps
+    # the rest of the row untouched instead of zeroing it.
+    client.put(
+        '/api/history/2026-09-10',
+        headers=auth_headers,
+        json={'overtakeSec': 900},
+    )
+    got = client.get('/api/history', headers=auth_headers).json()
+    assert got['2026-09-10'] == {
+        'date': '2026-09-10',
+        'workSec': 100,
+        'restSec': 0,
+        'sessions': 1,
+        'overtakeSec': 900,
+    }
 
     client.delete('/api/history/2026-09-10', headers=auth_headers)
     assert client.get('/api/history', headers=auth_headers).json() == {}

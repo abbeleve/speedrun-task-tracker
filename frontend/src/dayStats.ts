@@ -17,7 +17,7 @@ function spentSec(task: Task): number {
   return Math.max(0, Math.min(closed, end) - start) / 1000;
 }
 
-export function dayStatsFromTasks(date: string, tasks: Task[]): DayStats {
+export function dayStatsFromTasks(date: string, tasks: Task[]): Omit<DayStats, 'overtakeSec'> {
   let workSec = 0;
   let restSec = 0;
   for (const task of tasks) {

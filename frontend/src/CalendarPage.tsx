@@ -9,6 +9,7 @@ import {
   buildGroups,
   chainOfTask,
   clampStartMin,
+  dayKeyOf,
   dayStartMs,
   daySegments,
   isDone,
@@ -22,14 +23,14 @@ import {
 } from './schedule';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, projectedFinishMs } from './credit';
-import { clockTime, compactDur } from './format';
-import { dateKey, shiftDayKey, todayKey } from './history';
+import { clockTime, compactDur, signedDur } from './format';
+import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
 import { newTaskId, spawnNextOccurrence } from './tasks';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
 import SessionPopover from './SessionPopover';
 
-export type CalView = 'day' | 'week' | 'month';
+export type CalView = 'day' | '3day' | 'week' | 'month';
 
 interface CalendarPageProps {
   store: DayStore;
@@ -38,10 +39,15 @@ interface CalendarPageProps {
   chains: Chain[];
   onOpenChain: (chain: Chain) => void;
   habits: Habit[];
+  // Overtake summed across the current calendar week (Mon–Sun), today's
+  // contribution live — see weekOvertake.ts.
+  weekOvertakeSec: number;
 }
 
 const PX_PER_HOUR = 52;
 const PX_PER_MIN = PX_PER_HOUR / 60;
+const MIN_BLOCK_PX = 16; // shortest a block is ever drawn, however brief the task
+const MIN_BLOCK_MIN = MIN_BLOCK_PX / PX_PER_MIN;
 const SNAP_MIN = 5;
 const DEFAULT_LENGTH_MIN = 60;
 const MIN_LENGTH_MIN = 10;
@@ -63,18 +69,6 @@ function hhmm(minFromMidnight: number): string {
 const wallTime = clockTime;
 const dur = compactDur;
 
-function signedDur(sec: number): string {
-  if (Math.abs(sec) < 30) return 'ровно';
-  return `${sec > 0 ? '+' : '−'}${dur(sec)}`;
-}
-
-function startOfWeek(day: string): string {
-  const [y, m, d] = day.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  const shift = (date.getDay() + 6) % 7; // Monday-first
-  return shiftDayKey(day, -shift);
-}
-
 function monthCells(day: string): string[] {
   const [y, m] = day.split('-').map(Number);
   const first = dateKey(new Date(y, m - 1, 1));
@@ -90,6 +84,17 @@ function snapMs(ms: number): number {
   return Math.round(ms / (SNAP_MIN * MIN_MS)) * SNAP_MIN * MIN_MS;
 }
 
+const GAP_MENU_WIDTH = 260;
+const GAP_MENU_MARGIN = 12;
+
+function gapMenuStyle(anchor: DialogAnchor): React.CSSProperties {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const left = Math.min(anchor.x, vw - GAP_MENU_WIDTH - GAP_MENU_MARGIN);
+  const top = Math.min(anchor.y, vh - GAP_MENU_MARGIN);
+  return { position: 'fixed', left: Math.max(GAP_MENU_MARGIN, left), top, width: GAP_MENU_WIDTH };
+}
+
 // ── drag gestures ──────────────────────────────────────────────────
 
 type Gesture =
@@ -101,16 +106,25 @@ type Gesture =
       day: string;
       startMin: number;
       moved: boolean;
+      toBacklog: boolean; // pointer is currently over the backlog rail
     }
   | { kind: 'resize'; task: Task; day: string; lengthMin: number }
   // Dragging a session by its spine: every block of it moves by the same
   // delta, so the gaps inside the session are kept.
   | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean };
 
-function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: CalendarPageProps) {
+function CalendarPage({
+  store,
+  now,
+  credit,
+  chains,
+  onOpenChain,
+  habits,
+  weekOvertakeSec,
+}: CalendarPageProps) {
   const [view, setView] = useState<CalView>(() => {
     const saved = localStorage.getItem('speedrun_cal_view');
-    return saved === 'day' || saved === 'month' ? saved : 'week';
+    return saved === 'day' || saved === '3day' || saved === 'month' ? saved : 'week';
   });
   const [anchor, setAnchor] = useState<string>(() => todayKey());
   // The block editor. `anchor` is where on the screen it was opened from: with
@@ -131,6 +145,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
   const gestureRef = useRef<Gesture | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const backlogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
@@ -141,6 +156,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
 
   const visibleDays = useMemo(() => {
     if (view === 'day') return [anchor];
+    if (view === '3day') return Array.from({ length: 3 }, (_, i) => shiftDayKey(anchor, i));
     if (view === 'week') {
       const from = startOfWeek(anchor);
       return Array.from({ length: 7 }, (_, i) => shiftDayKey(from, i));
@@ -329,6 +345,19 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
     const onMove = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
+      if (g.kind === 'move') {
+        const rect = backlogRef.current?.getBoundingClientRect();
+        const overBacklog =
+          !!rect &&
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom;
+        if (overBacklog) {
+          setGestureState({ ...g, moved: true, toBacklog: true });
+          return;
+        }
+      }
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
       if (g.kind === 'create') {
@@ -345,6 +374,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           day: slot.day,
           startMin: clampStartMin(startMin, g.task.plannedTime),
           moved: true,
+          toBacklog: false,
         });
       } else if (g.kind === 'chain') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
@@ -367,6 +397,10 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
       } else if (g.kind === 'move') {
         if (!g.moved) {
           openDialog(g.task, false, e);
+        } else if (g.toBacklog) {
+          if (g.task.status !== 'open') {
+            store.patchTask(g.task.id, { status: 'open', start: null });
+          }
         } else if (g.day !== g.task.day || g.startMin !== g.task.start) {
           store.patchTask(g.task.id, { day: g.day, start: g.startMin });
         }
@@ -420,6 +454,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
         day: task.day,
         startMin: task.start ?? 0,
         moved: false,
+        toBacklog: false,
       });
     },
     [slotAt, setGestureState]
@@ -482,6 +517,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
     (dir: number) => {
       setAnchor((prev) => {
         if (view === 'day') return shiftDayKey(prev, dir);
+        if (view === '3day') return shiftDayKey(prev, dir * 3);
         if (view === 'week') return shiftDayKey(prev, dir * 7);
         const [y, m] = prev.split('-').map(Number);
         return dateKey(new Date(y, m - 1 + dir, 1));
@@ -521,6 +557,45 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
   // Pairs of sequences close enough to be one session — the grid offers to glue
   // each of them, and the session editor offers the same on its neighbours.
   const suggestions = useMemo(() => mergeSuggestions(chains), [chains]);
+
+  // Idle and ahead of schedule, with everything before now already closed: the
+  // gap before the next block is offered as a slot for a backlog task, drawn
+  // at the size of the largest task that could still fit in it.
+  const gapSlot = useMemo(() => {
+    if (!credit.frozen || credit.lead <= 0) return null;
+    const nextGroup = credit.remaining[0];
+    if (!nextGroup) return null;
+    const day = dayKeyOf(now);
+    const dayEnd = dayStartMs(day) + DAY_MIN * MIN_MS;
+    const freeUntilMs = Math.min(nextGroup.startMs - credit.banked * 1000, dayEnd);
+    const gapMs = freeUntilMs - now;
+    if (gapMs < 10 * MIN_MS) return null;
+
+    const candidates = openTasks.filter((t) => t.plannedTime * 1000 <= gapMs);
+    if (candidates.length === 0) return null;
+
+    return { day, startMs: now, endMs: freeUntilMs, gapMs, candidates };
+  }, [credit, now, openTasks]);
+
+  const [gapMenu, setGapMenu] = useState<DialogAnchor | null>(null);
+
+  // A gap that has closed up (or lost its candidates) takes its open menu with it.
+  useEffect(() => {
+    if (gapMenu && !gapSlot) setGapMenu(null);
+  }, [gapMenu, gapSlot]);
+
+  const acceptGapTask = useCallback(
+    (task: Task, day: string, startMs: number) => {
+      const startMin = snap(Math.round((startMs - dayStartMs(day)) / MIN_MS));
+      store.patchTask(task.id, {
+        day,
+        start: clampStartMin(startMin, task.plannedTime),
+        status: 'in-progress',
+      });
+      setGapMenu(null);
+    },
+    [store]
+  );
 
   const popChain = useMemo(
     () => (sessionPop ? chainOfTask(chains, sessionPop.taskId) : null),
@@ -580,7 +655,9 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
     );
     if (livePreview) ghostIds.add(livePreview.id);
 
-    const segments = daySegments(tasks, day).filter((seg) => !ghostIds.has(seg.task.id));
+    const segments = daySegments(tasks, day, MIN_BLOCK_MIN).filter(
+      (seg) => !ghostIds.has(seg.task.id)
+    );
 
     // Sessions and sequences, drawn as a spine to the left of the column. While
     // one is dragged it is shown where it would land.
@@ -618,7 +695,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           live: false,
         });
       }
-    } else if (g?.kind === 'move' && g.day === day) {
+    } else if (g?.kind === 'move' && !g.toBacklog && g.day === day) {
       ghosts.push({
         key: g.task.id,
         task: g.task,
@@ -682,7 +759,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           const resizing = g?.kind === 'resize' && g.task.id === task.id;
           const topMin = seg.topMin;
           const lengthMin = resizing ? g.lengthMin : seg.bottomMin - seg.topMin;
-          const height = Math.max(16, lengthMin * PX_PER_MIN);
+          const height = Math.max(MIN_BLOCK_PX, lengthMin * PX_PER_MIN);
           const done = isDone(task);
           const active = activeIds.has(task.id);
           const width = 100 / seg.cols;
@@ -770,7 +847,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
             className={ghost.live ? 'cal-block live' : 'cal-block dragging'}
             style={{
               top: ghost.startMin * PX_PER_MIN,
-              height: Math.max(16, ghost.lengthMin * PX_PER_MIN),
+              height: Math.max(MIN_BLOCK_PX, ghost.lengthMin * PX_PER_MIN),
               '--task-color': ghost.task.color,
             } as React.CSSProperties}
           >
@@ -791,7 +868,7 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
             className="cal-block draft"
             style={{
               top: g.startMin * PX_PER_MIN,
-              height: Math.max(16, (g.endMin - g.startMin) * PX_PER_MIN),
+              height: Math.max(MIN_BLOCK_PX, (g.endMin - g.startMin) * PX_PER_MIN),
             }}
           >
             <div className="cal-block-meta">
@@ -800,6 +877,22 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
               </span>
             </div>
           </div>
+        )}
+
+        {gapSlot && gapSlot.day === day && !gesture && (
+          <button
+            type="button"
+            className="cal-block cal-gap-slot"
+            style={{
+              top: ((gapSlot.startMs - dayFrom) / MIN_MS) * PX_PER_MIN,
+              height: Math.max(16, ((gapSlot.endMs - gapSlot.startMs) / MIN_MS) * PX_PER_MIN),
+            }}
+            title={`Свободно ${dur(gapSlot.gapMs / 1000)} до следующей задачи — выбрать задачу из бэклога`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => setGapMenu({ x: e.clientX, y: e.clientY })}
+          >
+            <span className="cal-gap-slot-label">Предложение</span>
+          </button>
         )}
 
         {glueSpots.map((spot) => (
@@ -941,14 +1034,14 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           <h2 className="cal-title">{title}</h2>
         </div>
         <div className="cal-seg cal-seg--views">
-          {(['day', 'week', 'month'] as CalView[]).map((v) => (
+          {(['day', '3day', 'week', 'month'] as CalView[]).map((v) => (
             <button
               key={v}
               type="button"
               className={view === v ? 'active' : ''}
               onClick={() => setView(v)}
             >
-              {v === 'day' ? 'День' : v === 'week' ? 'Неделя' : 'Месяц'}
+              {v === 'day' ? 'День' : v === '3day' ? '3 дня' : v === 'week' ? 'Неделя' : 'Месяц'}
             </button>
           ))}
         </div>
@@ -960,6 +1053,10 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
             {credit.lead >= 0 ? 'Обгон' : 'Отставание'}
           </span>
           <span className="cal-hud-value">{signedDur(credit.lead)}</span>
+        </div>
+        <div className={`cal-hud-week ${weekOvertakeSec >= 0 ? 'ahead' : 'behind'}`}>
+          <span className="cal-hud-label">за неделю</span>
+          <span className="cal-hud-week-value">{signedDur(weekOvertakeSec)}</span>
         </div>
         <div className="cal-hud-lines">
           <span className="cal-hud-state">
@@ -1011,7 +1108,10 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           </div>
         )}
 
-        <aside className="cal-backlog">
+        <aside
+          className={`cal-backlog${gesture?.kind === 'move' && gesture.toBacklog ? ' drop-target' : ''}`}
+          ref={backlogRef}
+        >
           <header className="cal-backlog-head">
             <h3>🗂 Бэклог</h3>
             <button
@@ -1028,7 +1128,9 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
               ＋
             </button>
           </header>
-          <p className="cal-backlog-hint">Перетащи карточку на сетку, чтобы поставить время</p>
+          <p className="cal-backlog-hint">
+            Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог
+          </p>
           <div className="cal-backlog-list">
             {openTasks.map((task) => (
               <div
@@ -1091,6 +1193,48 @@ function CalendarPage({ store, now, credit, chains, onOpenChain, habits }: Calen
           }}
           onClose={() => setSessionPop(null)}
         />
+      )}
+
+      {gapMenu && gapSlot && (
+        <div
+          className="cal-modal-backdrop cal-modal-backdrop--pop"
+          onMouseDown={() => setGapMenu(null)}
+        >
+          <div
+            className="cal-session-pop cal-gap-menu"
+            style={gapMenuStyle(gapMenu)}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <header className="cal-session-head">
+              <span className="cal-session-badge">Вставить из бэклога</span>
+              <button
+                type="button"
+                className="cal-modal-close"
+                onClick={() => setGapMenu(null)}
+                title="Закрыть"
+              >
+                ✕
+              </button>
+            </header>
+            <p className="cal-session-when">
+              Свободно {dur(gapSlot.gapMs / 1000)} до следующей задачи
+            </p>
+            <div className="cal-session-actions">
+              {gapSlot.candidates.map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  className="cal-btn cal-gap-menu-item"
+                  onClick={() => acceptGapTask(task, gapSlot.day, gapSlot.startMs)}
+                >
+                  <span className="cal-chip-emoji">{task.emoji}</span>
+                  <span className="cal-chip-name">{task.name || 'Без названия'}</span>
+                  <span className="cal-chip-time">{dur(task.plannedTime)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
