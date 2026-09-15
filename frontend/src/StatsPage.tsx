@@ -5,8 +5,10 @@
    refresh for the components is sacrificed for that sharing on purpose. */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { DayStats } from './types';
-import { dateKey, heatLevel } from './history';
+import type { CSSProperties, ReactNode } from 'react';
+import type { DayStats, Habit, HabitEntry, Task } from './types';
+import { dateKey, heatLevel, shiftDayKey, startOfWeek, todayKey } from './history';
+import { habitHeatLevel, habitTotal } from './habits';
 import * as api from './api';
 
 const WEEKS_TO_SHOW = 53; // ~1 year
@@ -22,6 +24,7 @@ const QUALITY_EMOJIS = ['—', '😞', '😕', '🙂', '😊', '😁'] as const;
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const MONTHS_FULL = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const DOW_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+const DOW_SHORT_MON = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']; // Monday-first, matches startOfWeek
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -96,6 +99,46 @@ interface MonthBlock {
   days: DayRef[];
 }
 
+// Builds the GitHub-style weeks×days grid for `selYear`, delegating each
+// cell's level/stats/sleep to `cellFor` — shared by the default (work-time)
+// heatmap and the per-habit slice, which only differ in that function.
+function buildHeatGrid(
+  today: Date,
+  selYear: number,
+  cellFor: (key: string) => Omit<HeatCellInfo, 'key' | 'future'>
+): { cells: HeatCellInfo[][]; monthMarks: { col: number; label: string }[]; colsCount: number } {
+  const dowMon = (today.getDay() + 6) % 7;
+  const gridEnd = shiftDate(today, 6 - dowMon); // Sunday of current week
+  const cols: HeatCellInfo[][] = [];
+  const marks: { col: number; label: string }[] = [];
+  let prevMonth = -1;
+
+  for (let w = WEEKS_TO_SHOW - 1; w >= 0; w--) {
+    const colStart = shiftDate(gridEnd, -(w * 7 + 6));
+    // Skip weeks that belong to other years entirely
+    if (colStart.getFullYear() !== selYear) continue;
+    if (shiftDate(colStart, 6).getFullYear() !== selYear) continue;
+
+    const col: HeatCellInfo[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = shiftDate(colStart, i);
+      const key = dateKey(d);
+      col.push({
+        key,
+        future: d.getTime() > today.getTime(),
+        ...cellFor(key),
+      });
+    }
+    const m = colStart.getMonth();
+    if (m !== prevMonth) {
+      marks.push({ col: cols.length, label: MONTHS_SHORT[m] });
+      prevMonth = m;
+    }
+    cols.push(col);
+  }
+  return { cells: cols, monthMarks: marks, colsCount: cols.length };
+}
+
 function buildMonth(year: number, month: number): MonthBlock {
   const count = new Date(year, month + 1, 0).getDate();
   const days: DayRef[] = [];
@@ -112,6 +155,7 @@ interface HeatCellInfo {
   future: boolean;
   stats: DayStats | undefined;
   sleep: SleepData | undefined;
+  habitValue?: number; // set only when the heatmap is sliced by a habit
 }
 
 function cellTitle(c: HeatCellInfo): string {
@@ -127,6 +171,79 @@ function cellTitle(c: HeatCellInfo): string {
     parts.push(t);
   }
   return parts.join('\n');
+}
+
+function habitCellTitle(c: HeatCellInfo, habit: Habit): string {
+  if (c.future) return '';
+  const value = c.habitValue ?? 0;
+  const u = habit.unit ? ` ${habit.unit}` : '';
+  return `${fmtShortDate(c.key)}\n${habit.emoji} ${habit.name}: ${value} / ${habit.target}${u}`;
+}
+
+// ── Custom hover tooltip ─────────────────────────────────────────────
+// A native `title` attribute takes ~1s to show and its popup ignores the
+// app's theme (always OS-styled), so heatmap cells and bar-chart bars use
+// this instead: a short hover delay and a themed popup that follows the
+// cursor.
+const TOOLTIP_DELAY_MS = 150;
+
+interface TooltipState {
+  x: number;
+  y: number;
+  lines: string[];
+}
+
+function useHoverTooltip() {
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const show = useCallback((e: { clientX: number; clientY: number }, text: string) => {
+    if (!text) return;
+    const lines = text.split('\n');
+    const { clientX: x, clientY: y } = e;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => setTooltip({ x, y, lines }), TOOLTIP_DELAY_MS);
+  }, [clearTimer]);
+
+  const move = useCallback((e: { clientX: number; clientY: number }) => {
+    setTooltip((prev) => (prev ? { ...prev, x: e.clientX, y: e.clientY } : prev));
+  }, []);
+
+  const hide = useCallback(() => {
+    clearTimer();
+    setTooltip(null);
+  }, [clearTimer]);
+
+  useEffect(() => clearTimer, [clearTimer]);
+
+  return { tooltip, show, move, hide };
+}
+
+// Flips to the cursor's left/top when there isn't ~220px of room on the
+// right or ~80px below — the heatmap's rightmost columns and bottom rows
+// otherwise push the popup straight off the viewport edge.
+function HoverTooltip({ tooltip }: { tooltip: TooltipState | null }) {
+  if (!tooltip) return null;
+  const flipX = tooltip.x > window.innerWidth - 220;
+  const flipY = tooltip.y > window.innerHeight - 80;
+  const style: CSSProperties = {
+    ...(flipX ? { right: window.innerWidth - tooltip.x + 14 } : { left: tooltip.x + 14 }),
+    ...(flipY ? { bottom: window.innerHeight - tooltip.y + 14 } : { top: tooltip.y + 14 }),
+  };
+  return (
+    <div className="heat-tooltip" style={style}>
+      {tooltip.lines.map((line, i) => (
+        <div key={i}>{line}</div>
+      ))}
+    </div>
+  );
 }
 
 // ── Sub-components ─────────────────────────────────────────────────
@@ -215,7 +332,74 @@ function SleepMonth({ block, entries, disabledFrom, onToggleHour, onCycleQuality
   );
 }
 
-// ── Year selector ──────────────────────────────────────────────────
+// ── Themed dropdown ──────────────────────────────────────────────────
+// Replaces a native <select>: on several platforms the browser's own option
+// popup is OS-chrome and ignores the app's dark/light theme, so this renders
+// its own menu instead, styled like the rest of the UI everywhere.
+
+interface DropdownOption<T extends string> {
+  value: T;
+  label: ReactNode;
+}
+
+function Dropdown<T extends string>({ value, onChange, options, className }: {
+  value: T;
+  onChange: (v: T) => void;
+  options: DropdownOption<T>[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocPointer = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = options.find((o) => o.value === value) ?? options[0];
+
+  return (
+    <div className={`dd${className ? ` ${className}` : ''}`} ref={rootRef}>
+      <button
+        type="button"
+        className="dd-btn"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="dd-btn-label">{current?.label}</span>
+        <span className="dd-caret" aria-hidden>▾</span>
+      </button>
+      {open && (
+        <div className="dd-menu" role="listbox">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={`dd-option${o.value === value ? ' selected' : ''}`}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function YearSelector({ value, onChange, years }: {
   value: number;
@@ -223,9 +407,12 @@ function YearSelector({ value, onChange, years }: {
   years: number[];
 }) {
   return (
-    <select value={value} onChange={(e) => onChange(Number(e.target.value))} className="year-select">
-      {years.map((y) => (<option key={y} value={y}>{y}</option>))}
-    </select>
+    <Dropdown
+      value={String(value)}
+      onChange={(v) => onChange(Number(v))}
+      options={years.map((y) => ({ value: String(y), label: String(y) }))}
+      className="dd-year"
+    />
   );
 }
 
@@ -243,6 +430,7 @@ export interface StatsData {
   summary: { totalWorkSec: number; avgSleep: number | null; daysWithSleep: number; totalDays: number };
   yearTotalHrs: number;
   months: MonthBlock[];
+  history: Record<string, DayStats>;
   sleepLog: Record<string, SleepData>;
   today: Date;
   toggleHour: (dayKey: string, hour: number) => void;
@@ -345,41 +533,18 @@ export function useStatsData(): StatsData {
   }, [history, sleepLog, selYear, yearDays]);
 
   // Heatmap for current year (GitHub-style daily grid for all 52 weeks)
-  const heatData = useMemo(() => {
-    const dowMon = (today.getDay() + 6) % 7;
-    const gridEnd = shiftDate(today, 6 - dowMon); // Sunday of current week
-    const cols: HeatCellInfo[][] = [];
-    const marks: { col: number; label: string }[] = [];
-    let prevMonth = -1;
-
-    for (let w = WEEKS_TO_SHOW - 1; w >= 0; w--) {
-      const colStart = shiftDate(gridEnd, -(w * 7 + 6));
-      // Skip weeks that belong to other years entirely
-      if (colStart.getFullYear() !== selYear) continue;
-      if (shiftDate(colStart, 6).getFullYear() !== selYear) continue;
-
-      const col: HeatCellInfo[] = [];
-      for (let i = 0; i < 7; i++) {
-        const d = shiftDate(colStart, i);
-        const key = dateKey(d);
+  const heatData = useMemo(
+    () =>
+      buildHeatGrid(today, selYear, (key) => {
         const st = history[key];
-        col.push({
-          key,
+        return {
           level: st ? heatLevel(st.workSec) : 0,
-          future: d.getTime() > today.getTime(),
           stats: st,
           sleep: sleepLog[key],
-        });
-      }
-      const m = colStart.getMonth();
-      if (m !== prevMonth) {
-        marks.push({ col: cols.length, label: MONTHS_SHORT[m] });
-        prevMonth = m;
-      }
-      cols.push(col);
-    }
-    return { cells: cols, monthMarks: marks, colsCount: cols.length };
-  }, [history, sleepLog, today, selYear]);
+        };
+      }),
+    [history, sleepLog, today, selYear]
+  );
 
   // Year totals
   const yearTotalHrs = useMemo(() => {
@@ -564,6 +729,7 @@ export function useStatsData(): StatsData {
     summary,
     yearTotalHrs,
     months,
+    history,
     sleepLog,
     today,
     toggleHour,
@@ -576,45 +742,324 @@ export function useStatsData(): StatsData {
 
 // ── Section 1: yearly activity heatmap ────────────────────────────────
 
-export function ActivityHeatmap({ stats }: { stats: StatsData }) {
-  const { selYear, setSelYear, availableYears, heatData } = stats;
+const HEAT_CELL_MIN = 10;
+const HEAT_CELL_MAX = 26;
+const HEAT_CELL_GAP = 3; // matches --heat-gap
+const HEAT_BODY_GAP = 6; // matches .heat-body's gap
+
+// Grows the cell size to fill the available row width (up to a cap) instead
+// of leaving the card mostly empty when the selected year has few columns —
+// falls back to the CSS default (and horizontal scroll) until measured.
+function useHeatCellSize(colsCount: number) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const daysRef = useRef<HTMLDivElement>(null);
+  const [cell, setCell] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container || colsCount === 0) return;
+    const compute = () => {
+      const daysWidth = daysRef.current?.getBoundingClientRect().width ?? 20;
+      const available = container.clientWidth - daysWidth - HEAT_BODY_GAP;
+      const raw = Math.floor((available - (colsCount - 1) * HEAT_CELL_GAP) / colsCount);
+      setCell(Math.min(HEAT_CELL_MAX, Math.max(HEAT_CELL_MIN, raw)));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [colsCount]);
+
+  return { scrollRef, daysRef, cell };
+}
+
+// "" (default) shows total work time, else the id of the habit whose daily
+// progress the view is sliced by.
+const ALL_ACTIVITY = '';
+
+function habitDropdownOptions(habits: Habit[]): DropdownOption<string>[] {
+  return [
+    { value: ALL_ACTIVITY, label: 'Вся активность' },
+    ...habits.map((h) => ({ value: h.id, label: `${h.emoji} ${h.name}` })),
+  ];
+}
+
+type Period = 'year' | 'week' | 'month';
+
+const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: 'year', label: 'Год' },
+  { key: 'week', label: 'Неделя' },
+  { key: 'month', label: 'Месяц' },
+];
+
+function PeriodToggle({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
   return (
-    <section className="card heat-card">
-      <div className="heat-header">
-        <h2 className="stats-title">🔥 Активность</h2>
-        <YearSelector value={selYear} onChange={setSelYear} years={availableYears} />
-      </div>
-      <div className="heat-scroll">
-        <div
-          className="heat-months"
-          style={{ gridTemplateColumns: `repeat(${heatData.colsCount}, var(--heat-cell))` }}
+    <div className="period-toggle" role="tablist">
+      {PERIOD_OPTIONS.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          role="tab"
+          aria-selected={value === o.key}
+          className={`period-toggle-btn${value === o.key ? ' active' : ''}`}
+          onClick={() => onChange(o.key)}
         >
-          {heatData.monthMarks.map((m) => (
-            <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
-              {m.label}
-            </span>
-          ))}
-        </div>
-        <div className="heat-body">
-          <div className="heat-days">
-            {DOW_LABELS.map((l, i) => (
-              <span key={i}>{l}</span>
-            ))}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Bar chart (week / month slices) ────────────────────────────────────
+
+interface BarInfo {
+  key: string;
+  date: Date;
+  value: number;
+  ratio: number; // 0..1, clamped bar height
+  future: boolean;
+  over: boolean; // value exceeds a positive target — shown as a small marker
+  label: string;
+}
+
+// Bars are scaled against the habit's own target when one is selected (so
+// the chart reads as progress towards a goal); without a habit there is no
+// target, so they scale against the largest value in view instead — same
+// idea as heatLevel's fixed buckets, but continuous for a handful of bars.
+function computeBars(
+  days: { key: string; date: Date }[],
+  today: Date,
+  valueFn: (key: string) => number,
+  target: number | null,
+  labelFn: (date: Date) => string
+): BarInfo[] {
+  const rawValues = days.map((d) => valueFn(d.key));
+  const dynMax = Math.max(1, ...rawValues);
+  return days.map((d, i) => {
+    const value = rawValues[i];
+    const future = d.date.getTime() > today.getTime();
+    let ratio: number;
+    let over = false;
+    if (target !== null && target > 0) {
+      ratio = Math.max(0, Math.min(1, value / target));
+      over = value > target;
+    } else if (target !== null) {
+      // zero-target habit: any activity fills the bar, mirroring habitHeatLevel
+      ratio = value > 0 ? 1 : 0;
+    } else {
+      ratio = value / dynMax;
+    }
+    return { key: d.key, date: d.date, value, ratio, future, over, label: labelFn(d.date) };
+  });
+}
+
+function barTooltipLines(b: BarInfo, habit: Habit | null): string {
+  if (b.future) return '';
+  const date = fmtShortDate(b.key);
+  if (habit) {
+    const u = habit.unit ? ` ${habit.unit}` : '';
+    return `${date}\n${habit.emoji} ${habit.name}: ${b.value} / ${habit.target}${u}`;
+  }
+  return `${date}\nРабота: ${fmtSec(b.value)}`;
+}
+
+function BarChart({ bars, color, todayKeyStr, onEnter, onMove, onLeave }: {
+  bars: BarInfo[];
+  color: string;
+  todayKeyStr: string;
+  onEnter: (e: { clientX: number; clientY: number }, b: BarInfo) => void;
+  onMove: (e: { clientX: number; clientY: number }) => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="heat-bars-scroll">
+      <div className="heat-bars" role="img" aria-label="Столбчатая диаграмма по дням">
+        {bars.map((b) => (
+          <div key={b.key} className={`heat-bar-col${b.key === todayKeyStr ? ' today' : ''}`}>
+            <div
+              className="heat-bar-track"
+              onMouseEnter={(e) => !b.future && onEnter(e, b)}
+              onMouseMove={onMove}
+              onMouseLeave={onLeave}
+            >
+              {b.over && <span className="heat-bar-over-dot" />}
+              {!b.future && b.ratio > 0 && (
+                <div className="heat-bar-fill" style={{ height: `${Math.max(b.ratio * 100, 4)}%`, background: color }} />
+              )}
+            </div>
+            <span className="heat-bar-label">{b.label}</span>
           </div>
-          <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
-            {heatData.cells.flat().map((c) => (
-              <div key={c.key} className={`heat-cell l${c.level}${c.future ? ' future' : ''}`} title={cellTitle(c)} />
-            ))}
-          </div>
-        </div>
-        <div className="heat-legend">
-          <span>Меньше</span>
-          {[0, 1, 2, 3, 4].map((l) => (
-            <span key={l} className={`heat-cell l${l}`} />
-          ))}
-          <span>Больше</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function weekRangeLabel(weekStart: string): string {
+  const start = parseKey(weekStart);
+  const end = parseKey(shiftDayKey(weekStart, 6));
+  return `${start.getDate()} ${MONTHS_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTHS_SHORT[end.getMonth()]} ${end.getFullYear()}`;
+}
+
+export function ActivityHeatmap({ stats, habits, entries, tasks }: {
+  stats: StatsData;
+  habits: Habit[];
+  entries: HabitEntry[];
+  tasks: Task[];
+}) {
+  const { selYear, setSelYear, availableYears, heatData, today, history } = stats;
+  const [habitId, setHabitId] = useState(ALL_ACTIVITY);
+  const [period, setPeriod] = useState<Period>('year');
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(todayKey()));
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  const selectedHabit = useMemo(() => habits.find((h) => h.id === habitId) ?? null, [habits, habitId]);
+  const todayKeyStr = useMemo(() => dateKey(today), [today]);
+
+  const valueFn = useCallback(
+    (key: string) => (selectedHabit ? habitTotal(selectedHabit, key, tasks, entries) : (history[key]?.workSec ?? 0)),
+    [selectedHabit, tasks, entries, history]
+  );
+  const barTarget = selectedHabit ? selectedHabit.target : null;
+  const barColor = selectedHabit ? selectedHabit.color : 'var(--heat-4)';
+
+  const habitHeatData = useMemo(() => {
+    if (!selectedHabit) return null;
+    return buildHeatGrid(today, selYear, (key) => {
+      const value = habitTotal(selectedHabit, key, tasks, entries);
+      return {
+        level: habitHeatLevel(value, selectedHabit.target),
+        stats: undefined,
+        sleep: undefined,
+        habitValue: value,
+      };
+    });
+  }, [selectedHabit, today, selYear, tasks, entries]);
+
+  const weekBars = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const key = shiftDayKey(weekStart, i);
+      return { key, date: parseKey(key) };
+    });
+    return computeBars(days, today, valueFn, barTarget, (d) => DOW_SHORT_MON[(d.getDay() + 6) % 7]);
+  }, [weekStart, today, valueFn, barTarget]);
+
+  const monthBars = useMemo(() => {
+    const block = buildMonth(monthCursor.year, monthCursor.month);
+    return computeBars(block.days, today, valueFn, barTarget, (d) => String(d.getDate()));
+  }, [monthCursor, today, valueFn, barTarget]);
+
+  const effectiveHeatData = habitHeatData ?? heatData;
+  const { scrollRef, daysRef, cell } = useHeatCellSize(effectiveHeatData.colsCount);
+  const title = selectedHabit ? (c: HeatCellInfo) => habitCellTitle(c, selectedHabit) : cellTitle;
+  const { tooltip, show, move, hide } = useHoverTooltip();
+
+  return (
+    <section className="card heat-card" style={cell ? ({ '--heat-cell': `${cell}px` } as CSSProperties) : undefined}>
+      <div className="heat-header">
+        <h2 className="stats-title">🔥 {selectedHabit ? `${selectedHabit.emoji} ${selectedHabit.name}` : 'Активность'}</h2>
+        <div className="heat-header-controls">
+          {habits.length > 0 && (
+            <Dropdown value={habitId} onChange={setHabitId} options={habitDropdownOptions(habits)} className="dd-habit" />
+          )}
+          <PeriodToggle value={period} onChange={setPeriod} />
+          {period === 'year' && <YearSelector value={selYear} onChange={setSelYear} years={availableYears} />}
         </div>
       </div>
+
+      {period === 'year' && (
+        <div className="heat-scroll" ref={scrollRef} onScroll={hide}>
+          <div
+            className="heat-months"
+            style={{ gridTemplateColumns: `repeat(${effectiveHeatData.colsCount}, var(--heat-cell))` }}
+          >
+            {effectiveHeatData.monthMarks.map((m) => (
+              <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
+                {m.label}
+              </span>
+            ))}
+          </div>
+          <div className="heat-body">
+            <div className="heat-days" ref={daysRef}>
+              {DOW_LABELS.map((l, i) => (
+                <span key={i}>{l}</span>
+              ))}
+            </div>
+            <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
+              {effectiveHeatData.cells.flat().map((c) => (
+                <div
+                  key={c.key}
+                  className={`heat-cell l${c.level}${c.future ? ' future' : ''}`}
+                  onMouseEnter={(e) => !c.future && show(e, title(c))}
+                  onMouseMove={move}
+                  onMouseLeave={hide}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="heat-legend">
+            <span>Меньше</span>
+            {[0, 1, 2, 3, 4].map((l) => (
+              <span key={l} className={`heat-cell l${l}`} />
+            ))}
+            <span>Больше</span>
+          </div>
+        </div>
+      )}
+
+      {period === 'week' && (
+        <div className="heat-period-body">
+          <div className="heat-nav">
+            <button type="button" className="btn btn-heat-nav" onClick={() => setWeekStart((w) => shiftDayKey(w, -7))}>
+              ← Пред. неделя
+            </button>
+            <span className="heat-nav-label">{weekRangeLabel(weekStart)}</span>
+            <button type="button" className="btn btn-heat-nav" onClick={() => setWeekStart(startOfWeek(todayKey()))}>
+              Сегодня
+            </button>
+            <button type="button" className="btn btn-heat-nav" onClick={() => setWeekStart((w) => shiftDayKey(w, 7))}>
+              След. неделя →
+            </button>
+          </div>
+          <BarChart bars={weekBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={(e, b) => show(e, barTooltipLines(b, selectedHabit))} onMove={move} onLeave={hide} />
+        </div>
+      )}
+
+      {period === 'month' && (
+        <div className="heat-period-body">
+          <div className="heat-nav">
+            <button
+              type="button"
+              className="btn btn-heat-nav"
+              onClick={() => setMonthCursor((c) => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
+            >
+              ← Пред. месяц
+            </button>
+            <span className="heat-nav-label">{MONTHS_FULL[monthCursor.month]} {monthCursor.year}</span>
+            <button
+              type="button"
+              className="btn btn-heat-nav"
+              onClick={() => { const d = new Date(); setMonthCursor({ year: d.getFullYear(), month: d.getMonth() }); }}
+            >
+              Сегодня
+            </button>
+            <button
+              type="button"
+              className="btn btn-heat-nav"
+              onClick={() => setMonthCursor((c) => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
+            >
+              След. месяц →
+            </button>
+          </div>
+          <BarChart bars={monthBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={(e, b) => show(e, barTooltipLines(b, selectedHabit))} onMove={move} onLeave={hide} />
+        </div>
+      )}
+
+      <HoverTooltip tooltip={tooltip} />
     </section>
   );
 }

@@ -135,9 +135,9 @@ function buildLayout(
 ) {
   const cx = size / 2;
   const outerRadius = size * 0.4;
-  // The inner ring sits a clear step behind the outer one so the two read as
-  // two distinct rings, not a smear.
-  const innerRadius = outerRadius * 0.72;
+  // The inner ring trails close behind the outer one — near enough to read
+  // as a matched pair, not so close the two smear into one thick band.
+  const innerRadius = outerRadius * 0.82;
   // Every dot — both rings, filled or not — is the same size. Only opacity
   // marks progress, so the arc never reads as an uneven mix of ball sizes.
   const r = dot / 2;

@@ -219,10 +219,22 @@ function CalendarPage({
 
   const saveFromDialog = useCallback(
     (task: Task) => {
+      // The dialog can flip done ↔ not-done (including a backdated finishedAt)
+      // as well as ordinary field edits — mirror completeTask/reopenTask's
+      // repeat side effect exactly when that flip actually happened.
+      const wasDone = dialog ? isDone(dialog.task) : false;
+      const nowDone = isDone(task);
       store.upsertTask(task);
+      if (!wasDone && nowDone) {
+        const child = spawnNextOccurrence(task, newTaskId, task.day);
+        if (child) store.upsertTask(child);
+      } else if (wasDone && !nowDone) {
+        const child = store.tasks.find((t) => t.repeatOf === task.id && !isDone(t));
+        if (child) store.removeTask(child.id);
+      }
       closeDialog();
     },
-    [store, closeDialog]
+    [store, closeDialog, dialog]
   );
 
   const deleteFromDialog = useCallback(() => {

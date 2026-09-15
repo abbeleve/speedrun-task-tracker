@@ -255,23 +255,27 @@ function HabitCard({
         <div className="habit-card-dial-label" aria-hidden>
           Сегодня
         </div>
-        <div className="habit-card-dial-number" aria-hidden>
-          {pct}
-          <span className="habit-card-dial-percent-sign">%</span>
+        <div className="habit-card-dial-arc">
+          <HabitDial
+            color={habit.color}
+            progress={progress}
+            total={DIAL_DOTS}
+            size={260}
+            dot={14}
+            className="habit-card-dial-svg"
+            ariaLabel={`Сегодня: ${pct}% от цели`}
+          />
+          <div className="habit-card-dial-readout" aria-hidden>
+            <div className="habit-card-dial-number">
+              {pct}
+              <span className="habit-card-dial-percent-sign">%</span>
+            </div>
+            <div className="habit-card-dial-unit">
+              {formatNumber(today)} / {formatNumber(habit.target)}
+              {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
+            </div>
+          </div>
         </div>
-        <div className="habit-card-dial-unit" aria-hidden>
-          {formatNumber(today)} / {formatNumber(habit.target)}
-          {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
-        </div>
-        <HabitDial
-          color={habit.color}
-          progress={progress}
-          total={DIAL_DOTS}
-          size={260}
-          dot={14}
-          className="habit-card-dial-svg"
-          ariaLabel={`Сегодня: ${pct}% от цели`}
-        />
         <div className="habit-card-dial-compare" aria-hidden>
           <span className="habit-card-dial-compare-value">{yesterdayPct}%</span> вчера
         </div>

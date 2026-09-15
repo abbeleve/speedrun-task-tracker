@@ -4,6 +4,7 @@ import {
   dayCompletion,
   defaultUnit,
   habitAuto,
+  habitHeatLevel,
   habitHistory,
   habitManual,
   habitProgress,
@@ -49,9 +50,21 @@ function task(patch: Partial<Task> & { id: string }): Task {
 const entry = (manual: number): HabitEntry => ({ habitId: 'h1', date: DAY, manual });
 
 describe('habitAuto', () => {
-  it('count habits have no auto part — they are manual', () => {
+  it('a completed linked task adds 1 to a count habit', () => {
     const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
-    expect(habitAuto(habit(), DAY, [done])).toBe(0);
+    expect(habitAuto(habit(), DAY, [done])).toBe(1);
+  });
+
+  it('several completed linked tasks sum up for a count habit', () => {
+    const a = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
+    const b = task({ id: 'b', habitId: 'h1', status: 'done', finishedAt: 2, day: DAY });
+    expect(habitAuto(habit(), DAY, [a, b])).toBe(2);
+  });
+
+  it('open or unlinked tasks do not count for a count habit', () => {
+    const open = task({ id: 'a', habitId: 'h1', status: 'in-progress', finishedAt: null, day: DAY });
+    const other = task({ id: 'b', status: 'done', finishedAt: 1, day: DAY });
+    expect(habitAuto(habit(), DAY, [open, other])).toBe(0);
   });
 
   it('a completed linked task adds its minutes to a time habit', () => {
@@ -93,10 +106,15 @@ describe('habitManual / habitTotal', () => {
     expect(habitTotal(h, DAY, [done], [entry(30)])).toBe(90);
   });
 
-  it('a count habit total equals its manual value', () => {
+  it('a count habit total is manual + linked-task auto', () => {
     const h = habit();
     const done = task({ id: 'a', habitId: 'h1', status: 'done', finishedAt: 1, day: DAY });
-    expect(habitTotal(h, DAY, [done], [entry(5)])).toBe(5);
+    expect(habitTotal(h, DAY, [done], [entry(5)])).toBe(6);
+  });
+
+  it('a count habit with no linked tasks equals its manual value', () => {
+    const h = habit();
+    expect(habitTotal(h, DAY, [], [entry(5)])).toBe(5);
   });
 });
 
@@ -182,6 +200,28 @@ describe('formatting', () => {
   it('defaultUnit mirrors format', () => {
     expect(defaultUnit('time')).toBe('мин');
     expect(defaultUnit('count')).toBe('');
+  });
+});
+
+describe('habitHeatLevel', () => {
+  it('is 0 for no progress', () => {
+    expect(habitHeatLevel(0, 10)).toBe(0);
+  });
+
+  it('splits progress into quarters below the quota', () => {
+    expect(habitHeatLevel(1, 10)).toBe(1); // <25%
+    expect(habitHeatLevel(4, 10)).toBe(2); // <50%
+    expect(habitHeatLevel(9, 10)).toBe(3); // <100%
+  });
+
+  it('maxes out once the quota is met or exceeded', () => {
+    expect(habitHeatLevel(10, 10)).toBe(4);
+    expect(habitHeatLevel(99, 10)).toBe(4);
+  });
+
+  it('treats a zero-target habit as maxed by any activity', () => {
+    expect(habitHeatLevel(1, 0)).toBe(4);
+    expect(habitHeatLevel(0, 0)).toBe(0);
   });
 });
 

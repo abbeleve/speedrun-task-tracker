@@ -48,7 +48,7 @@ export interface Task {
   sessionName?: string | null;
   // Optional link to a habit tracker (see Habit). Completing a linked task
   // grows that habit's daily progress: a time habit gains the block's duration,
-  // a count habit is advanced by hand.
+  // a count habit gains 1.
   habitId?: string | null;
 }
 

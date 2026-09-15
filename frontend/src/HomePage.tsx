@@ -100,7 +100,7 @@ function HomePage({
     <div className="home-page">
       <WeekOvertakeBar sec={weekOvertakeSec} />
       <section className="home-panel home-panel--activity">
-        <ActivityHeatmap stats={stats} />
+        <ActivityHeatmap stats={stats} habits={habits.habits} entries={habits.entries} tasks={tasks} />
       </section>
       <HabitGrid store={habits} tasks={tasks} date={todayKey()} />
       <section className="home-panel home-panel--stats-summary">

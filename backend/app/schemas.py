@@ -80,7 +80,7 @@ class DayTask(BaseModel):
     sessionId: Optional[str] = None
     sessionName: Optional[str] = None
     # Optional link to a habit: completing this task grows that habit's daily
-    # progress (time habits add the block's duration; count habits are manual).
+    # progress (time habits add the block's duration; count habits add 1).
     habitId: Optional[str] = None
 
 

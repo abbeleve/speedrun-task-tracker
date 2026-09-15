@@ -2,8 +2,8 @@
 //
 // A habit's daily progress has two parts:
 //   • auto — derived live from that day's plan: every *completed* task linked to
-//            the habit adds its duration (in minutes) to a 'time' habit. Count
-//            habits have no auto part — they are advanced by hand.
+//            the habit adds its duration (in minutes) to a 'time' habit, or adds
+//            1 to a 'count' habit (one linked task = one unit done that day).
 //   • manual — the hand-entered portion stored per day (see HabitEntry).
 // Keeping the task-linked part derived (not stored) follows the rest of the app:
 // one source of truth, re-opened tasks immediately take the same credit back.
@@ -24,15 +24,24 @@ export function defaultUnit(format: HabitFormat): string {
 // (minutes for 'time', integer count for 'count'). Linked-but-open tasks are
 // ignored — only really completed ones count, so the number is honest.
 export function habitAuto(habit: Habit, date: string, tasks: Task[]): number {
-  if (habit.format !== 'time') return 0;
-  let sec = 0;
+  if (habit.format === 'time') {
+    let sec = 0;
+    for (const task of tasks) {
+      if (task.day !== date) continue;
+      if (task.habitId !== habit.id) continue;
+      if (!isDone(task)) continue;
+      sec += Math.max(0, task.plannedTime);
+    }
+    return Math.round(sec / 60);
+  }
+  let count = 0;
   for (const task of tasks) {
     if (task.day !== date) continue;
     if (task.habitId !== habit.id) continue;
     if (!isDone(task)) continue;
-    sec += Math.max(0, task.plannedTime);
+    count++;
   }
-  return Math.round(sec / 60);
+  return count;
 }
 
 // The hand-entered portion for a day (0 when the user added nothing by hand).
@@ -111,6 +120,19 @@ export function formatHabit(value: number, target: number, unit: string): string
 export interface HabitDayValue {
   date: string; // 'YYYY-MM-DD' (local)
   value: number; // total progress that day, in the habit's own units
+}
+
+// GitHub-style intensity buckets for a habit's heatmap, mirroring heatLevel
+// in ./history.ts but scaled to the habit's own quota instead of a fixed
+// work-time scale: 0 = nothing … 4 = quota met or exceeded.
+export function habitHeatLevel(value: number, target: number): number {
+  if (value <= 0) return 0;
+  if (target <= 0) return 4; // no quota to compare against — any activity maxes the scale
+  const ratio = value / target;
+  if (ratio < 0.25) return 1;
+  if (ratio < 0.5) return 2;
+  if (ratio < 1) return 3;
+  return 4;
 }
 
 // A habit's progress across a run of days (today and the past ones), so the

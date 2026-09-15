@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Habit, RepeatMode, Task, TaskType } from './types';
 import { ALL_EMOJIS, EMOJI_DATA, TASK_COLORS, resolveTaskEmoji } from './types';
 import { INCREASING_SERIES } from './tasks';
-import { DAY_MIN } from './schedule';
+import { DAY_MIN, isDone } from './schedule';
 
 export interface DialogAnchor {
   x: number; // client coordinates of the block the popover belongs to
@@ -63,6 +63,21 @@ function fromTimeInput(value: string, fallback: number): number {
   return Math.max(0, Math.min(DAY_MIN - 1, h * 60 + m));
 }
 
+// Local wall-clock timestamp ↔ <input type="datetime-local"> string. Seconds
+// are kept (not just hh:mm) so re-saving the dialog without touching this
+// field never quietly rounds a real finishedAt down to the minute — the
+// overtake engine is sensitive to exactly that precision.
+function toDatetimeInput(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fromDatetimeInput(value: string, fallback: number): number {
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : fallback;
+}
+
 // Editor for one calendar block: when it runs, how long, what it looks like and
 // whether it repeats. Used for both creating (a draft dropped on the grid) and
 // editing an existing block.
@@ -89,6 +104,15 @@ function TaskDialog({
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(task.repeat?.mode ?? 'fixed');
   const [repeatBase, setRepeatBase] = useState(String(task.repeat?.baseDays ?? 7));
+  // Backdating a completion: a task placed on the calendar (backlog items have
+  // no slot to credit against) can be marked done — or have its done moment
+  // corrected — at any timestamp, not just "now". This is what lets a task
+  // finished earlier but only ticked off later still credit the right day's
+  // overtake instead of the moment it happened to be clicked.
+  const [done, setDone] = useState(isDone(task));
+  const [finishedInput, setFinishedInput] = useState(() =>
+    toDatetimeInput(task.finishedAt ?? Date.now())
+  );
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [emojiSearch, setEmojiSearch] = useState('');
 
@@ -147,6 +171,7 @@ function TaskDialog({
     // A block dragged out on the grid may be saved without typing a name yet.
     const trimmed = name.trim() || 'Новая задача';
     const plannedTime = minutesToSec(minutes);
+    const canTrackDone = task.status !== 'open';
     onSave({
       ...task,
       name: trimmed,
@@ -160,6 +185,11 @@ function TaskDialog({
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
         : null,
+      ...(canTrackDone && done
+        ? { status: 'done', finishedAt: fromDatetimeInput(finishedInput, task.finishedAt ?? Date.now()) }
+        : canTrackDone
+          ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
+          : null),
     });
   };
 
@@ -304,6 +334,26 @@ function TaskDialog({
                 ))}
               </select>
             </label>
+          </div>
+        )}
+
+        {task.status !== 'open' && (
+          <div className="cal-modal-row cal-modal-row--done">
+            <label className="cal-check">
+              <input type="checkbox" checked={done} onChange={(e) => setDone(e.target.checked)} />
+              <span>✓ Выполнено</span>
+            </label>
+            {done && (
+              <label className="cal-field cal-field--grow">
+                <span>Когда закрыта</span>
+                <input
+                  type="datetime-local"
+                  step={1}
+                  value={finishedInput}
+                  onChange={(e) => setFinishedInput(e.target.value)}
+                />
+              </label>
+            )}
           </div>
         )}
 
