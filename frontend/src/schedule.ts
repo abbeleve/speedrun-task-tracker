@@ -45,6 +45,20 @@ export function isScheduled(task: Task): boolean {
   return task.status !== 'open' && task.start !== null && task.start !== undefined;
 }
 
+// A service reminder (see types.ts's TaskType): keeps a real slot so it can be
+// drawn on the grid, but is never real work.
+export function isReminder(task: Task): boolean {
+  return task.type === 'reminder';
+}
+
+// Scheduled tasks that count as actual work for the schedule engine: no
+// reminders. Feeds buildGroups (and, through it, the overtake engine and
+// sequences) and the session-gap rest filler, so a reminder can never join a
+// group, a chain/session, or trigger/absorb an auto-inserted rest block.
+export function isEngineTask(task: Task): boolean {
+  return isScheduled(task) && !isReminder(task);
+}
+
 export function taskStartMs(task: Task): number {
   return dayStartMs(task.day) + (task.start ?? 0) * MIN_MS;
 }
@@ -75,7 +89,7 @@ export interface TaskGroup {
 // touch, because they are all "running at once" from the schedule's point of
 // view.
 export function buildGroups(tasks: Task[]): TaskGroup[] {
-  const scheduled = tasks.filter(isScheduled);
+  const scheduled = tasks.filter(isEngineTask);
   const sorted = [...scheduled].sort(
     (a, b) => taskStartMs(a) - taskStartMs(b) || a.id.localeCompare(b.id)
   );
@@ -235,7 +249,7 @@ export function newSessionId(): string {
 // it automatically with a rest task, so the run reads task → отдых → task
 // instead of a stretch that has nothing to close.
 export function sessionGapRestTasks(tasks: Task[]): Task[] {
-  const scheduled = tasks.filter(isScheduled);
+  const scheduled = tasks.filter(isEngineTask);
   const bySession = new Map<string, TaskGroup[]>();
   for (const group of buildGroups(scheduled)) {
     const sid = groupSessionId(group);
@@ -276,7 +290,7 @@ export function fillSessionGaps(tasks: Task[]): Task[] {
 // sessionGapRestTasks: closing a session back up — pulling a block all the way
 // over the rest — makes the rest redundant, so it is dropped.
 export function coveredRests(tasks: Task[]): Task[] {
-  const scheduled = tasks.filter(isScheduled);
+  const scheduled = tasks.filter(isEngineTask);
   const out: Task[] = [];
   for (const rest of scheduled) {
     if (rest.type !== 'rest') continue;

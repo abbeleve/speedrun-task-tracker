@@ -417,6 +417,53 @@
   border: 2px solid var(--accent-cyan);
 }
 
+/* ── reminders (служебные напоминания) ──────────────────────────
+   A read-only overlay pinned to the column's right edge: no groups, no
+   chains, no overtake, no productivity (see schedule.ts's isEngineTask). It
+   carries no visible label — thin on purpose — click it to open the editor
+   and read what it is. Past its own end it fades to a dashed grey outline. */
+.cal-reminder {
+  position: absolute;
+  width: 9px;
+  border-radius: 3px;
+  background: var(--task-color, #3498db);
+  cursor: grab;
+  opacity: 0.85;
+  touch-action: none;
+  user-select: none;
+  z-index: 5;
+  transition: opacity 0.15s, width 0.15s;
+}
+
+.cal-reminder:hover {
+  opacity: 1;
+  width: 13px;
+}
+
+.cal-reminder.dragging {
+  opacity: 0.9;
+  cursor: grabbing;
+  z-index: 7;
+}
+
+.cal-reminder.live {
+  pointer-events: none;
+  z-index: 7;
+  border: 1px dashed var(--task-color, #3498db);
+  background: color-mix(in srgb, var(--task-color, #3498db) 55%, transparent);
+}
+
+.cal-reminder.expired {
+  background: transparent;
+  border: 1px dashed var(--text-dim);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.cal-reminder.expired:hover {
+  opacity: 0.85;
+}
+
 /* ── blocks ──────────────────────────────────────────────────── */
 
 .cal-block {
@@ -976,6 +1023,13 @@
 
 .cal-repeat-hint {
   font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.cal-modal-hint {
+  margin: -4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
   color: var(--text-dim);
 }
 

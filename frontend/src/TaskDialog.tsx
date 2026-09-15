@@ -171,7 +171,10 @@ function TaskDialog({
     // A block dragged out on the grid may be saved without typing a name yet.
     const trimmed = name.trim() || 'Новая задача';
     const plannedTime = minutesToSec(minutes);
-    const canTrackDone = task.status !== 'open';
+    const isReminder = type === 'reminder';
+    // A reminder is never "performed" as a task — no matter what the checkbox
+    // (hidden for this type) last held, it can never come out of this save done.
+    const canTrackDone = task.status !== 'open' && !isReminder;
     onSave({
       ...task,
       name: trimmed,
@@ -181,15 +184,17 @@ function TaskDialog({
       emoji: resolveTaskEmoji(emoji),
       color,
       type,
-      habitId: habitId || null,
+      habitId: isReminder ? null : habitId || null,
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
         : null,
-      ...(canTrackDone && done
-        ? { status: 'done', finishedAt: fromDatetimeInput(finishedInput, task.finishedAt ?? Date.now()) }
-        : canTrackDone
-          ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
-          : null),
+      ...(isReminder
+        ? { status: task.status === 'open' ? 'open' : 'in-progress', finishedAt: null, completedAt: null }
+        : canTrackDone && done
+          ? { status: 'done', finishedAt: fromDatetimeInput(finishedInput, task.finishedAt ?? Date.now()) }
+          : canTrackDone
+            ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
+            : null),
     });
   };
 
@@ -317,11 +322,27 @@ function TaskDialog({
               >
                 ☕ Отдых
               </button>
+              <button
+                type="button"
+                className={type === 'reminder' ? 'active' : ''}
+                onClick={() => setType('reminder')}
+              >
+                🔔 Напоминание
+              </button>
             </div>
           </div>
         </div>
 
-        {habits && habits.length > 0 && (
+        {type === 'reminder' && (
+          <p className="cal-modal-hint">
+            Служебное напоминание: не выполняется как задача и не считается —
+            не входит в обгон, продуктивность и секвенции. На сетке рисуется
+            тонкой полоской у правого края колонки и гаснет пунктиром, когда
+            окно закрывается.
+          </p>
+        )}
+
+        {habits && habits.length > 0 && type !== 'reminder' && (
           <div className="cal-modal-row">
             <label className="cal-field cal-field--grow">
               <span>Привычка</span>
@@ -337,7 +358,7 @@ function TaskDialog({
           </div>
         )}
 
-        {task.status !== 'open' && (
+        {task.status !== 'open' && type !== 'reminder' && (
           <div className="cal-modal-row cal-modal-row--done">
             <label className="cal-check">
               <input type="checkbox" checked={done} onChange={(e) => setDone(e.target.checked)} />

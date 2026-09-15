@@ -21,7 +21,9 @@ export function dayStatsFromTasks(date: string, tasks: Task[]): Omit<DayStats, '
   let workSec = 0;
   let restSec = 0;
   for (const task of tasks) {
-    if (task.status === 'open' || !isDone(task)) continue;
+    // Reminders never count towards productivity, whatever their status ends
+    // up being — they are a service overlay, not work (see types.ts).
+    if (task.status === 'open' || task.type === 'reminder' || !isDone(task)) continue;
     const spent = spentSec(task);
     if (task.type === 'rest') restSec += spent;
     else workSec += spent;

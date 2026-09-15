@@ -13,6 +13,7 @@ import {
   dayStartMs,
   daySegments,
   isDone,
+  isReminder,
   isSession,
   mergeSuggestions,
   newSessionId,
@@ -583,7 +584,7 @@ function CalendarPage({
     const gapMs = freeUntilMs - now;
     if (gapMs < 10 * MIN_MS) return null;
 
-    const candidates = openTasks.filter((t) => t.plannedTime * 1000 <= gapMs);
+    const candidates = openTasks.filter((t) => t.plannedTime * 1000 <= gapMs && !isReminder(t));
     if (candidates.length === 0) return null;
 
     return { day, startMs: now, endMs: freeUntilMs, gapMs, candidates };
@@ -667,9 +668,20 @@ function CalendarPage({
     );
     if (livePreview) ghostIds.add(livePreview.id);
 
-    const segments = daySegments(tasks, day, MIN_BLOCK_MIN).filter(
-      (seg) => !ghostIds.has(seg.task.id)
-    );
+    // Reminders never share the normal blocks' column-packed layout — they are
+    // a read-only overlay pinned to the right edge (see the render below) — so
+    // they are laid out separately, from their own subset of the day's tasks.
+    const segments = daySegments(
+      tasks.filter((t) => !isReminder(t)),
+      day,
+      MIN_BLOCK_MIN
+    ).filter((seg) => !ghostIds.has(seg.task.id));
+
+    const reminderSegments = daySegments(
+      tasks.filter(isReminder),
+      day,
+      MIN_BLOCK_MIN
+    ).filter((seg) => !ghostIds.has(seg.task.id));
 
     // Sessions and sequences, drawn as a spine to the left of the column. While
     // one is dragged it is shown where it would land.
@@ -687,14 +699,12 @@ function CalendarPage({
       .filter((s) => s.atMs >= dayFrom && s.atMs < dayTo);
 
     // Everything drawn from a gesture or from the open editor rather than from
-    // the saved plan.
-    const ghosts: {
-      key: string;
-      task: Task;
-      startMin: number;
-      lengthMin: number;
-      live: boolean; // the editor's block, not a dragged one
-    }[] = [];
+    // the saved plan. A reminder being dragged/edited goes into its own bucket
+    // so it is drawn as a strip rather than a normal block — a chain drag never
+    // needs the split, since a reminder can never belong to one.
+    type Ghost = { key: string; task: Task; startMin: number; lengthMin: number; live: boolean };
+    const ghosts: Ghost[] = [];
+    const reminderGhosts: Ghost[] = [];
     if (dragChain) {
       for (const task of dragChain.chain.tasks) {
         const slot = shiftedSlot(task, dragChain.deltaMs);
@@ -708,7 +718,7 @@ function CalendarPage({
         });
       }
     } else if (g?.kind === 'move' && !g.toBacklog && g.day === day) {
-      ghosts.push({
+      (isReminder(g.task) ? reminderGhosts : ghosts).push({
         key: g.task.id,
         task: g.task,
         startMin: g.startMin,
@@ -717,7 +727,7 @@ function CalendarPage({
       });
     }
     if (livePreview && livePreview.day === day) {
-      ghosts.push({
+      (isReminder(livePreview) ? reminderGhosts : ghosts).push({
         key: `preview-${livePreview.id}`,
         task: livePreview,
         startMin: livePreview.start ?? 0,
@@ -732,7 +742,7 @@ function CalendarPage({
         className={`cal-col${isToday ? ' today' : ''}`}
         data-day={day}
         onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest('.cal-block, .cal-chain, .cal-glue')) return;
+          if ((e.target as HTMLElement).closest('.cal-block, .cal-chain, .cal-glue, .cal-reminder')) return;
           startCreate(e, day);
         }}
         onDragOver={(e) => e.preventDefault()}
@@ -764,6 +774,46 @@ function CalendarPage({
             </div>
           );
         })}
+
+        {/* Reminders: a read-only overlay pinned to the right edge of the
+            column, thin on purpose — nothing is legible on them, click to
+            open the editor and read what one is. Past its own end it fades to
+            a dashed grey outline instead of disappearing. */}
+        {reminderSegments.map((seg) => {
+          const task = seg.task;
+          const lengthMin = seg.bottomMin - seg.topMin;
+          const height = Math.max(MIN_BLOCK_PX, lengthMin * PX_PER_MIN);
+          const expired = taskEndMs(task) <= now;
+          return (
+            <div
+              key={task.id}
+              className={`cal-reminder${expired ? ' expired' : ''}`}
+              style={{
+                top: seg.topMin * PX_PER_MIN,
+                height,
+                right: 2 + seg.col * 11,
+                '--task-color': task.color,
+              } as React.CSSProperties}
+              onPointerDown={(e) => startMove(e, task)}
+              title={`🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
+                seg.topMin + lengthMin
+              )}${expired ? ' · окно закрыто' : ''} — нажми, чтобы посмотреть`}
+            />
+          );
+        })}
+
+        {reminderGhosts.map((ghost) => (
+          <div
+            key={ghost.key}
+            className={ghost.live ? 'cal-reminder live' : 'cal-reminder dragging'}
+            style={{
+              top: ghost.startMin * PX_PER_MIN,
+              height: Math.max(MIN_BLOCK_PX, ghost.lengthMin * PX_PER_MIN),
+              right: 2,
+              '--task-color': ghost.task.color,
+            } as React.CSSProperties}
+          />
+        ))}
 
         <div className="cal-col-body">
         {segments.map((seg) => {
@@ -964,7 +1014,11 @@ function CalendarPage({
           {visibleDays.map((day) => {
             const [, m] = day.split('-').map(Number);
             const dayTasks = (store.days[day] ?? []).filter((t) => t.status !== 'open');
-            const sorted = [...dayTasks].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+            // Reminders are a service overlay, not a planning item — the month
+            // view's compact chip list is for real tasks only.
+            const sorted = dayTasks
+              .filter((t) => !isReminder(t))
+              .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
             const endOfDay = dayStartMs(day) + DAY_MIN * MIN_MS;
             const dayCredit = computeCredit(buildGroups(dayTasks), endOfDay);
             const closed = dayTasks.some(isDone);

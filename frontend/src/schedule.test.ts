@@ -89,6 +89,19 @@ describe('buildGroups', () => {
     const t = task({ start: hm(10), plannedTime: 3600, status: 'done', finishedAt: null });
     expect(buildGroups([t])[0].doneMs).toBe(taskEndMs(t));
   });
+
+  it('ignores reminders entirely — a service overlay, never real work', () => {
+    expect(buildGroups([task({ type: 'reminder' })])).toHaveLength(0);
+  });
+
+  it('does not let a reminder join a group it overlaps in time', () => {
+    const groups = buildGroups([
+      task({ start: hm(10), plannedTime: 3600 }),
+      task({ start: hm(10, 15), plannedTime: 1800, type: 'reminder' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tasks).toHaveLength(1);
+  });
 });
 
 describe('buildChains', () => {
@@ -102,6 +115,21 @@ describe('buildChains', () => {
     );
     expect(chains).toHaveLength(1);
     expect(chains[0].tasks).toHaveLength(3);
+  });
+
+  it('never pulls a reminder into a sequence, however tightly it is placed', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600 }),
+        task({ start: hm(10), plannedTime: 1800, type: 'reminder' }),
+        task({ start: hm(10, 30), plannedTime: 1800 }),
+      ])
+    );
+    // The reminder is invisible to buildGroups, so the two real blocks are two
+    // separate sequences (their own gap is 60 min, well past SEQUENCE_GAP_MS)
+    // rather than one chain of three.
+    expect(chains).toHaveLength(2);
+    expect(chains.every((c) => c.tasks.every((t) => t.type !== 'reminder'))).toBe(true);
   });
 
   it('breaks the sequence on a real gap', () => {
@@ -246,6 +274,20 @@ describe('session rest gaps', () => {
       task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }),
     ];
     expect(sessionGapRestTasks(tasks)).toEqual([]);
+  });
+
+  it('fills the hole with rest right through a reminder sitting in it', () => {
+    // The reminder occupies part of the gap, but it is not real occupancy as
+    // far as the session is concerned — the auto-rest still gets inserted.
+    const filled = fillSessionGaps([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }), // 9–10
+      task({ start: hm(10, 15), plannedTime: 1800, type: 'reminder' }), // 10:15–10:45
+      task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }), // 11–11:30
+    ]);
+    const rest = filled.find((t) => t.type === 'rest');
+    expect(rest).toBeDefined();
+    expect(rest!.start).toBe(hm(10));
+    expect(rest!.plannedTime).toBe(60 * 60);
   });
 });
 
@@ -422,6 +464,15 @@ describe('daySegments', () => {
       20
     );
     expect(segs.every((s) => s.cols === 1 && s.col === 0)).toBe(true);
+  });
+
+  it('still lays out reminders — it is type-agnostic, callers decide which slice to draw', () => {
+    // CalendarPage calls this twice, once per partition (real tasks / reminders
+    // — see isReminder), so the function itself must not filter by type.
+    const segs = daySegments([task({ start: hm(17), plannedTime: 5 * 3600, type: 'reminder' })], DAY);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].topMin).toBe(hm(17));
+    expect(segs[0].bottomMin).toBe(hm(22));
   });
 });
 

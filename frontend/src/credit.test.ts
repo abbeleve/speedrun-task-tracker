@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Task } from './types';
+import type { Task, TaskType } from './types';
 import { buildGroups, dayStartMs } from './schedule';
 import { computeCredit, projectedFinishMs } from './credit';
 
@@ -18,6 +18,7 @@ function task(opts: {
   minutes: number;
   done?: number | null; // epoch ms
   name?: string;
+  type?: TaskType;
 }): Task {
   const day = opts.day ?? DAY;
   return {
@@ -30,7 +31,7 @@ function task(opts: {
     order: seq,
     emoji: '📋',
     color: '#3498db',
-    type: 'task',
+    type: opts.type ?? 'task',
     day,
     status: opts.done ? 'done' : 'in-progress',
   };
@@ -45,6 +46,14 @@ describe('overtake (обгон)', () => {
     const snap = credit([a], at(DAY, hm(10, 50)));
     expect(min(snap.banked)).toBe(15);
     expect(snap.frozen).toBe(true); // nothing else planned — the lead just waits
+  });
+
+  it('ignores a reminder entirely, even one overlapping the running block', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const reminder = task({ start: hm(10, 15), minutes: 30, type: 'reminder' });
+    const withReminder = credit([a, reminder], at(DAY, hm(10, 50)));
+    const without = credit([a], at(DAY, hm(10, 50)));
+    expect(withReminder).toEqual(without);
   });
 
   it('keeps running against the next block when it starts immediately', () => {

@@ -104,7 +104,9 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
   const allTasks = useMemo(() => {
     const list: Task[] = [];
     for (const [day, state] of Object.entries(days ?? {})) {
-      list.push(...normalizeTasks(state.tasks, day));
+      // Reminders are a service overlay, never performed as a task — they have
+      // no place in a board that is precisely about working tasks through.
+      list.push(...normalizeTasks(state.tasks, day).filter((t) => t.type !== 'reminder'));
     }
     return list;
   }, [days]);
