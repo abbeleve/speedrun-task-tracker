@@ -107,6 +107,7 @@ export function spawnNextOccurrence(
   return {
     id: makeId(),
     name: task.name,
+    description: task.description,
     plannedTime: task.plannedTime,
     completedAt: null,
     start: placed ? task.start : null,

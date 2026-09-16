@@ -46,11 +46,18 @@
   font-family: var(--font-sans);
   font-size: 0.85rem;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.12s;
 }
 
 .cal-btn:hover {
   background: var(--bg-surface);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.cal-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .cal-btn--icon {
@@ -60,15 +67,26 @@
 }
 
 .cal-btn--primary {
-  background: var(--accent-blue);
+  background: linear-gradient(135deg, var(--accent-blue), color-mix(in srgb, var(--accent-blue) 65%, #7c4dff));
   border-color: var(--accent-blue);
   color: #fff;
+  font-weight: 600;
+}
+
+.cal-btn--primary:hover {
+  filter: brightness(1.08);
 }
 
 .cal-btn--danger {
   color: var(--accent-red);
   border-color: transparent;
   background: transparent;
+}
+
+.cal-btn--danger:hover {
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  transform: none;
+  box-shadow: none;
 }
 
 .cal-seg {
@@ -86,6 +104,12 @@
   font-family: var(--font-sans);
   font-size: 0.82rem;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cal-seg button:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 .cal-seg button + button {
@@ -509,6 +533,15 @@
   user-select: none;
   touch-action: none;
   z-index: 2;
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+
+/* Nudges the block forward on hover — paired with the .cal-hover-card
+   popup, which appears the instant the pointer lands. */
+.cal-block:hover {
+  transform: scale(1.035);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  z-index: 3;
 }
 
 .cal-block.active {
@@ -778,6 +811,71 @@
   cursor: ns-resize;
 }
 
+/* ── task hover card ─────────────────────────────────────────── */
+
+/* Replaces the native title tooltip: appears the instant the pointer lands
+   on a block (no OS hover delay), fixed-positioned off the block's own
+   screen rect so the grid's scroll clipping can't cut it off. The
+   transform-origin is set inline per side (left/right edge, wherever it
+   sits relative to the block) so the entrance animation reads as growing
+   out of the block instead of just fading in nearby. */
+.cal-hover-card {
+  position: fixed;
+  z-index: 50;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--task-color, #3498db);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow);
+  padding: 8px 10px;
+  pointer-events: none;
+  animation: cal-hover-card-in 140ms ease-out both;
+}
+
+@keyframes cal-hover-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.cal-hover-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cal-hover-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-hover-card-time {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-hover-card-desc {
+  margin-top: 5px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: hidden;
+}
+
 /* ── now line & lead band ────────────────────────────────────── */
 
 .cal-now {
@@ -1035,66 +1133,104 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
   z-index: 100;
   padding: 16px;
 }
 
+@keyframes cal-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .cal-modal {
   width: min(520px, 100%);
   max-height: 90vh;
   overflow-y: auto;
-  background: var(--bg-secondary);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--task-color, #3498db) 20%, transparent), transparent 90px),
+    var(--bg-secondary);
   border: 1px solid var(--border);
-  border-top: 4px solid var(--task-color, #3498db);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 14px;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35),
+    0 0 0 1px color-mix(in srgb, var(--task-color, #3498db) 25%, transparent);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  animation: cal-modal-in 0.16s ease-out both;
 }
 
 .cal-modal-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .cal-modal-emoji {
-  font-size: 1.4rem;
+  flex: none;
+  font-size: 1.5rem;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  width: 40px;
-  height: 40px;
+  border: 2px solid color-mix(in srgb, var(--task-color, #3498db) 55%, var(--border));
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
   cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.cal-modal-emoji:hover {
+  transform: scale(1.08) rotate(-4deg);
 }
 
 .cal-modal-name {
   flex: 1;
   min-width: 0;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--text-primary);
   font-size: 1.05rem;
+  font-weight: 600;
   font-family: var(--font-sans);
-  padding: 6px 2px;
+  padding: 9px 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .cal-modal-name:focus {
   outline: none;
-  border-bottom-color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background: var(--bg-secondary);
 }
 
 .cal-modal-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
   background: none;
   border: none;
+  border-radius: 50%;
   color: var(--text-dim);
   font-size: 1rem;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cal-modal-close:hover {
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+  color: var(--accent-red);
 }
 
 .cal-modal-row {
@@ -1107,9 +1243,17 @@
 .cal-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   font-size: 0.72rem;
   color: var(--text-secondary);
+}
+
+.cal-field > span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
 }
 
 .cal-field--grow {
@@ -1121,32 +1265,85 @@
 }
 
 .cal-field input,
-.cal-field select {
+.cal-field select,
+.cal-field textarea {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   color: var(--text-primary);
-  padding: 5px 7px;
+  padding: 7px 9px;
   font-family: var(--font-sans);
   font-size: 0.85rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cal-field input:focus,
+.cal-field select:focus,
+.cal-field textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+}
+
+.cal-modal-description {
+  resize: vertical;
+  min-height: 44px;
 }
 
 .cal-colors {
   display: flex;
-  gap: 5px;
+  gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+  padding: 3px 0;
 }
 
 .cal-color {
-  width: 22px;
-  height: 22px;
+  position: relative;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 2px solid transparent;
+  border: 2px solid var(--bg-secondary);
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cal-color:hover {
+  transform: scale(1.14);
 }
 
 .cal-color.active {
-  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--sw, var(--accent-blue)), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.cal-color-check {
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
+/* The "own colour" swatch: a conic rainbow hints at "pick anything" and
+   opens the native palette (the hidden colour input below) on click. */
+.cal-color--custom {
+  background: conic-gradient(from 180deg, #ff4d6d, #ffb703, #2ecc71, #00d4ff, #7c4dff, #ff4d6d);
+  border: 2px solid var(--border);
+  font-size: 0.72rem;
+}
+
+.cal-color-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .cal-check {
@@ -1158,16 +1355,27 @@
   cursor: pointer;
 }
 
+.cal-check input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
 .cal-repeat-hint {
   font-size: 0.72rem;
   color: var(--text-dim);
 }
 
 .cal-modal-hint {
-  margin: -4px 0 0;
+  margin: -2px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  border-left: 3px solid var(--accent-blue);
   font-size: 0.72rem;
   line-height: 1.4;
-  color: var(--text-dim);
+  color: var(--text-secondary);
 }
 
 .cal-modal-foot {
@@ -1182,21 +1390,28 @@
 
 .cal-emoji-pop {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
+  border-radius: 10px;
+  padding: 10px;
   background: var(--bg-surface);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
 }
 
 .cal-emoji-search {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--text-primary);
-  padding: 5px 7px;
+  padding: 6px 8px;
   font-family: var(--font-sans);
+  transition: border-color 0.15s ease;
+}
+
+.cal-emoji-search:focus {
+  outline: none;
+  border-color: var(--accent-blue);
 }
 
 .cal-emoji-grid {
@@ -1210,10 +1425,15 @@
 .cal-emoji-cell {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
-  font-size: 1.05rem;
-  padding: 2px;
+  border-radius: 6px;
+  font-size: 1.1rem;
+  padding: 3px;
   cursor: pointer;
+  transition: transform 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+}
+
+.cal-emoji-cell:hover {
+  transform: scale(1.15);
 }
 
 .cal-emoji-cell:hover,
@@ -1239,6 +1459,7 @@
    readable and the block being described keeps showing through. */
 .cal-modal-backdrop--pop {
   background: transparent;
+  backdrop-filter: none;
   display: block;
   padding: 0;
 }

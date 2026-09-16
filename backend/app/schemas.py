@@ -51,6 +51,7 @@ class RepeatConfig(BaseModel):
 class DayTask(BaseModel):
     id: str
     name: str
+    description: Optional[str] = None
     plannedTime: float
     # Session-relative completion in seconds — kept for run snapshots saved
     # before the calendar rework (and for the sequence views, which still run

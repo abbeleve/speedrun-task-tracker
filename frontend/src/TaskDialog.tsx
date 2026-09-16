@@ -26,6 +26,7 @@ interface TaskDialogProps {
   onPreview?: (task: Task) => void;
   onSave: (task: Task) => void;
   onDelete?: () => void;
+  onDuplicate?: () => void;
   onClose: () => void;
 }
 
@@ -91,9 +92,11 @@ function TaskDialog({
   onPreview,
   onSave,
   onDelete,
+  onDuplicate,
   onClose,
 }: TaskDialogProps) {
   const [name, setName] = useState(task.name);
+  const [description, setDescription] = useState(task.description ?? '');
   const [day, setDay] = useState(task.day);
   const [time, setTime] = useState(toTimeInput(task.start));
   const [minutes, setMinutes] = useState(String(Math.max(1, Math.round(task.plannedTime / 60))));
@@ -117,6 +120,7 @@ function TaskDialog({
   const [emojiSearch, setEmojiSearch] = useState('');
 
   const nameRef = useRef<HTMLInputElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
@@ -141,6 +145,7 @@ function TaskDialog({
     previewRef.current?.({
       ...taskRef.current,
       name: name.trim(),
+      description: description.trim() || null,
       day,
       start: fromTimeInput(time, taskRef.current.start ?? 0),
       plannedTime: minutesToSec(minutes),
@@ -149,7 +154,7 @@ function TaskDialog({
       type,
       habitId: habitId || null,
     });
-  }, [name, day, time, minutes, emoji, color, type, habitId]);
+  }, [name, description, day, time, minutes, emoji, color, type, habitId]);
 
   const formRef = useRef<HTMLFormElement>(null);
   const [popHeight, setPopHeight] = useState(0);
@@ -178,6 +183,7 @@ function TaskDialog({
     onSave({
       ...task,
       name: trimmed,
+      description: description.trim() || null,
       day,
       start: fromTimeInput(time, task.start ?? 0),
       plannedTime,
@@ -265,6 +271,17 @@ function TaskDialog({
           </div>
         )}
 
+        <label className="cal-field cal-field--grow">
+          <span>Описание</span>
+          <textarea
+            className="cal-modal-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Подробности задачи…"
+            rows={3}
+          />
+        </label>
+
         <div className="cal-modal-row">
           <label className="cal-field">
             <span>Дата</span>
@@ -298,11 +315,41 @@ function TaskDialog({
                   key={c}
                   type="button"
                   className={`cal-color${c === color ? ' active' : ''}`}
-                  style={{ background: c }}
+                  style={{ background: c, '--sw': c } as React.CSSProperties}
                   onClick={() => setColor(c)}
                   title={c}
-                />
+                >
+                  {c === color && <span className="cal-color-check">✓</span>}
+                </button>
               ))}
+              {!TASK_COLORS.includes(color) && (
+                <button
+                  type="button"
+                  className="cal-color active"
+                  style={{ background: color, '--sw': color } as React.CSSProperties}
+                  onClick={() => colorInputRef.current?.click()}
+                  title={color}
+                >
+                  <span className="cal-color-check">✓</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="cal-color cal-color--custom"
+                onClick={() => colorInputRef.current?.click()}
+                title="Свой цвет из палитры"
+              >
+                🎨
+              </button>
+              <input
+                ref={colorInputRef}
+                type="color"
+                className="cal-color-input"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                tabIndex={-1}
+                aria-label="Выбрать цвет из палитры"
+              />
             </div>
           </div>
           <div className="cal-field">
@@ -439,6 +486,11 @@ function TaskDialog({
           {onDelete && (
             <button type="button" className="cal-btn cal-btn--danger" onClick={onDelete}>
               🗑 Удалить
+            </button>
+          )}
+          {onDuplicate && (
+            <button type="button" className="cal-btn" onClick={onDuplicate} title="Создать копию этой задачи">
+              📋 Копировать
             </button>
           )}
           <span className="cal-modal-spacer" />

@@ -31,6 +31,8 @@ export interface DayStore {
   // Patch several tasks in one write — how a whole session is moved.
   patchTasks: (patches: { id: string; patch: Partial<Task> }[]) => void;
   removeTask: (id: string) => void;
+  // Remove several tasks in one write — how a selected batch is deleted.
+  removeTasks: (ids: string[]) => void;
   flush: () => void;
 }
 
@@ -217,6 +219,23 @@ export function useDayStore(): DayStore {
     [commit]
   );
 
+  const removeTasks = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const prev = daysRef.current;
+      const next: DaysByDate = {};
+      const touched: string[] = [];
+      for (const [date, list] of Object.entries(prev)) {
+        const without = list.filter((t) => !idSet.has(t.id));
+        next[date] = without;
+        if (without.length !== list.length) touched.push(date);
+      }
+      commit(next, touched);
+    },
+    [commit]
+  );
+
   const tasks = useMemo(() => Object.values(days).flat(), [days]);
 
   return {
@@ -230,6 +249,7 @@ export function useDayStore(): DayStore {
     patchTask,
     patchTasks,
     removeTask,
+    removeTasks,
     flush,
   };
 }

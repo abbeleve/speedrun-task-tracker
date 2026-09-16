@@ -57,7 +57,6 @@ interface CalendarPageProps {
 const PX_PER_HOUR = 52;
 const PX_PER_MIN = PX_PER_HOUR / 60;
 const MIN_BLOCK_PX = 16; // shortest a block is ever drawn, however brief the task
-const MIN_BLOCK_MIN = MIN_BLOCK_PX / PX_PER_MIN;
 const SNAP_MIN = 5;
 const DEFAULT_LENGTH_MIN = 60;
 const MIN_LENGTH_MIN = 10;
@@ -123,6 +122,9 @@ type Gesture =
       anchorX: number; // where the press landed, for the "held still?" test
       anchorY: number;
       moved: boolean;
+      // Shift/Ctrl: the press builds on the batch already selected instead of
+      // starting a new one.
+      additive: boolean;
     }
   | {
       kind: 'move';
@@ -196,6 +198,12 @@ function CalendarPage({
   const [zoomRange, setZoomRange] = useState<{ startMin: number; endMin: number } | null>(null);
   const [scrollerHeight, setScrollerHeight] = useState(0);
 
+  // Custom hover card for a task block: shows instantly (no OS tooltip delay)
+  // and is anchored to the block's own screen rect, so it can grow out of the
+  // block's edge instead of just fading in. Rendered through a portal so the
+  // grid's scroll clipping (.cal-grid overflow) never cuts it off.
+  const [hoverCard, setHoverCard] = useState<{ task: Task; rect: DOMRect } | null>(null);
+
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
   }, [view]);
@@ -211,10 +219,38 @@ function CalendarPage({
     return () => ro.disconnect();
   }, []);
 
+  // The hover card is anchored to a snapshot of the block's screen rect —
+  // once the grid scrolls that rect is stale, so just close it.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || !hoverCard) return;
+    const close = () => setHoverCard(null);
+    el.addEventListener('scroll', close, { passive: true });
+    return () => el.removeEventListener('scroll', close);
+  }, [hoverCard]);
+
+  // A drag/resize/selection gesture in flight makes a lingering hover card
+  // (from before the gesture started) misleading — drop it. Same once the
+  // editor opens over the same block, or the view scrolls to another day.
+  useEffect(() => {
+    if (gesture) setHoverCard(null);
+  }, [gesture]);
+  useEffect(() => {
+    if (dialog) setHoverCard(null);
+  }, [dialog]);
+  useEffect(() => {
+    setHoverCard(null);
+  }, [view, anchor]);
+
   const zoomLenMin = zoomRange ? Math.max(1, zoomRange.endMin - zoomRange.startMin) : DAY_MIN;
   const pxPerMin = zoomRange && scrollerHeight > 0 ? scrollerHeight / zoomLenMin : PX_PER_MIN;
   const minToPx = useCallback((min: number) => min * pxPerMin, [pxPerMin]);
   const lenToPx = useCallback((lenMin: number) => lenMin * pxPerMin, [pxPerMin]);
+  // How short a block can be before it must be pushed into its own column to
+  // stay readable — in *minutes*, so it shrinks as zooming in makes every
+  // minute taller, letting blocks that no longer visually clash sit back to
+  // back instead of staying forced side by side (see daySegments).
+  const minBlockMin = MIN_BLOCK_PX / pxPerMin;
 
   const today = todayKey();
   const tasks = store.tasks;
@@ -327,6 +363,27 @@ function CalendarPage({
     setPreview(null);
   }, []);
 
+  // A copy of `task`, ready to drop into the dialog as a draft: fresh id, not
+  // done, no session (a copy never silently joins the original's session) and
+  // placed right after the original so the two don't sit on top of each other.
+  const duplicateTask = useCallback((task: Task): Task => {
+    const placed = task.start !== null && task.start !== undefined;
+    return {
+      ...task,
+      id: newTaskId(),
+      name: `${task.name} (копия)`,
+      order: 0,
+      completedAt: null,
+      finishedAt: null,
+      status: task.status === 'done' ? 'in-progress' : task.status,
+      start: placed ? clampStartMin(task.start! + task.plannedTime / 60, task.plannedTime) : null,
+      sessionId: null,
+      sessionName: null,
+      repeatIndex: undefined,
+      repeatOf: undefined,
+    };
+  }, []);
+
   const openDialog = useCallback(
     (task: Task, isNew: boolean, at?: { clientX: number; clientY: number } | null) => {
       setPreview(task);
@@ -360,6 +417,16 @@ function CalendarPage({
     store.removeTask(dialog.task.id);
     closeDialog();
   }, [dialog, store, closeDialog]);
+
+  // Opens the editor on an unsaved copy of the current task — nothing is
+  // written until that draft is itself confirmed, so a duplicate started by
+  // mistake is dropped the same way a new block would be.
+  const duplicateFromDialog = useCallback(() => {
+    if (!dialog) return;
+    const copy = duplicateTask(dialog.task);
+    const at = dialog.anchor ? { clientX: dialog.anchor.x, clientY: dialog.anchor.y } : null;
+    openDialog(copy, true, at);
+  }, [dialog, duplicateTask, openDialog]);
 
   // ── sessions ─────────────────────────────────────────────────────
 
@@ -501,6 +568,31 @@ function CalendarPage({
     [selectedTasks, store, setSelection]
   );
 
+  // Delete every selected block at once.
+  const deleteSelection = useCallback(() => {
+    if (selectedTasks.length === 0) return;
+    store.removeTasks(selectedTasks.map((t) => t.id));
+    setGroupMenu(null);
+    setSelection(new Set());
+  }, [selectedTasks, store, setSelection]);
+
+  // Delete/Backspace deletes the selected batch, as long as focus isn't in a
+  // text field (renaming a session, say) where the key means something else.
+  useEffect(() => {
+    if (selectedIds.size === 0 || dialog || sessionPop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      e.preventDefault();
+      deleteSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedIds, dialog, sessionPop, deleteSelection]);
+
   const draftTask = useCallback((day: string, startMin: number, lengthMin: number): Task => {
     const i = Math.floor(Math.random() * TASK_COLORS.length);
     return {
@@ -631,9 +723,11 @@ function CalendarPage({
       setGestureState(null);
       if (g.kind === 'create') {
         // A plain click on the canvas while a batch is selected drops the
-        // selection rather than dropping a new block on top of it.
-        if (!g.moved && selectedRef.current.size > 0) {
-          setSelection(new Set());
+        // selection rather than dropping a new block on top of it. Held with
+        // Shift/Ctrl the click is part of composing that batch, so it keeps it
+        // — and never drops a new block either way.
+        if (!g.moved && (g.additive || selectedRef.current.size > 0)) {
+          if (!g.additive) setSelection(new Set());
           return;
         }
         const length = Math.max(MIN_LENGTH_MIN, g.endMin - g.startMin);
@@ -710,8 +804,9 @@ function CalendarPage({
         anchorX: e.clientX,
         anchorY: e.clientY,
         moved: false,
+        additive: e.shiftKey || e.ctrlKey || e.metaKey,
       });
-      const additive = e.shiftKey;
+      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       const { dayIdx, min } = slot;
       cancelHold();
       holdTimer.current = window.setTimeout(() => {
@@ -739,6 +834,16 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
+      // Ctrl (⌘) + click picks blocks one by one, whether or not a batch is
+      // already standing: it adds the block, or drops it back out if it was
+      // already in. Nothing is dragged and no editor opens — the modifier
+      // means "compose the batch", so the gesture ends right here.
+      if (e.ctrlKey || e.metaKey) {
+        const next = new Set(selectedRef.current);
+        if (!next.delete(task.id)) next.add(task.id);
+        setSelection(next);
+        return;
+      }
       // Grabbing any block of a selected batch drags the whole batch; grabbing
       // one outside it means the selection is over.
       if (selectedRef.current.size > 1 && selectedRef.current.has(task.id)) {
@@ -1029,13 +1134,13 @@ function CalendarPage({
     const segments = daySegments(
       tasks.filter((t) => !isReminder(t)),
       day,
-      MIN_BLOCK_MIN
+      minBlockMin
     ).filter((seg) => !ghostIds.has(seg.task.id));
 
     const reminderSegments = daySegments(
       tasks.filter(isReminder),
       day,
-      MIN_BLOCK_MIN
+      minBlockMin
     ).filter((seg) => !ghostIds.has(seg.task.id));
 
     // Sessions and sequences, drawn as a spine to the left of the column. While
@@ -1229,7 +1334,8 @@ function CalendarPage({
                 '--task-color': task.color,
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
-              title={`${task.name} · ${hhmm(task.start ?? 0)}–${wallTime(taskEndMs(task))}`}
+              onMouseEnter={(e) => setHoverCard({ task, rect: e.currentTarget.getBoundingClientRect() })}
+              onMouseLeave={() => setHoverCard((c) => (c?.task.id === task.id ? null : c))}
             >
               <div className="cal-block-head">
                 <span className="cal-block-emoji">{task.emoji}</span>
@@ -1375,6 +1481,52 @@ function CalendarPage({
           <span className="cal-now-dot" />
         </div>
       </>
+    );
+  };
+
+  // A hover card describing the block underneath the cursor — appears the
+  // instant the pointer enters it (no native-tooltip delay) and is anchored
+  // to the block's own screen rect so its entrance animation reads as
+  // growing out of the block rather than just fading in somewhere nearby.
+  const HOVER_CARD_WIDTH = 240;
+  const HOVER_CARD_GAP = 10;
+
+  const renderHoverCard = () => {
+    if (!hoverCard) return null;
+    const { task, rect } = hoverCard;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const fitsRight = rect.right + HOVER_CARD_GAP + HOVER_CARD_WIDTH <= vw - 8;
+    const left = fitsRight
+      ? rect.right + HOVER_CARD_GAP
+      : Math.max(8, rect.left - HOVER_CARD_GAP - HOVER_CARD_WIDTH);
+    const top = Math.min(Math.max(8, rect.top), vh - 8);
+    const origin = fitsRight ? 'left top' : 'right top';
+    const start = hhmm(task.start ?? 0);
+    const end = wallTime(taskEndMs(task));
+    return (
+      <div
+        className="cal-hover-card"
+        style={{
+          left,
+          top,
+          width: HOVER_CARD_WIDTH,
+          transformOrigin: origin,
+          '--task-color': task.color,
+        } as React.CSSProperties}
+        aria-hidden="true"
+      >
+        <div className="cal-hover-card-head">
+          <span className="cal-hover-card-emoji">{task.emoji}</span>
+          <span className="cal-hover-card-name">{task.name || 'Без названия'}</span>
+        </div>
+        <div className="cal-hover-card-time">
+          {start}–{end}
+        </div>
+        {task.description && (
+          <div className="cal-hover-card-desc">{task.description}</div>
+        )}
+      </div>
     );
   };
 
@@ -1612,7 +1764,8 @@ function CalendarPage({
           </header>
           <p className="cal-backlog-hint">
             Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
-            Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков
+            Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
+            Ctrl + клик по блоку — добавить его в пачку или убрать
           </p>
           <div className="cal-backlog-list">
             {openTasks.map((task) => (
@@ -1634,8 +1787,14 @@ function CalendarPage({
         </aside>
       </div>
 
+      {renderHoverCard()}
+
       {dialog && (
         <TaskDialog
+          // Keyed on the task id: switching from a task to (say) its unsaved
+          // duplicate must remount the form so its fields reset from the new
+          // task instead of keeping whatever was last typed for the old one.
+          key={dialog.task.id}
           task={dialog.task}
           isNew={dialog.isNew}
           anchor={dialog.anchor}
@@ -1651,6 +1810,7 @@ function CalendarPage({
           onPreview={setPreview}
           onSave={saveFromDialog}
           onDelete={dialog.isNew ? undefined : deleteFromDialog}
+          onDuplicate={dialog.isNew ? undefined : duplicateFromDialog}
           onClose={closeDialog}
         />
       )}
@@ -1738,9 +1898,18 @@ function CalendarPage({
               >
                 Снять выделение
               </button>
+              <button
+                type="button"
+                className="cal-btn cal-btn--danger"
+                onClick={deleteSelection}
+              >
+                🗑 Удалить{selectedTasks.length > 1 ? ` (${selectedTasks.length})` : ''}
+              </button>
             </div>
             <p className="cal-session-hint">
               {canSplit ? 'Потяни за любой выделенный блок — переедут все' : splitHint}
+              {' · '}
+              Ctrl + клик — добавить блок в пачку или убрать
             </p>
           </div>
         </div>

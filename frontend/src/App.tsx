@@ -370,6 +370,16 @@ function App() {
     return taskLayout;
   }, [gesture, taskLayout, runTasks]);
 
+  // The planned length the resize would commit to if let go right now —
+  // mirrors the snapping math the pointer-up handler applies, so the number
+  // shown on the block while dragging matches what actually lands.
+  const liveResizeSec = useMemo(() => {
+    if (gesture?.kind !== 'resize') return null;
+    const pxPerSec = gesture.startHeight / Math.max(1, gesture.startPlanned);
+    const rawPlanned = gesture.startPlanned + gesture.deltaPx / pxPerSec;
+    return Math.max(MIN_TASK_SEC, Math.round(rawPlanned / RESIZE_SNAP_SEC) * RESIZE_SNAP_SEC);
+  }, [gesture]);
+
   const displayTimelineHeight = useMemo(
     () => displayLayout.reduce((sum, l) => sum + l.height, 0),
     [displayLayout]
@@ -759,8 +769,10 @@ function App() {
                   {runTasks.map((task, idx) => {
                     const layout = displayLayout[idx];
                     const completed = task.completedAt !== null;
+                    const isResizingThis =
+                      gesture?.kind === 'resize' && gesture.taskId === task.id;
                     const isDraggingThis =
-                      gesture !== null && gesture.taskId === task.id;
+                      gesture?.kind === 'reorder' && gesture.taskId === task.id;
                     const isDropTarget =
                       gesture?.kind === 'reorder' &&
                       gesture.overIdx === idx &&
@@ -798,7 +810,7 @@ function App() {
                           isCurrent ? 'current' : ''
                         } ${task.type === 'rest' ? 'rest' : ''} ${
                           isDraggingThis ? 'dragging' : ''
-                        } ${isDropTarget ? 'drag-over' : ''}`}
+                        } ${isResizingThis ? 'resizing' : ''} ${isDropTarget ? 'drag-over' : ''}`}
                         style={
                           {
                             top: layout.offset,
@@ -848,8 +860,11 @@ function App() {
                               </span>
                             )}
                             <div className="block-timers">
-                              <span className="task-planned-lg">
-                                {formatTime(task.plannedTime * 1000, false)}
+                              <span className={`task-planned-lg ${isResizingThis ? 'live' : ''}`}>
+                                {formatTime(
+                                  (isResizingThis ? liveResizeSec! : task.plannedTime) * 1000,
+                                  false
+                                )}
                               </span>
                             </div>
                             <span

@@ -21,6 +21,7 @@ export interface RepeatConfig {
 export interface Task {
   id: string;
   name: string;
+  description?: string | null; // optional free-text notes shown in the editor
   plannedTime: number; // seconds — the planned duration of the block
   // Session-relative completion, in seconds from the start of the sequence the
   // task belongs to. Derived from `finishedAt` when a chain is opened in the
