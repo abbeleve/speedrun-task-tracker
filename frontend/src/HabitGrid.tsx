@@ -3,10 +3,12 @@ import type { Habit, HabitEntry, Task } from './types';
 import type { HabitStore } from './habitStore';
 import { shiftDayKey } from './history';
 import {
+  defaultStep,
   defaultUnit,
   habitTotal,
   isHabitComplete,
   isHabitDoneOn,
+  parseHabitAmount,
 } from './habits';
 import HabitDialog from './HabitDialog';
 import HabitDial from './HabitDial';
@@ -66,10 +68,11 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
     setDragId(null);
   };
 
-  const adjust = (habit: Habit, delta: number) => {
-    const step = habit.format === 'time' ? 5 : 1;
+  // `amount` is already in the habit's own units and carries its sign — the
+  // card decides whether that is one default step or a number typed by hand.
+  const adjust = (habit: Habit, amount: number) => {
     const cur = manualFor(entries, habit, date);
-    store.setManual(habit.id, date, Math.max(0, cur + delta * step));
+    store.setManual(habit.id, date, Math.max(0, cur + amount));
   };
 
   return (
@@ -122,7 +125,7 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
               onDragStart={() => setDragId(habit.id)}
               onDragEnd={() => setDragId(null)}
               onDrop={() => dropOn(habit.id)}
-              onAdjust={(delta) => adjust(habit, delta)}
+              onAdjust={(amount) => adjust(habit, amount)}
             />
           ))}
         </ul>
@@ -164,7 +167,7 @@ interface HabitCardProps {
   onDragStart: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
-  onAdjust: (delta: number) => void;
+  onAdjust: (amount: number) => void;
 }
 
 // One habit as a self-contained dial-card:
@@ -173,7 +176,9 @@ interface HabitCardProps {
 //   • the dial — TODAY only — in the habit's own colour with the big number
 //     and "value / target unit" in the gap the arc leaves
 //   • a 7-day strip of "did I hit it" cells, only when the toggle is open
-//   • − / + steppers at the bottom
+//   • − / + steppers at the bottom, with the step itself shown between them
+//     Click anywhere on the card and the number keys retype that step, so
+//     "+25" is four keystrokes away without the card growing a single control.
 // The dial is the visual identity of the card; the number is the practical
 // read-out ("how much have I done today"). Past days live behind the toggle.
 function HabitCard({
@@ -191,10 +196,38 @@ function HabitCard({
   onDrop,
   onAdjust,
 }: HabitCardProps) {
+  // Digits typed on the focused card, building up the step the − / + buttons
+  // apply. Empty means "no custom step yet", so the habit's own default stands
+  // in — the buttons therefore always do something, even mid-typing.
+  const [stepDraft, setStepDraft] = useState('');
+
   const today = habitTotal(habit, date, tasks, entries);
   const complete = isHabitComplete(today, habit.target);
   const unit = habit.unit || defaultUnit(habit.format);
-  const stepLabel = habit.format === 'time' ? '5 мин' : '1';
+  const typedStep = parseHabitAmount(stepDraft);
+  const step = typedStep ?? defaultStep(habit.format);
+  const stepLabel = stepDraft !== '' ? stepDraft : formatNumber(step);
+
+  // Number keys retype the step; backspace walks it back; Escape drops it and
+  // returns the card to the habit's default. Everything else (tab, arrows, the
+  // buttons' own space/enter) is left alone, so the card stays a normal
+  // keyboard citizen.
+  const onCardKeyDown = (e: React.KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      setStepDraft((d) => (d.replace(/[^0-9]/g, '').length >= 5 ? d : d + e.key));
+    } else if (e.key === ',' || e.key === '.') {
+      e.preventDefault();
+      setStepDraft((d) => (d === '' || d.includes(',') ? d : d + ','));
+    } else if (e.key === 'Backspace') {
+      e.preventDefault();
+      setStepDraft((d) => d.slice(0, -1));
+    } else if (e.key === 'Escape' && stepDraft !== '') {
+      e.stopPropagation();
+      setStepDraft('');
+    }
+  };
   const dayStatuses = days.map((d) => ({
     ...d,
     ok: isHabitDoneOn(habit, d.date, tasks, entries),
@@ -213,6 +246,8 @@ function HabitCard({
     <li
       className={`habit-card${complete ? ' done' : ''}${isDragging ? ' dragging' : ''}${isHistoryOpen ? ' history-open' : ''}`}
       draggable
+      tabIndex={0}
+      onKeyDown={onCardKeyDown}
       onDragStart={(e) => {
         onDragStart();
         e.dataTransfer.setData('text/plain', habit.id);
@@ -310,23 +345,36 @@ function HabitCard({
         <button
           type="button"
           className="habit-btn"
-          onClick={() => onAdjust(-1)}
-          title={habit.format === 'time' ? `−${stepLabel}` : '−1'}
-          aria-label={habit.format === 'time' ? `Минус ${stepLabel}` : 'Минус 1'}
+          onClick={() => onAdjust(-step)}
+          title={`Минус ${stepLabel}`}
+          aria-label={`Минус ${stepLabel}`}
         >
           −
         </button>
-        <span className="habit-step">{stepLabel}</span>
+        <button
+          type="button"
+          className={`habit-step${typedStep !== null ? ' custom' : ''}`}
+          onClick={(e) => {
+            e.currentTarget.focus();
+            setStepDraft('');
+          }}
+          title="Набери своё число с клавиатуры"
+          aria-label={`Шаг: ${stepLabel}${unit ? ' ' + unit : ''}. Набери своё число с клавиатуры`}
+        >
+          {stepLabel}
+          {unit && <span className="habit-step-unit"> {unit}</span>}
+        </button>
         <button
           type="button"
           className="habit-btn"
-          onClick={() => onAdjust(1)}
-          title={habit.format === 'time' ? `+${stepLabel}` : '+1'}
-          aria-label={habit.format === 'time' ? `Плюс ${stepLabel}` : 'Плюс 1'}
+          onClick={() => onAdjust(step)}
+          title={`Плюс ${stepLabel}`}
+          aria-label={`Плюс ${stepLabel}`}
         >
           +
         </button>
       </div>
+
     </li>
   );
 }

@@ -4527,12 +4527,55 @@
 }
 
 .habit-step {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  padding: 0 4px;
-  min-width: 42px;
+  border: 1px solid transparent;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  min-width: 52px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.habit-step-unit {
+  margin-left: 3px;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* A step the user typed reads in the habit's own colour, so it is obvious the
+   buttons no longer move by one. */
+.habit-step.custom {
+  color: var(--habit-color, var(--accent-cyan));
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-cyan)) 45%, transparent);
+}
+
+.habit-step:hover {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-cyan)) 60%, var(--border));
+}
+
+/* Digits are captured whenever focus is anywhere inside the card, so the whole
+   card — not just the pill — signals that it is listening. */
+.habit-card:focus-within .habit-step {
+  border-color: var(--habit-color, var(--accent-cyan));
+}
+
+.habit-card:focus,
+.habit-card:focus-visible {
+  outline: none;
+}
+
+.habit-card:focus-within {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-cyan)) 45%, var(--border));
 }
 
 /* ── Narrow screens: stack identity over the dial, full width ──── */

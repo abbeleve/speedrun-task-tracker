@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Habit, HabitEntry, Task } from './types';
 import {
   dayCompletion,
+  defaultStep,
   defaultUnit,
   habitAuto,
   habitHeatLevel,
@@ -12,6 +13,7 @@ import {
   isHabitComplete,
   isHabitDoneOn,
   formatHabit,
+  parseHabitAmount,
 } from './habits';
 
 const DAY = '2026-03-10';
@@ -240,5 +242,34 @@ describe('habitHistory', () => {
     const hist = habitHistory(h, [DAY, '2026-03-09'], [], [entry(5)]);
     expect(hist[0].value).toBe(5);
     expect(hist[1].value).toBe(0);
+  });
+});
+
+describe('defaultStep', () => {
+  it('moves time habits in five-minute chunks and counts by one', () => {
+    expect(defaultStep('time')).toBe(5);
+    expect(defaultStep('count')).toBe(1);
+  });
+});
+
+describe('parseHabitAmount', () => {
+  it('reads the digits typed into the step pill', () => {
+    expect(parseHabitAmount('25')).toBe(25);
+    expect(parseHabitAmount('  7 ')).toBe(7);
+  });
+
+  it('accepts a comma as the decimal separator', () => {
+    expect(parseHabitAmount('2,5')).toBe(2.5);
+  });
+
+  it('rejects anything that is not a usable step', () => {
+    for (const raw of ['', '   ', 'abc', '5 раз', '1.2.3', '-3', '+5', '5-']) {
+      expect(parseHabitAmount(raw)).toBeNull();
+    }
+  });
+
+  it('rejects zero, which would make both buttons no-ops', () => {
+    expect(parseHabitAmount('0')).toBeNull();
+    expect(parseHabitAmount('0,00')).toBeNull();
   });
 });

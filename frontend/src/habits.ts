@@ -20,6 +20,25 @@ export function defaultUnit(format: HabitFormat): string {
   return format === 'time' ? 'мин' : '';
 }
 
+// How much one tap of − / + moves a habit, when no amount was typed in. Time
+// habits move in 5-minute chunks (a single minute is never what anyone means);
+// count habits move by one.
+export function defaultStep(format: HabitFormat): number {
+  return format === 'time' ? 5 : 1;
+}
+
+// The digits typed into a card's step pill → the step to apply, or null while
+// the text is not a usable number yet (empty, or all zeroes). Only a magnitude
+// is parsed: the direction comes from which of the two buttons is pressed. A
+// comma works as the decimal separator, like the app's other number fields.
+export function parseHabitAmount(raw: string): number | null {
+  const text = raw.trim().replace(',', '.');
+  if (!/^\d*\.?\d+$/.test(text)) return null;
+  const n = parseFloat(text);
+  if (!isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 // The auto part of a habit's progress on one day, in the habit's own units
 // (minutes for 'time', integer count for 'count'). Linked-but-open tasks are
 // ignored — only really completed ones count, so the number is honest.
