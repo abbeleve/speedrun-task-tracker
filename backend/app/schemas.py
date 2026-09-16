@@ -112,6 +112,11 @@ class DayStateIn(BaseModel):
 class SleepIn(BaseModel):
     hours: Optional[List[int]] = None
     quality: Optional[int] = None
+    # Minutes from midnight. ``bed`` may sit past ``wake``, meaning the night
+    # ran through midnight. Absent on entries from clients that only track
+    # whole hours, which still round-trip through ``hours`` alone.
+    bed: Optional[int] = None
+    wake: Optional[int] = None
 
 
 class TemplateTask(BaseModel):

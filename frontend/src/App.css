@@ -2345,7 +2345,15 @@
 /* --- Sleep tracker --- */
 
 .sleep-card {
+  /* Hour cell width — recomputed in JS to span the card; the value here is the
+     fallback used until the grid has been measured. Its height stays put so a
+     wide card does not also become a tall one. */
   --sleep-cell: 22px;
+  --sleep-cell-h: 22px;
+  --sleep-gap: 3px;
+  --sleep-num-w: 34px;
+  --sleep-qual-w: 30px;
+  position: relative;
 }
 
 .sleep-header {
@@ -2665,7 +2673,7 @@
 .sleep-day-row {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--sleep-gap);
 }
 
 .sleep-hour-header {
@@ -2695,8 +2703,8 @@
 
 /* The fixed number column ("1 я", "2 я" …) aligned before the cells. */
 .sleep-day-num {
-  width: 34px;
-  flex: 0 0 34px;
+  width: var(--sleep-num-w);
+  flex: 0 0 var(--sleep-num-w);
   text-align: center;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -2727,8 +2735,9 @@
 }
 
 .sleep-cell {
+  position: relative;
   width: var(--sleep-cell);
-  height: var(--sleep-cell);
+  height: var(--sleep-cell-h);
   flex: 0 0 var(--sleep-cell);
   border: none;
   border-radius: 3px;
@@ -2736,7 +2745,7 @@
   cursor: pointer;
   padding: 0;
   margin: 0;
-  transition: background 120ms ease;
+  overflow: hidden;
 }
 
 .sleep-cell:hover:not(:disabled) {
@@ -2747,15 +2756,22 @@
   cursor: default;
 }
 
-.sleep-cell.checked {
+/* The slept part of the hour. A whole hour fills the cell edge to edge; the
+   hour sleep began or ended in fills only its share, which is what makes
+   01:40–07:15 readable at a glance rather than rounded away. */
+.sleep-cell-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
   background: #e26ba0;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
 }
 
 /* Quality dot (colored circle) */
 .qual-cell {
-  width: 30px;
-  flex: 0 0 30px;
+  width: var(--sleep-qual-w);
+  flex: 0 0 var(--sleep-qual-w);
   text-align: center;
 }
 
@@ -2795,6 +2811,134 @@
 .q4.filled { background: #2ecc71; }
 .q5.filled { background: #1abc9c; }
 
+/* ── Exact bed and wake times ───────────────────────────── */
+/* Opened by a click on any hour cell, pinned to the viewport so it is not
+   clipped by the grid it floats over. No backdrop: a click outside closes it
+   and still lands on whatever it hit, which keeps the grid clickable while the
+   editor follows along. */
+
+.sleep-pop {
+  position: fixed;
+  z-index: 60;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px 12px;
+}
+
+.sleep-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sleep-pop-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.sleep-pop-close {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.sleep-pop-close:hover {
+  color: var(--text-primary);
+}
+
+.sleep-pop-fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.sleep-pop-arrow {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  padding-bottom: 7px;
+}
+
+.sleep-time-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sleep-time-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-bottom: 3px;
+}
+
+.sleep-time-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.sleep-time-row:focus-within {
+  border-color: #e26ba0;
+}
+
+.sleep-time-step {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 20px;
+  flex: 0 0 20px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sleep-time-step:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.sleep-time-input {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  text-align: center;
+  padding: 5px 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sleep-pop-dur {
+  margin: 8px 0 10px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.sleep-pop-overnight {
+  color: var(--text-dim);
+}
+
+.sleep-pop-clear {
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+}
+
 /* ── Controls bar (below grids) ─────────────────────────── */
 
 .sleep-controls {
@@ -2828,26 +2972,20 @@
 
   .sleep-card {
     --sleep-cell: 16px;
+    --sleep-cell-h: 16px;
+    --sleep-gap: 2px;
+    --sleep-num-w: 28px;
+    --sleep-qual-w: 24px;
   }
 
   .sleep-month-scroll {
     max-height: 420px;
   }
 
-  .sleep-day-num {
-    width: 28px;
-    flex: 0 0 28px;
-  }
-
   .quality-dot {
     width: 18px;
     height: 18px;
     font-size: 10px;
-  }
-
-  .qual-cell {
-    width: 24px;
-    flex: 0 0 24px;
   }
 }
 

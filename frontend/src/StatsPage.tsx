@@ -9,6 +9,17 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { DayStats, Habit, HabitEntry, Task } from './types';
 import { dateKey, heatLevel, shiftDayKey, startOfWeek, todayKey } from './history';
 import { habitHeatLevel, habitTotal } from './habits';
+import {
+  entryWithRange,
+  extendToHour,
+  fmtClock,
+  hourSpan,
+  MIN_PER_DAY,
+  parseClock,
+  rangeOf,
+  sleepDuration,
+} from './sleep';
+import type { SleepData, SleepRange } from './sleep';
 import * as api from './api';
 
 const WEEKS_TO_SHOW = 53; // ~1 year
@@ -61,31 +72,10 @@ function fmtSumSec(sec: number): string {
   return fmtSec(sec);
 }
 
-function hoursWord(n: number): string {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return 'часов';
-  if (last === 1) return 'час';
-  if (last >= 2 && last <= 4) return 'часа';
-  return 'часов';
-}
-
-function sleepCount(selected: number[]): number {
-  if (!selected || selected.length === 0) return 0;
-  // Guard against non-number values (e.g. old-format data leaking through)
-  const nums = selected.filter((n): n is number => typeof n === 'number' && !Number.isNaN(n));
-  if (nums.length === 0) return 0;
-  const lo = Math.min(...nums);
-  const hi = Math.max(...nums);
-  return hi - lo + 1;
-}
+// How long a day's sleep lasted, in minutes — 0 when the day is unfilled.
+const sleptMin = (entry: SleepData | undefined) => sleepDuration(rangeOf(entry));
 
 // ── Data model ─────────────────────────────────────────────────────
-
-interface SleepData {
-  hours: number[]; // selected hour indices 0..23
-  quality: number | null; // 0..5
-}
 
 interface DayRef {
   key: string;
@@ -163,9 +153,9 @@ function cellTitle(c: HeatCellInfo): string {
   const parts = [fmtShortDate(c.key)];
   parts.push(`Работа: ${fmtSec(c.stats?.workSec ?? 0)}`);
   if ((c.stats?.restSec ?? 0) > 0) parts.push(`Отдых: ${fmtSec(c.stats!.restSec)}`);
-  const cnt = sleepCount(c.sleep?.hours ?? []);
-  if (cnt > 0) {
-    let t = `Сон: ${cnt} ${hoursWord(cnt)}`;
+  const range = rangeOf(c.sleep);
+  if (range) {
+    let t = `Сон: ${fmtDurMin(sleepDuration(range))} (${fmtClock(range.bed)}–${fmtClock(range.wake)})`;
     const q = c.sleep?.quality;
     if (q !== undefined && q !== null) t += ` ${QUALITY_EMOJIS[q]}`;
     parts.push(t);
@@ -250,16 +240,174 @@ function HoverTooltip({ tooltip }: { tooltip: TooltipState | null }) {
 
 const QUALITY_TITLES = ['Нет оценки', 'Ужасный', 'Плохой', 'Нормальный', 'Хороший', 'Отличный'] as const;
 
-function SleepDayRow({ date, dateKey: dk, entry, disabled, toggleHour, cycleQuality }: {
+const NUDGE_MIN = 5; // minutes one press of −/+ (or an arrow key) moves a moment
+const POP_WIDTH = 252;
+const POP_MARGIN = 10;
+const POP_HEIGHT = 190; // enough to decide whether the popover fits below the row
+
+// Moves a moment around the clock, so stepping back from 00:00 lands at 23:55
+// rather than before the day starts.
+const nudge = (min: number, by: number) => (((min + by) % MIN_PER_DAY) + MIN_PER_DAY) % MIN_PER_DAY;
+
+// One editable moment: a clock the user can type into ("7", "730", "7:30" all
+// read the same) with a press-to-step control on either side. The text is a
+// draft while it has focus and mirrors the range the rest of the time, so
+// clicking another cell of the same row moves it too.
+function TimeField({ label, value, onChange }: {
+  label: string;
+  value: number;
+  onChange: (min: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => fmtClock(value));
+  const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    if (!typing) setDraft(fmtClock(value));
+  }, [value, typing]);
+
+  const commit = () => {
+    setTyping(false);
+    const parsed = parseClock(draft);
+    if (parsed !== null && parsed !== value) onChange(parsed);
+    else setDraft(fmtClock(value));
+  };
+
+  const step = (by: number) => {
+    setTyping(false);
+    onChange(nudge(value, by));
+  };
+
+  return (
+    <div className="sleep-time-field">
+      <span className="sleep-time-label">{label}</span>
+      <div className="sleep-time-row">
+        <button
+          type="button"
+          className="sleep-time-step"
+          onClick={() => step(-NUDGE_MIN)}
+          aria-label={`${label}: на ${NUDGE_MIN} минут раньше`}
+        >
+          −
+        </button>
+        <input
+          className="sleep-time-input"
+          value={draft}
+          inputMode="numeric"
+          aria-label={label}
+          onChange={(e) => {
+            setTyping(true);
+            setDraft(e.target.value);
+          }}
+          onFocus={(e) => {
+            setTyping(true);
+            e.target.select();
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              step(e.key === 'ArrowUp' ? NUDGE_MIN : -NUDGE_MIN);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="sleep-time-step"
+          onClick={() => step(NUDGE_MIN)}
+          aria-label={`${label}: на ${NUDGE_MIN} минут позже`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The exact moments of one night. Clicking a cell has already laid down the
+// whole hours; this is where the two edges get their minutes. Edits apply as
+// they are made, so there is nothing to confirm — it closes on Escape or on a
+// click anywhere outside, and that click still reaches whatever it landed on,
+// which is what lets the grid keep taking clicks while this is open.
+function SleepTimePopover({ date, range, anchor, onChange, onClear, onClose }: {
+  date: Date;
+  range: SleepRange;
+  anchor: { x: number; y: number; bottom: number };
+  onChange: (range: SleepRange) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const left = Math.max(
+    POP_MARGIN,
+    Math.min(anchor.x - POP_WIDTH / 2, window.innerWidth - POP_MARGIN - POP_WIDTH)
+  );
+  const below = anchor.bottom + POP_MARGIN;
+  const top = below + POP_HEIGHT <= window.innerHeight ? below : anchor.y - POP_MARGIN - POP_HEIGHT;
+
+  const dur = sleepDuration(range);
+  const overnight = range.wake <= range.bed;
+
+  return (
+    <div className="sleep-pop" ref={boxRef} style={{ left, top, width: POP_WIDTH }}>
+      <header className="sleep-pop-head">
+        <span className="sleep-pop-date">
+          {date.getDate()} {MONTHS_SHORT[date.getMonth()]}
+        </span>
+        <button type="button" className="sleep-pop-close" onClick={onClose} title="Закрыть">
+          ✕
+        </button>
+      </header>
+
+      <div className="sleep-pop-fields">
+        <TimeField label="Заснул" value={range.bed} onChange={(bed) => onChange({ ...range, bed })} />
+        <span className="sleep-pop-arrow" aria-hidden>
+          →
+        </span>
+        <TimeField label="Проснулся" value={range.wake} onChange={(wake) => onChange({ ...range, wake })} />
+      </div>
+
+      <p className="sleep-pop-dur">
+        {fmtDurMin(dur)}
+        {overnight && <span className="sleep-pop-overnight"> · проснулся на следующий день</span>}
+      </p>
+
+      <button type="button" className="btn sleep-pop-clear" onClick={onClear}>
+        Убрать сон за этот день
+      </button>
+    </div>
+  );
+}
+
+function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, cycleQuality }: {
   date: Date;
   dateKey: string;
   entry?: SleepData;
   disabled: boolean;
-  toggleHour: (hour: number) => void;
+  onPickHour: (hour: number, cell: DOMRect) => void;
   cycleQuality: () => void;
 }) {
-  const hrs = entry?.hours ?? [];
+  const range = rangeOf(entry);
   const qual = entry?.quality ?? null;
+  const spanTitle = range ? `${fmtClock(range.bed)}–${fmtClock(range.wake)} · ${fmtDurMin(sleepDuration(range))}` : null;
 
   return (
     <div className={`sleep-day-row${disabled ? ' future' : ''}`} data-key={dk}>
@@ -267,16 +415,26 @@ function SleepDayRow({ date, dateKey: dk, entry, disabled, toggleHour, cycleQual
         {date.getDate()}
         <span className="sleep-day-mon">{MONTHS_SHORT[date.getMonth()].charAt(0)}</span>
       </div>
-      {Array.from({ length: HOURS_PER_DAY }, (_, h) => h).map((h) => (
-        <button
-          key={h}
-          type="button"
-          className={`sleep-cell${hrs.includes(h) ? ' checked' : ''}`}
-          disabled={disabled}
-          title={`${h}:00`}
-          onClick={() => toggleHour(h)}
-        />
-      ))}
+      {Array.from({ length: HOURS_PER_DAY }, (_, h) => h).map((h) => {
+        const span = hourSpan(range, h);
+        return (
+          <button
+            key={h}
+            type="button"
+            className={`sleep-cell${span ? ' checked' : ''}`}
+            disabled={disabled}
+            title={span && spanTitle ? spanTitle : `${h}:00`}
+            onClick={(e) => onPickHour(h, e.currentTarget.getBoundingClientRect())}
+          >
+            {span && (
+              <span
+                className="sleep-cell-fill"
+                style={{ left: `${span.from * 100}%`, width: `${(span.to - span.from) * 100}%` }}
+              />
+            )}
+          </button>
+        );
+      })}
       <div className="qual-cell">
         <button
           type="button"
@@ -306,11 +464,11 @@ function SleepHourHeader() {
 }
 
 // A whole month: title + hour header + one row per day.
-function SleepMonth({ block, entries, disabledFrom, onToggleHour, onCycleQuality }: {
+function SleepMonth({ block, entries, disabledFrom, onPickHour, onCycleQuality }: {
   block: MonthBlock;
   entries: Record<string, SleepData>;
   disabledFrom: Date;
-  onToggleHour: (dayKey: string, hour: number) => void;
+  onPickHour: (dayKey: string, date: Date, hour: number, cell: DOMRect) => void;
   onCycleQuality: (dayKey: string) => void;
 }) {
   return (
@@ -324,7 +482,7 @@ function SleepMonth({ block, entries, disabledFrom, onToggleHour, onCycleQuality
           dateKey={d.key}
           entry={entries[d.key]}
           disabled={d.date.getTime() > disabledFrom.getTime()}
-          toggleHour={(h) => onToggleHour(d.key, h)}
+          onPickHour={(h, cell) => onPickHour(d.key, d.date, h, cell)}
           cycleQuality={() => onCycleQuality(d.key)}
         />
       ))}
@@ -433,7 +591,8 @@ export interface StatsData {
   history: Record<string, DayStats>;
   sleepLog: Record<string, SleepData>;
   today: Date;
-  toggleHour: (dayKey: string, hour: number) => void;
+  pickHour: (dayKey: string, hour: number) => SleepRange | null;
+  setRange: (dayKey: string, range: SleepRange | null) => void;
   cycleQuality: (dayKey: string) => void;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
@@ -444,6 +603,12 @@ export function useStatsData(): StatsData {
   const [history, setHistory] = useState<Record<string, DayStats>>({});
   const [sleepLog, setSleepLog] = useState<Record<string, SleepData>>({});
   const [selYear, setSelYear] = useState(() => new Date().getFullYear());
+
+  // The editing callbacks read the current log through this mirror instead of
+  // closing over it, so they keep a stable identity while the popover holds on
+  // to them across a stream of edits.
+  const sleepLogRef = useRef(sleepLog);
+  sleepLogRef.current = sleepLog;
 
   // Load the user's history + sleep log from the backend on mount.
   useEffect(() => {
@@ -511,7 +676,7 @@ export function useStatsData(): StatsData {
   // Summary for selected year
   const summary = useMemo(() => {
     let totalWorkSec = 0;
-    let totalHrs = 0;
+    let totalMin = 0;
     let daysWithSleep = 0;
 
     for (const [k, e] of Object.entries(sleepLog)) {
@@ -521,12 +686,12 @@ export function useStatsData(): StatsData {
       const w = history[k];
       if (w) totalWorkSec += w.workSec;
       daysWithSleep++;
-      totalHrs += sleepCount(e.hours);
+      totalMin += sleptMin(e);
     }
 
     return {
       totalWorkSec,
-      avgSleep: daysWithSleep > 0 ? Math.round(totalHrs / daysWithSleep * 60) : null,
+      avgSleep: daysWithSleep > 0 ? Math.round(totalMin / daysWithSleep) : null,
       daysWithSleep,
       totalDays: yearDays.length,
     };
@@ -548,68 +713,58 @@ export function useStatsData(): StatsData {
 
   // Year totals
   const yearTotalHrs = useMemo(() => {
-    let sum = 0;
-    for (const d of yearDays) {
-      const e = sleepLog[d.key];
-      if (e?.hours.length) sum += sleepCount(e.hours);
-    }
-    return sum;
+    let min = 0;
+    for (const d of yearDays) min += sleptMin(sleepLog[d.key]);
+    return Math.round(min / 60);
   }, [yearDays, sleepLog]);
 
   // ── Actions ──────────────────────────────────────────────────
 
-  const toggleHour = (dayKey: string, hour: number) => {
-    const cur = sleepLog[dayKey];
-    const existing = cur ? [...cur.hours].sort((a, b) => a - b) : [];
-
-    if (existing.includes(hour)) {
-      // Remove contiguous range from edge to this hour
-      const pos = existing.indexOf(hour);
-      const newHrs = existing.slice(0, pos);
-      const next = { ...cur, hours: newHrs };
-      if (newHrs.length === 0 && next.quality === null) {
-        void api.saveSleepLog(dayKey, null);
-        setSleepLog((prev) => {
-          const n = { ...prev };
-          delete n[dayKey];
-          return n;
-        });
-      } else {
-        void api.saveSleepLog(dayKey, next);
-        setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
-      }
-    } else if (existing.length === 0) {
-      // First click
-      void api.saveSleepLog(dayKey, { hours: [hour], quality: null });
-      setSleepLog((prev) => ({ ...prev, [dayKey]: { hours: [hour], quality: null } }));
-    } else {
-      const lo = existing[0];
-      const hi = existing[existing.length - 1];
-
-      if (hour > hi) {
-        const extend: number[] = [];
-        for (let h = hi + 1; h <= hour; h++) extend.push(h);
-        const next = { ...cur, hours: [...existing, ...extend] };
-        void api.saveSleepLog(dayKey, next);
-        setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
-      } else if (hour < lo) {
-        const extend: number[] = [];
-        for (let h = hour; h < lo; h++) extend.push(h);
-        const next = { ...cur, hours: [...extend, ...existing] };
-        void api.saveSleepLog(dayKey, next);
-        setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
-      }
-      // inside range → no change
-    }
-  };
-
-  const cycleQuality = (dayKey: string) => {
-    const cur = sleepLog[dayKey] ?? { hours: [], quality: null };
-    const nq = cur.quality === null ? 1 : cur.quality >= QUALITY_LEVELS - 1 ? null : cur.quality + 1;
-    const next = { ...cur, quality: nq };
+  // One place where a day's entry reaches the server and the local copy: an
+  // entry that has nothing left in it (no sleep, no rating) is deleted rather
+  // than stored empty.
+  const writeEntry = useCallback((dayKey: string, next: SleepData | null) => {
     void api.saveSleepLog(dayKey, next);
-    setSleepLog((prev) => ({ ...prev, [dayKey]: next }));
-  };
+    setSleepLog((prev) => {
+      if (next === null) {
+        if (!(dayKey in prev)) return prev;
+        const n = { ...prev };
+        delete n[dayKey];
+        return n;
+      }
+      return { ...prev, [dayKey]: next };
+    });
+  }, []);
+
+  // Clicking an hour cell lays down whole hours, the same as it always has.
+  // The range it leaves behind is returned so the caller can open the editor
+  // on it — that is where the minutes are set.
+  const pickHour = useCallback(
+    (dayKey: string, hour: number): SleepRange | null => {
+      const cur = sleepLogRef.current[dayKey];
+      const range = extendToHour(rangeOf(cur), hour);
+      writeEntry(dayKey, entryWithRange(cur, range));
+      return range;
+    },
+    [writeEntry]
+  );
+
+  const setRange = useCallback(
+    (dayKey: string, range: SleepRange | null) => {
+      writeEntry(dayKey, entryWithRange(sleepLogRef.current[dayKey], range));
+    },
+    [writeEntry]
+  );
+
+  const cycleQuality = useCallback(
+    (dayKey: string) => {
+      const cur = sleepLogRef.current[dayKey] ?? { hours: [], quality: null };
+      const nq = cur.quality === null ? 1 : cur.quality >= QUALITY_LEVELS - 1 ? null : cur.quality + 1;
+      const next = { ...cur, quality: nq };
+      writeEntry(dayKey, next.hours.length === 0 && nq === null ? null : next);
+    },
+    [writeEntry]
+  );
 
   // ── Lazy month loading (infinite scroll, both directions) ──
   // Months buffer around the current one. Scrolling near the top (older) or
@@ -732,7 +887,8 @@ export function useStatsData(): StatsData {
     history,
     sleepLog,
     today,
-    toggleHour,
+    pickHour,
+    setRange,
     cycleQuality,
     scrollRef,
     onScroll,
@@ -1095,10 +1251,95 @@ export function ActivityStatsSummary({ stats }: { stats: StatsData }) {
 
 // ── Section 3: sleep tracker — monthly scroll, 24h per day ─────────────
 
+const SLEEP_CELL_MIN = 16;
+const SLEEP_CELL_MAX = 48;
+
+// Widens the hour cells to span the card instead of leaving the grid huddled
+// against the left edge on a wide screen. The fixed parts of a row (the day
+// number, the quality dot, the gaps) are read from the stylesheet rather than
+// repeated here, so the breakpoint that shrinks them stays the one source of
+// truth. Falls back to the CSS default until measured.
+function useSleepCellWidth(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  const [cell, setCell] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const compute = () => {
+      const cs = getComputedStyle(el);
+      const num = (v: string, fallback: number) => parseFloat(cs.getPropertyValue(v)) || fallback;
+      const fixed =
+        parseFloat(cs.paddingLeft) +
+        parseFloat(cs.paddingRight) +
+        num('--sleep-num-w', 34) +
+        num('--sleep-qual-w', 30) +
+        num('--sleep-gap', 3) * (HOURS_PER_DAY + 1);
+      const raw = Math.floor((el.clientWidth - fixed) / HOURS_PER_DAY);
+      setCell(Math.min(SLEEP_CELL_MAX, Math.max(SLEEP_CELL_MIN, raw)));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [scrollRef]);
+
+  return cell;
+}
+
+// Which day's exact moments are open for editing, and where over the grid the
+// editor should sit. Held here rather than per row so only one is ever open.
+interface SleepEdit {
+  dayKey: string;
+  date: Date;
+  range: SleepRange;
+  anchor: { x: number; y: number; bottom: number };
+}
+
 export function SleepTracker({ stats }: { stats: StatsData }) {
-  const { months, sleepLog, today, toggleHour, cycleQuality, scrollRef, onScroll, targetMonth, yearTotalHrs } = stats;
+  const { months, sleepLog, today, pickHour, setRange, cycleQuality, scrollRef, onScroll, targetMonth, yearTotalHrs } =
+    stats;
+  const cellWidth = useSleepCellWidth(scrollRef);
+  const [edit, setEdit] = useState<SleepEdit | null>(null);
+
+  // A click on a cell does two things: it lays down the whole hours, and it
+  // opens the editor on what that left, so the minutes are one keystroke away.
+  // A click that emptied the day has nothing left to edit.
+  const onPickHour = useCallback(
+    (dayKey: string, date: Date, hour: number, cell: DOMRect) => {
+      const range = pickHour(dayKey, hour);
+      setEdit(
+        range && { dayKey, date, range, anchor: { x: cell.left + cell.width / 2, y: cell.top, bottom: cell.bottom } }
+      );
+    },
+    [pickHour]
+  );
+
+  // The popover is anchored to a cell in the scrolling grid, so it follows
+  // nothing once the grid moves under it — close it instead of letting it
+  // float over an unrelated row.
+  const onScrollGrid = useCallback(() => {
+    setEdit(null);
+    onScroll();
+  }, [onScroll]);
+
+  const applyRange = useCallback(
+    (range: SleepRange) => {
+      setEdit((cur) => (cur ? { ...cur, range } : cur));
+      if (edit) setRange(edit.dayKey, range);
+    },
+    [edit, setRange]
+  );
+
+  const clearDay = useCallback(() => {
+    if (edit) setRange(edit.dayKey, null);
+    setEdit(null);
+  }, [edit, setRange]);
+
   return (
-    <section className="card sleep-card">
+    <section
+      className="card sleep-card"
+      style={cellWidth !== null ? ({ '--sleep-cell': `${cellWidth}px` } as CSSProperties) : undefined}
+    >
       <div className="sleep-header">
         <h2 className="stats-title">😴 Трекер сна</h2>
         <div className="sleep-controls-top">
@@ -1129,18 +1370,29 @@ export function SleepTracker({ stats }: { stats: StatsData }) {
         </div>
       </div>
 
-      <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScroll}>
+      <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScrollGrid}>
         {months.map((block) => (
           <SleepMonth
             key={block.key}
             block={block}
             entries={sleepLog}
             disabledFrom={today}
-            onToggleHour={toggleHour}
+            onPickHour={onPickHour}
             onCycleQuality={cycleQuality}
           />
         ))}
       </div>
+
+      {edit && (
+        <SleepTimePopover
+          date={edit.date}
+          range={edit.range}
+          anchor={edit.anchor}
+          onChange={applyRange}
+          onClear={clearDay}
+          onClose={() => setEdit(null)}
+        />
+      )}
     </section>
   );
 }

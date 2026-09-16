@@ -125,10 +125,6 @@ export interface RunRecord {
   tasks: Task[]; // snapshot of the session's plan (survives tracker reset)
 }
 
-export interface SleepEntry {
-  bed: number | null; // minutes from midnight when the person went to bed
-  wake: number | null; // minutes from midnight when the person woke up
-}
 
 // How a habit's daily progress is counted. 'count' = quota of units per day
 // (e.g. 10 отжиманий); 'time' = quota of minutes per day (e.g. 300 ≈ 5 часов).

@@ -351,10 +351,16 @@ def put_day(
 @app.get('/api/sleep')
 def get_sleep(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
     rows = conn.execute(
-        'SELECT date, hours, quality FROM sleep_log WHERE user_id = ?', (user['id'],)
+        'SELECT date, hours, quality, bed_min, wake_min FROM sleep_log WHERE user_id = ?',
+        (user['id'],),
     ).fetchall()
     return {
-        r['date']: {'hours': json.loads(r['hours']), 'quality': r['quality']}
+        r['date']: {
+            'hours': json.loads(r['hours']),
+            'quality': r['quality'],
+            'bed': r['bed_min'],
+            'wake': r['wake_min'],
+        }
         for r in rows
     }
 
@@ -370,8 +376,16 @@ def put_sleep(
     has_data = bool(body.hours) or body.quality is not None
     if has_data:
         conn.execute(
-            'INSERT INTO sleep_log (user_id, date, hours, quality) VALUES (?, ?, ?, ?)',
-            (user['id'], date, json.dumps(body.hours or []), body.quality),
+            'INSERT INTO sleep_log (user_id, date, hours, quality, bed_min, wake_min)'
+            ' VALUES (?, ?, ?, ?, ?, ?)',
+            (
+                user['id'],
+                date,
+                json.dumps(body.hours or []),
+                body.quality,
+                body.bed,
+                body.wake,
+            ),
         )
     conn.commit()
     return {'ok': True}

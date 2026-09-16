@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS sleep_log (
     date TEXT NOT NULL,
     hours TEXT NOT NULL DEFAULT '[]',
     quality INTEGER,
+    -- Falling asleep and waking, in minutes from that date's midnight. NULL on
+    -- rows written before the tracker knew minutes; the client reads those back
+    -- from ``hours`` instead. ``bed_min >= wake_min`` means sleep ran past
+    -- midnight and ended the next morning.
+    bed_min INTEGER,
+    wake_min INTEGER,
     PRIMARY KEY (user_id, date)
 );
 
@@ -110,7 +116,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 def init_db() -> None:
@@ -146,6 +152,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(
         conn, 'history', 'overtake_sec', 'REAL NOT NULL DEFAULT 0'
     )
+    _add_column_if_missing(conn, 'sleep_log', 'bed_min', 'INTEGER')
+    _add_column_if_missing(conn, 'sleep_log', 'wake_min', 'INTEGER')
     if version < _SCHEMA_VERSION:
         conn.execute(f'PRAGMA user_version = {_SCHEMA_VERSION}')
 

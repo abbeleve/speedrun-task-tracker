@@ -4,6 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
+import type { SleepData } from './sleep';
 import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
@@ -61,10 +62,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // ── Shared types (server contract) ─────────────────────────────────
 
-export interface SleepLogData {
-  hours: number[];
-  quality: number | null;
-}
+export type { SleepData as SleepLogData } from './sleep';
 
 // Re-export the shared entities so callers can import them uniformly from ./api.
 export type { DayState, DayStats, RunRecord, Template, TaskTemplate } from './types';
@@ -163,11 +161,11 @@ export async function loadDays(): Promise<Record<string, DayState>> {
 
 // ── Sleep log ──────────────────────────────────────────────────────
 
-export async function loadSleepLog(): Promise<Record<string, SleepLogData>> {
+export async function loadSleepLog(): Promise<Record<string, SleepData>> {
   return apiFetch('/sleep');
 }
 
-export async function saveSleepLog(date: string, entry: SleepLogData | null): Promise<void> {
+export async function saveSleepLog(date: string, entry: SleepData | null): Promise<void> {
   const hasData = entry !== null && (entry.hours.length > 0 || entry.quality !== null);
   await apiFetch(`/sleep/${encodeURIComponent(date)}`, {
     method: 'PUT',

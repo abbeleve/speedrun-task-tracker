@@ -57,17 +57,31 @@ def test_sleep_crud(client, auth_headers):
     put = client.put(
         '/api/sleep/2026-09-10',
         headers=auth_headers,
-        json={'hours': [23, 0, 1, 2], 'quality': 4},
+        json={'hours': [23, 0, 1, 2], 'quality': 4, 'bed': 23 * 60 + 40, 'wake': 2 * 60 + 15},
     )
     assert put.status_code == 200
 
     got = client.get('/api/sleep', headers=auth_headers).json()
     assert got['2026-09-10']['hours'] == [23, 0, 1, 2]
     assert got['2026-09-10']['quality'] == 4
+    assert got['2026-09-10']['bed'] == 23 * 60 + 40
+    assert got['2026-09-10']['wake'] == 2 * 60 + 15
 
     # Sending an empty body removes the entry
     client.put('/api/sleep/2026-09-10', headers=auth_headers, json={})
     assert client.get('/api/sleep', headers=auth_headers).json() == {}
+
+
+def test_sleep_entry_without_minutes(client, auth_headers):
+    # A client that only tracks whole hours still round-trips; the minutes come
+    # back empty for the reader to derive from the hours.
+    client.put(
+        '/api/sleep/2026-09-11', headers=auth_headers, json={'hours': [1, 2, 3]}
+    )
+    got = client.get('/api/sleep', headers=auth_headers).json()['2026-09-11']
+    assert got['hours'] == [1, 2, 3]
+    assert got['bed'] is None
+    assert got['wake'] is None
 
 
 def test_run_templates_crud(client, auth_headers):
