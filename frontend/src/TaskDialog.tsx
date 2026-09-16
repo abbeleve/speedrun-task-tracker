@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Habit, RepeatMode, Task, TaskType } from './types';
-import { ALL_EMOJIS, EMOJI_DATA, TASK_COLORS, resolveTaskEmoji } from './types';
+import {
+  EMOJI_CATEGORY_ICONS,
+  TASK_COLORS,
+  groupedEmojis,
+  resolveTaskEmoji,
+} from './types';
 import { INCREASING_SERIES } from './tasks';
 import { DAY_MIN, isDone } from './schedule';
 
@@ -163,13 +168,13 @@ function TaskDialog({
     setPopHeight(formRef.current?.offsetHeight ?? 0);
   }, [anchor, emojiOpen, repeatOn]);
 
-  const emojis = useMemo(() => {
-    const q = emojiSearch.trim().toLowerCase();
-    if (!q) return ALL_EMOJIS;
-    return EMOJI_DATA.filter((e) => e.keywords.some((k) => k.includes(q)) || e.emoji === q).map(
-      (e) => e.emoji
-    );
-  }, [emojiSearch]);
+  const emojiGroups = useMemo(() => groupedEmojis(emojiSearch), [emojiSearch]);
+  const emojiGridRef = useRef<HTMLDivElement>(null);
+  const scrollToCategory = (category: string) => {
+    const grid = emojiGridRef.current;
+    const header = grid?.querySelector(`[data-category="${CSS.escape(category)}"]`);
+    header?.scrollIntoView({ block: 'start' });
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,19 +258,41 @@ function TaskDialog({
               placeholder="Поиск иконки…"
               autoFocus
             />
-            <div className="cal-emoji-grid">
-              {emojis.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  className={`cal-emoji-cell${e === emoji ? ' active' : ''}`}
-                  onClick={() => {
-                    setEmoji(e);
-                    setEmojiOpen(false);
-                  }}
-                >
-                  {e}
-                </button>
+            {!emojiSearch.trim() && (
+              <div className="cal-emoji-tabs">
+                {emojiGroups.map((g) => (
+                  <button
+                    key={g.category}
+                    type="button"
+                    className="cal-emoji-tab"
+                    title={g.category}
+                    onClick={() => scrollToCategory(g.category)}
+                  >
+                    {EMOJI_CATEGORY_ICONS[g.category]}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="cal-emoji-grid" ref={emojiGridRef}>
+              {emojiGroups.map((g) => (
+                <div key={g.category} className="cal-emoji-group">
+                  <div className="cal-emoji-cat" data-category={g.category}>
+                    {g.category}
+                  </div>
+                  {g.emojis.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      className={`cal-emoji-cell${e === emoji ? ' active' : ''}`}
+                      onClick={() => {
+                        setEmoji(e);
+                        setEmojiOpen(false);
+                      }}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
