@@ -1335,3 +1335,87 @@
   color: var(--text-dim);
   flex: none;
 }
+
+/* ── batch selection (lasso) ─────────────────────────────────────
+   A press held still on empty canvas arms a rectangle over the grid; every
+   block it touches takes the ring below, and the batch then drags as one. */
+
+.cal-marquee {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  border: 1px dashed var(--accent-cyan);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.cal-marquee span {
+  transform: translateY(-50%);
+  background: var(--accent-cyan);
+  color: var(--bg-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The double ring keeps the block's own colour readable underneath: a dark
+   gap first, then the selection colour. */
+.cal-block.selected {
+  box-shadow:
+    0 0 0 2px var(--bg-secondary),
+    0 0 0 4px var(--accent-cyan);
+  z-index: 4;
+}
+
+.cal-reminder.selected {
+  box-shadow:
+    0 0 0 1px var(--bg-secondary),
+    0 0 0 3px var(--accent-cyan);
+  z-index: 7;
+}
+
+/* Under the cursor for as long as the press has to be held: the ring closes
+   on the grid dot exactly when the lasso takes over from drawing a block. */
+.cal-hold-cue {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.cal-hold-ring {
+  position: absolute;
+  left: -19px;
+  top: -19px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-cyan);
+  animation: cal-hold-arm 1000ms linear forwards;
+}
+
+@keyframes cal-hold-arm {
+  0% { transform: scale(1.9); opacity: 0; }
+  60% { opacity: 0.5; }
+  100% { transform: scale(0.55); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-hold-ring {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(0.7);
+  }
+}
+
+.cal-group-menu .cal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

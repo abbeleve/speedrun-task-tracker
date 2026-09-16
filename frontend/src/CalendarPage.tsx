@@ -14,6 +14,7 @@ import {
   daySegments,
   isDone,
   isReminder,
+  isScheduled,
   isSession,
   mergeSuggestions,
   newSessionId,
@@ -22,6 +23,14 @@ import {
   taskEndMs,
   taskStartMs,
 } from './schedule';
+import type { Band } from './selection';
+import {
+  HOLD_MS,
+  HOLD_SLOP_PX,
+  chainOfSelection,
+  splitPatches,
+  tasksInBand,
+} from './selection';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, projectedFinishMs } from './credit';
 import { clockTime, compactDur, signedDur } from './format';
@@ -102,7 +111,19 @@ function gapMenuStyle(anchor: DialogAnchor): React.CSSProperties {
 // ── drag gestures ──────────────────────────────────────────────────
 
 type Gesture =
-  | { kind: 'create'; day: string; anchorMin: number; startMin: number; endMin: number }
+  // A press on empty canvas, still undecided: drawn away from where it started
+  // it becomes a new block, held on the spot for HOLD_MS it becomes the lasso
+  // below instead.
+  | {
+      kind: 'create';
+      day: string;
+      anchorMin: number;
+      startMin: number;
+      endMin: number;
+      anchorX: number; // where the press landed, for the "held still?" test
+      anchorY: number;
+      moved: boolean;
+    }
   | {
       kind: 'move';
       task: Task;
@@ -118,7 +139,13 @@ type Gesture =
   | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean }
   // Right-drag on the canvas: a vertical time band, ignoring which day/column
   // it started or wandered over — only the minute-of-day matters.
-  | { kind: 'zoom'; anchorMin: number; startMin: number; endMin: number };
+  | { kind: 'zoom'; anchorMin: number; startMin: number; endMin: number }
+  // Armed by holding the button still on the canvas: a rectangle swept over
+  // the grid that picks up every block it touches (see selection.ts).
+  | { kind: 'lasso'; anchorDayIdx: number; anchorMin: number; band: Band; baseIds: string[] }
+  // Dragging a selection by one of its blocks: all of them move by the same
+  // delta, so the shape of the batch is kept.
+  | { kind: 'multi'; tasks: Task[]; anchorMs: number; deltaMs: number; moved: boolean };
 
 function CalendarPage({
   store,
@@ -150,6 +177,13 @@ function CalendarPage({
   );
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  // Blocks picked with the lasso. They are drawn with a ring, drag as one
+  // batch, and can be split off into a sequence of their own.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectedRef = useRef<Set<string>>(new Set());
+  // The menu on the selection, opened by clicking the batch without dragging it.
+  const [groupMenu, setGroupMenu] = useState<DialogAnchor | null>(null);
+  const holdTimer = useRef<number | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const backlogRef = useRef<HTMLDivElement>(null);
@@ -394,6 +428,79 @@ function CalendarPage({
     [store, closeDialog]
   );
 
+  // ── the selected batch ───────────────────────────────────────────
+  const setSelection = useCallback((next: Set<string>) => {
+    selectedRef.current = next;
+    setSelectedIds(next);
+  }, []);
+
+  // The press is no longer waiting to become a lasso.
+  const cancelHold = useCallback(() => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelHold, [cancelHold]);
+
+
+  const selectedTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => selectedIds.has(t.id))
+        .sort((a, b) => taskStartMs(a) - taskStartMs(b) || a.id.localeCompare(b.id)),
+    [tasks, selectedIds]
+  );
+
+  // Blocks that have gone — deleted, or sent back to the backlog — leave the
+  // selection with them, so nothing is dragged by a ghost id.
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const alive = tasks.filter((t) => selectedIds.has(t.id) && isScheduled(t));
+    if (alive.length !== selectedIds.size) setSelection(new Set(alive.map((t) => t.id)));
+  }, [tasks, selectedIds, setSelection]);
+
+  // A selection describes blocks that are on screen: navigating away ends it.
+  useEffect(() => {
+    setSelection(new Set());
+    setGroupMenu(null);
+  }, [view, anchor, setSelection]);
+
+  useEffect(() => {
+    if (selectedIds.size === 0 || dialog || sessionPop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setSelection(new Set());
+      setGroupMenu(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedIds, dialog, sessionPop, setSelection]);
+
+  // The sequence every selected block shares, if they share one at all — only
+  // then can the batch be cut out of it.
+  const selectionChain = useMemo(
+    () => chainOfSelection(chains, selectedIds),
+    [chains, selectedIds]
+  );
+
+  // Cut the batch out of the sequence it sits in and make it a second one:
+  // the blocks keep their slots, but a session of their own means they now
+  // hold together and move as a separate sequence, leaving the rest of the
+  // original behind. The session editor opens on the new sequence straight
+  // away, so it can be named while it is still under the cursor.
+  const splitSelection = useCallback(
+    (at: DialogAnchor) => {
+      if (selectedTasks.length === 0) return;
+      store.patchTasks(splitPatches(selectedTasks, newSessionId()));
+      setGroupMenu(null);
+      setSelection(new Set());
+      setSessionPop({ taskId: selectedTasks[0].id, anchor: at });
+    },
+    [selectedTasks, store, setSelection]
+  );
+
   const draftTask = useCallback((day: string, startMin: number, lengthMin: number): Task => {
     const i = Math.floor(Math.random() * TASK_COLORS.length);
     return {
@@ -415,7 +522,7 @@ function CalendarPage({
   // ── pointer → slot ───────────────────────────────────────────────
 
   const slotAt = useCallback(
-    (clientX: number, clientY: number): { day: string; min: number } | null => {
+    (clientX: number, clientY: number): { day: string; dayIdx: number; min: number } | null => {
       const el = columnsRef.current;
       if (!el || visibleDays.length === 0) return null;
       const rect = el.getBoundingClientRect();
@@ -425,7 +532,7 @@ function CalendarPage({
         Math.min(visibleDays.length - 1, Math.floor((clientX - rect.left) / colWidth))
       );
       const min = Math.max(0, Math.min(DAY_MIN, (clientY - rect.top) / pxPerMin));
-      return { day: visibleDays[idx], min };
+      return { day: visibleDays[idx], dayIdx: idx, min };
     },
     [visibleDays, pxPerMin]
   );
@@ -441,6 +548,26 @@ function CalendarPage({
     const onMove = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
+      if (g.kind === 'create') {
+        // Still within a few pixels of where it landed: the press is holding,
+        // not drawing — leave the draft at its default size and let the hold
+        // timer turn it into a lasso.
+        const still =
+          Math.abs(e.clientX - g.anchorX) <= HOLD_SLOP_PX &&
+          Math.abs(e.clientY - g.anchorY) <= HOLD_SLOP_PX;
+        if (still && !g.moved) return;
+        cancelHold();
+        const slot = slotAt(e.clientX, e.clientY);
+        if (!slot) return;
+        const min = snap(slot.min);
+        setGestureState({
+          ...g,
+          moved: true,
+          startMin: Math.min(g.anchorMin, min),
+          endMin: Math.max(g.anchorMin + SNAP_MIN, min),
+        });
+        return;
+      }
       if (g.kind === 'move') {
         const rect = backlogRef.current?.getBoundingClientRect();
         const overBacklog =
@@ -456,14 +583,7 @@ function CalendarPage({
       }
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
-      if (g.kind === 'create') {
-        const min = snap(slot.min);
-        setGestureState({
-          ...g,
-          startMin: Math.min(g.anchorMin, min),
-          endMin: Math.max(g.anchorMin + SNAP_MIN, min),
-        });
-      } else if (g.kind === 'move') {
+      if (g.kind === 'move') {
         const startMin = snap(slot.min - g.grabMin);
         setGestureState({
           ...g,
@@ -482,7 +602,23 @@ function CalendarPage({
           startMin: Math.min(g.anchorMin, min),
           endMin: Math.max(g.anchorMin, min),
         });
-      } else {
+      } else if (g.kind === 'lasso') {
+        // The selection is rebuilt on every move, so the rings follow the
+        // rectangle live — by the time the button comes up there is nothing
+        // left to commit.
+        const band: Band = {
+          fromDayIdx: g.anchorDayIdx,
+          toDayIdx: slot.dayIdx,
+          fromMin: g.anchorMin,
+          toMin: slot.min,
+        };
+        setGestureState({ ...g, band });
+        const picked = tasksInBand(store.tasks, visibleDays, band);
+        setSelection(new Set([...g.baseIds, ...picked.map((t) => t.id)]));
+      } else if (g.kind === 'multi') {
+        const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
+        setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
+      } else if (g.kind === 'resize') {
         const lengthMin = Math.max(MIN_LENGTH_MIN, snap(slot.min - (g.task.start ?? 0)));
         setGestureState({ ...g, lengthMin });
       }
@@ -491,8 +627,15 @@ function CalendarPage({
     const onUp = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
+      cancelHold();
       setGestureState(null);
       if (g.kind === 'create') {
+        // A plain click on the canvas while a batch is selected drops the
+        // selection rather than dropping a new block on top of it.
+        if (!g.moved && selectedRef.current.size > 0) {
+          setSelection(new Set());
+          return;
+        }
         const length = Math.max(MIN_LENGTH_MIN, g.endMin - g.startMin);
         // The block stays on the grid and the editor opens beside it, so the
         // shape just drawn is never lost behind a dialog.
@@ -518,7 +661,11 @@ function CalendarPage({
         } else {
           setZoomRange(null);
         }
-      } else if (g.lengthMin * 60 !== g.task.plannedTime) {
+      } else if (g.kind === 'multi') {
+        // Clicked rather than dragged: the batch opens its own menu.
+        if (!g.moved) setGroupMenu({ x: e.clientX, y: e.clientY });
+        else if (g.deltaMs !== 0) store.patchTasks(shiftPatches(g.tasks, g.deltaMs));
+      } else if (g.kind === 'resize' && g.lengthMin * 60 !== g.task.plannedTime) {
         store.patchTask(g.task.id, { plannedTime: g.lengthMin * 60 });
       }
     };
@@ -531,8 +678,22 @@ function CalendarPage({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [slotAt, setGestureState, draftTask, store, openDialog, openSession]);
+  }, [
+    slotAt,
+    setGestureState,
+    setSelection,
+    cancelHold,
+    draftTask,
+    store,
+    visibleDays,
+    openDialog,
+    openSession,
+  ]);
 
+  // A press on the canvas starts as a block being drawn. Held on the spot for
+  // a second instead — the ring under the cursor fills to say so — it turns
+  // into a lasso over the grid, and dragging from there picks up blocks rather
+  // than drawing a new one. Shift adds to what is already selected.
   const startCreate = useCallback(
     (e: React.PointerEvent, day: string) => {
       if (e.button !== 0) return;
@@ -546,9 +707,29 @@ function CalendarPage({
         anchorMin,
         startMin: anchorMin,
         endMin: anchorMin + DEFAULT_LENGTH_MIN,
+        anchorX: e.clientX,
+        anchorY: e.clientY,
+        moved: false,
       });
+      const additive = e.shiftKey;
+      const { dayIdx, min } = slot;
+      cancelHold();
+      holdTimer.current = window.setTimeout(() => {
+        holdTimer.current = null;
+        const held = gestureRef.current;
+        if (!held || held.kind !== 'create' || held.moved) return;
+        const baseIds = additive ? [...selectedRef.current] : [];
+        setSelection(new Set(baseIds));
+        setGestureState({
+          kind: 'lasso',
+          anchorDayIdx: dayIdx,
+          anchorMin: min,
+          band: { fromDayIdx: dayIdx, toDayIdx: dayIdx, fromMin: min, toMin: min },
+          baseIds,
+        });
+      }, HOLD_MS);
     },
-    [slotAt, setGestureState]
+    [slotAt, setGestureState, setSelection, cancelHold]
   );
 
   const startMove = useCallback(
@@ -558,6 +739,19 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
+      // Grabbing any block of a selected batch drags the whole batch; grabbing
+      // one outside it means the selection is over.
+      if (selectedRef.current.size > 1 && selectedRef.current.has(task.id)) {
+        setGestureState({
+          kind: 'multi',
+          tasks: store.tasks.filter((t) => selectedRef.current.has(t.id)),
+          anchorMs: dayStartMs(slot.day) + slot.min * MIN_MS,
+          deltaMs: 0,
+          moved: false,
+        });
+        return;
+      }
+      if (selectedRef.current.size > 0) setSelection(new Set());
       setGestureState({
         kind: 'move',
         task,
@@ -568,7 +762,7 @@ function CalendarPage({
         toBacklog: false,
       });
     },
-    [slotAt, setGestureState]
+    [slotAt, setGestureState, setSelection, store]
   );
 
   const startChainDrag = useCallback(
@@ -762,6 +956,7 @@ function CalendarPage({
             style={{ left: GUTTER_PX }}
           >
             {visibleDays.map((day) => renderColumn(day))}
+            {g?.kind === 'lasso' && renderMarquee(g.band)}
           </div>
           {g?.kind === 'zoom' && (
             <div
@@ -776,12 +971,39 @@ function CalendarPage({
     );
   };
 
+  // The rectangle being swept over the grid. It takes whole day columns
+  // across — the columns are the only horizontal geometry the grid has — and
+  // reports what it is holding while it is dragged.
+  const renderMarquee = (band: Band) => {
+    const lo = Math.max(0, Math.min(band.fromDayIdx, band.toDayIdx));
+    const hi = Math.min(visibleDays.length - 1, Math.max(band.fromDayIdx, band.toDayIdx));
+    const topMin = Math.min(band.fromMin, band.toMin);
+    const bottomMin = Math.max(band.fromMin, band.toMin);
+    const colWidth = 100 / visibleDays.length;
+    return (
+      <div
+        className="cal-marquee"
+        style={{
+          left: `${lo * colWidth}%`,
+          width: `${(hi - lo + 1) * colWidth}%`,
+          top: minToPx(topMin),
+          height: Math.max(2, lenToPx(bottomMin - topMin)),
+        }}
+      >
+        <span>
+          {hhmm(topMin)}–{hhmm(bottomMin)} · {selectedIds.size}
+        </span>
+      </div>
+    );
+  };
+
   const renderColumn = (day: string) => {
     const dayFrom = dayStartMs(day);
     const dayTo = dayFrom + DAY_MIN * MIN_MS;
     const isToday = day === today;
     const g = gesture;
     const dragChain = g?.kind === 'chain' ? g : null;
+    const dragMulti = g?.kind === 'multi' ? g : null;
 
     // A block the editor is open on is drawn from the fields being typed, so
     // long as it has a slot at all (a backlog task has none).
@@ -793,9 +1015,11 @@ function CalendarPage({
     const ghostIds = new Set<string>(
       dragChain
         ? dragChain.chain.tasks.map((t) => t.id)
-        : g?.kind === 'move'
-          ? [g.task.id]
-          : []
+        : dragMulti
+          ? dragMulti.tasks.map((t) => t.id)
+          : g?.kind === 'move'
+            ? [g.task.id]
+            : []
     );
     if (livePreview) ghostIds.add(livePreview.id);
 
@@ -841,6 +1065,18 @@ function CalendarPage({
         const slot = shiftedSlot(task, dragChain.deltaMs);
         if (slot.day !== day) continue;
         ghosts.push({
+          key: task.id,
+          task,
+          startMin: slot.start,
+          lengthMin: task.plannedTime / 60,
+          live: false,
+        });
+      }
+    } else if (dragMulti) {
+      for (const task of dragMulti.tasks) {
+        const slot = shiftedSlot(task, dragMulti.deltaMs);
+        if (slot.day !== day) continue;
+        (isReminder(task) ? reminderGhosts : ghosts).push({
           key: task.id,
           task,
           startMin: slot.start,
@@ -924,7 +1160,9 @@ function CalendarPage({
           return (
             <div
               key={task.id}
-              className={`cal-reminder${expired ? ' expired' : ''}`}
+              className={`cal-reminder${expired ? ' expired' : ''}${
+                selectedIds.has(task.id) ? ' selected' : ''
+              }`}
               style={{
                 top: minToPx(seg.topMin),
                 height,
@@ -976,6 +1214,7 @@ function CalendarPage({
                 active ? 'active' : '',
                 task.type === 'rest' ? 'rest' : '',
                 task.sessionId ? 'in-session' : '',
+                selectedIds.has(task.id) ? 'selected' : '',
                 resizing ? 'dragging' : '',
                 !seg.startsHere ? 'cont-top' : '',
                 !seg.endsHere ? 'cont-bottom' : '',
@@ -1224,6 +1463,33 @@ function CalendarPage({
   const nextGroup = credit.remaining[0] ?? null;
   const leadClass = credit.lead >= 0 ? 'ahead' : 'behind';
 
+  // What the batch menu can offer. Cutting a batch out only means something
+  // when its blocks share one sequence: a whole sequence that is already an
+  // explicit session has nothing left to be cut out of, and blocks from
+  // different sequences are not a sequence to break up in the first place.
+  const selectionWholeChain =
+    selectionChain !== null && selectedTasks.length === selectionChain.tasks.length;
+  const canSplit =
+    selectedTasks.length >= 2 &&
+    selectionChain !== null &&
+    !(selectionWholeChain && selectionChain.sessionId !== null);
+  const splitLabel = selectionWholeChain
+    ? '🔗 Собрать в отдельную сессию'
+    : '✂ Вынести в отдельную секвенцию';
+  const selectionSpan =
+    selectedTasks.length > 0
+      ? `${wallTime(taskStartMs(selectedTasks[0]))}–${wallTime(
+          Math.max(...selectedTasks.map(taskEndMs))
+        )}`
+      : '';
+  const selectionSec = selectedTasks.reduce((sum, t) => sum + t.plannedTime, 0);
+  const splitHint =
+    selectedTasks.length < 2
+      ? 'Выдели хотя бы два блока'
+      : selectionChain === null
+        ? 'Блоки из разных секвенций — вынести можно только соседей по одной'
+        : 'Эта секвенция уже отдельная сессия';
+
   return (
     <div className="cal-page">
       <div className="cal-toolbar">
@@ -1345,7 +1611,8 @@ function CalendarPage({
             </button>
           </header>
           <p className="cal-backlog-hint">
-            Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог
+            Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
+            Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков
           </p>
           <div className="cal-backlog-list">
             {openTasks.map((task) => (
@@ -1409,6 +1676,74 @@ function CalendarPage({
           }}
           onClose={() => setSessionPop(null)}
         />
+      )}
+
+      {/* The second held on the spot before the lasso arms, drawn under the
+          cursor: the ring closes exactly when the selection takes over. */}
+      {gesture?.kind === 'create' && !gesture.moved && (
+        <div
+          className="cal-hold-cue"
+          style={{ left: gesture.anchorX, top: gesture.anchorY }}
+          aria-hidden="true"
+        >
+          <span className="cal-hold-ring" />
+        </div>
+      )}
+
+      {groupMenu && selectedTasks.length > 0 && (
+        <div
+          className="cal-modal-backdrop cal-modal-backdrop--pop"
+          onMouseDown={() => setGroupMenu(null)}
+        >
+          <div
+            className="cal-session-pop cal-group-menu"
+            style={gapMenuStyle(groupMenu)}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <header className="cal-session-head">
+              <span className="cal-session-badge">Выделено · {selectedTasks.length}</span>
+              <button
+                type="button"
+                className="cal-modal-close"
+                onClick={() => setGroupMenu(null)}
+                title="Закрыть"
+              >
+                ✕
+              </button>
+            </header>
+            <p className="cal-session-when">
+              {selectionSpan} · {dur(selectionSec)}
+            </p>
+            <div className="cal-session-actions">
+              <button
+                type="button"
+                className="cal-btn"
+                disabled={!canSplit}
+                onClick={() => splitSelection(groupMenu)}
+                title={
+                  canSplit
+                    ? 'Выделенные блоки станут отдельной секвенцией — остальные останутся своей'
+                    : splitHint
+                }
+              >
+                {splitLabel}
+              </button>
+              <button
+                type="button"
+                className="cal-btn"
+                onClick={() => {
+                  setSelection(new Set());
+                  setGroupMenu(null);
+                }}
+              >
+                Снять выделение
+              </button>
+            </div>
+            <p className="cal-session-hint">
+              {canSplit ? 'Потяни за любой выделенный блок — переедут все' : splitHint}
+            </p>
+          </div>
+        </div>
       )}
 
       {gapMenu && gapSlot && (
