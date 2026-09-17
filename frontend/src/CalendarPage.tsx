@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Habit, Task } from './types';
 import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
 import type { DayStore } from './dayStore';
@@ -200,9 +200,18 @@ function CalendarPage({
 
   // Custom hover card for a task block: shows instantly (no OS tooltip delay)
   // and is anchored to the block's own screen rect, so it can grow out of the
-  // block's edge instead of just fading in. Rendered through a portal so the
-  // grid's scroll clipping (.cal-grid overflow) never cuts it off.
+  // block's edge instead of just fading in. Fixed-positioned (not clipped by
+  // .cal-grid's own overflow) rather than portalled — no ancestor here sets a
+  // transform, so `position: fixed` already escapes the grid's clipping.
   const [hoverCard, setHoverCard] = useState<{ task: Task; rect: DOMRect } | null>(null);
+  const hoverCardRef = useRef<HTMLDivElement>(null);
+  // The card must show the full name/description/time, so its height varies
+  // with content — measured after each render so it can be kept fully inside
+  // the viewport instead of running off the bottom.
+  const [hoverCardHeight, setHoverCardHeight] = useState(0);
+  useLayoutEffect(() => {
+    setHoverCardHeight(hoverCardRef.current?.offsetHeight ?? 0);
+  }, [hoverCard]);
 
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
@@ -1488,7 +1497,7 @@ function CalendarPage({
   // instant the pointer enters it (no native-tooltip delay) and is anchored
   // to the block's own screen rect so its entrance animation reads as
   // growing out of the block rather than just fading in somewhere nearby.
-  const HOVER_CARD_WIDTH = 240;
+  const HOVER_CARD_WIDTH = 260;
   const HOVER_CARD_GAP = 10;
 
   const renderHoverCard = () => {
@@ -1500,17 +1509,21 @@ function CalendarPage({
     const left = fitsRight
       ? rect.right + HOVER_CARD_GAP
       : Math.max(8, rect.left - HOVER_CARD_GAP - HOVER_CARD_WIDTH);
-    const top = Math.min(Math.max(8, rect.top), vh - 8);
+    // Clamped against the card's own (measured) height so a long name or
+    // description never pushes it past the bottom of the screen.
+    const top = Math.min(Math.max(8, rect.top), Math.max(8, vh - 8 - hoverCardHeight));
     const origin = fitsRight ? 'left top' : 'right top';
     const start = hhmm(task.start ?? 0);
     const end = wallTime(taskEndMs(task));
     return (
       <div
+        ref={hoverCardRef}
         className="cal-hover-card"
         style={{
           left,
           top,
           width: HOVER_CARD_WIDTH,
+          maxHeight: vh - 16,
           transformOrigin: origin,
           '--task-color': task.color,
         } as React.CSSProperties}

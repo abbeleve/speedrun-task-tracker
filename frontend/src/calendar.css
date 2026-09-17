@@ -830,6 +830,9 @@
   padding: 8px 10px;
   pointer-events: none;
   animation: cal-hover-card-in 140ms ease-out both;
+  /* The name/description/time must show in full — this only guards against
+     a description far taller than the screen itself. */
+  overflow-y: auto;
 }
 
 @keyframes cal-hover-card-in {
@@ -845,7 +848,7 @@
 
 .cal-hover-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 0.85rem;
   font-weight: 600;
@@ -853,10 +856,9 @@
 }
 
 .cal-hover-card-name {
+  flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .cal-hover-card-time {
@@ -872,8 +874,7 @@
   color: var(--text-secondary);
   line-height: 1.35;
   white-space: pre-wrap;
-  max-height: 120px;
-  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* ── now line & lead band ────────────────────────────────────── */
