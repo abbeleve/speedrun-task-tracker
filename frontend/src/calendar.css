@@ -1684,3 +1684,14 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* The current time, spelled out in the gutter across from the now line. */
+.cal-hour.cal-now-label {
+  right: 4px;
+  z-index: 6;
+  color: #fff;
+  background: var(--accent-red);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-weight: 600;
+}

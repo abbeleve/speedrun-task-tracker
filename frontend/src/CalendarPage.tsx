@@ -1058,6 +1058,11 @@ function CalendarPage({
                 <span>{String(h).padStart(2, '0')}:00</span>
               </div>
             ))}
+            {visibleDays.includes(today) && (
+              <div className="cal-hour cal-now-label" style={{ top: minToPx(nowMin) }}>
+                <span>{hhmm(nowMin)}</span>
+              </div>
+            )}
           </div>
           <div className="cal-lines">
             {Array.from({ length: 24 }, (_, h) => (
