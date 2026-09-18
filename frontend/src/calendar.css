@@ -262,6 +262,16 @@
   color: var(--text-primary);
 }
 
+.cal-day-reminder-badge {
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
 .cal-day-head.today .cal-day-num {
   background: var(--accent-blue);
   color: #fff;
@@ -875,6 +885,99 @@
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ── connected reminder cards for a hovered day ──────────────── */
+
+/* One viewport-sized SVG carries every rail-to-card curve. It sits above the
+   calendar but below the cards themselves, and never intercepts a click. */
+.cal-reminder-connectors {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.cal-reminder-connectors path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  opacity: 0.82;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+.cal-reminder-connectors circle {
+  fill: currentColor;
+  stroke: var(--bg-secondary);
+  stroke-width: 1.5;
+}
+
+.cal-reminder-detail-card {
+  position: fixed;
+  z-index: 49;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow);
+  padding: 9px 10px;
+  pointer-events: none;
+  animation: cal-hover-card-in 140ms ease-out both;
+}
+
+.cal-reminder-detail-card.right {
+  border-left: 3px solid var(--task-color, #3498db);
+}
+
+.cal-reminder-detail-card.left {
+  border-right: 3px solid var(--task-color, #3498db);
+}
+
+.cal-reminder-detail-card.expired {
+  opacity: 0.68;
+  border-style: dashed;
+}
+
+.cal-reminder-detail-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.cal-reminder-detail-emoji {
+  flex: none;
+  font-size: 0.9rem;
+}
+
+.cal-reminder-detail-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cal-reminder-detail-time {
+  margin: 3px 0 0 22px;
+  color: var(--text-dim);
+  font: 0.68rem var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-reminder-detail-desc {
+  margin: 5px 0 0 22px;
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cal-reminder-detail-desc.empty {
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 /* ── now line & lead band ────────────────────────────────────── */

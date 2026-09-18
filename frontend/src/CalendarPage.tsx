@@ -213,6 +213,32 @@ function CalendarPage({
     setHoverCardHeight(hoverCardRef.current?.offsetHeight ?? 0);
   }, [hoverCard]);
 
+  // In compact multi-day views reminders are deliberately drawn as thin
+  // rails. Hovering a day gives every visible rail its own detail card and a
+  // connector, so several reminders stay visually tied to their real slots.
+  const reminderStripRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [dayReminderCard, setDayReminderCard] = useState<{
+    day: string;
+    rect: DOMRect;
+    anchors: { key: string; taskId: string; rect: DOMRect }[];
+  } | null>(null);
+  const reminderDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [reminderDetailHeights, setReminderDetailHeights] = useState<Record<string, number>>({});
+  useLayoutEffect(() => {
+    const next: Record<string, number> = {};
+    reminderDetailRefs.current.forEach((element, key) => {
+      next[key] = element.offsetHeight;
+    });
+    setReminderDetailHeights((previous) => {
+      const previousKeys = Object.keys(previous);
+      const nextKeys = Object.keys(next);
+      const unchanged =
+        previousKeys.length === nextKeys.length &&
+        nextKeys.every((key) => previous[key] === next[key]);
+      return unchanged ? previous : next;
+    });
+  }, [dayReminderCard, hoverCard, store.tasks]);
+
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
   }, [view]);
@@ -228,27 +254,37 @@ function CalendarPage({
     return () => ro.disconnect();
   }, []);
 
-  // The hover card is anchored to a snapshot of the block's screen rect —
-  // once the grid scrolls that rect is stale, so just close it.
+  // Hover cards are anchored to snapshots of screen geometry — once the grid
+  // scrolls those rectangles are stale, so just close both cards.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || !hoverCard) return;
-    const close = () => setHoverCard(null);
+    if (!el || (!hoverCard && !dayReminderCard)) return;
+    const close = () => {
+      setHoverCard(null);
+      setDayReminderCard(null);
+    };
     el.addEventListener('scroll', close, { passive: true });
     return () => el.removeEventListener('scroll', close);
-  }, [hoverCard]);
+  }, [hoverCard, dayReminderCard]);
 
   // A drag/resize/selection gesture in flight makes a lingering hover card
   // (from before the gesture started) misleading — drop it. Same once the
   // editor opens over the same block, or the view scrolls to another day.
   useEffect(() => {
-    if (gesture) setHoverCard(null);
+    if (gesture) {
+      setHoverCard(null);
+      setDayReminderCard(null);
+    }
   }, [gesture]);
   useEffect(() => {
-    if (dialog) setHoverCard(null);
+    if (dialog) {
+      setHoverCard(null);
+      setDayReminderCard(null);
+    }
   }, [dialog]);
   useEffect(() => {
     setHoverCard(null);
+    setDayReminderCard(null);
   }, [view, anchor]);
 
   const zoomLenMin = zoomRange ? Math.max(1, zoomRange.endMin - zoomRange.startMin) : DAY_MIN;
@@ -263,6 +299,7 @@ function CalendarPage({
 
   const today = todayKey();
   const tasks = store.tasks;
+  const reminderTasks = useMemo(() => tasks.filter(isReminder), [tasks]);
 
   const visibleDays = useMemo(() => {
     if (view === 'day') return [anchor];
@@ -1116,6 +1153,38 @@ function CalendarPage({
     );
   };
 
+  const showDayReminders = (day: string, target: HTMLElement) => {
+    if (view !== '3day' && view !== 'week') return;
+    const segments = daySegments(reminderTasks, day);
+    const column = target.classList.contains('cal-col')
+      ? target
+      : Array.from(columnsRef.current?.querySelectorAll<HTMLElement>('.cal-col') ?? []).find(
+          (candidate) => candidate.dataset.day === day
+        );
+    const scrollerRect = scrollerRef.current?.getBoundingClientRect();
+    if (!column || !scrollerRect || segments.length === 0) {
+      setDayReminderCard(null);
+      return;
+    }
+    const anchors = segments.flatMap((segment) => {
+      const key = `${day}:${segment.task.id}`;
+      const rect = reminderStripRefs.current.get(key)?.getBoundingClientRect();
+      // A connector only makes sense for a rail that is actually visible in
+      // the scrolled portion of the timeline.
+      if (!rect || rect.bottom < scrollerRect.top || rect.top > scrollerRect.bottom) return [];
+      return [{ key, taskId: segment.task.id, rect }];
+    });
+    if (anchors.length === 0) {
+      setDayReminderCard(null);
+      return;
+    }
+    setDayReminderCard({ day, rect: column.getBoundingClientRect(), anchors });
+  };
+
+  const hideDayReminders = (day: string) => {
+    setDayReminderCard((card) => (card?.day === day ? null : card));
+  };
+
   const renderColumn = (day: string) => {
     const dayFrom = dayStartMs(day);
     const dayTo = dayFrom + DAY_MIN * MIN_MS;
@@ -1152,7 +1221,7 @@ function CalendarPage({
     ).filter((seg) => !ghostIds.has(seg.task.id));
 
     const reminderSegments = daySegments(
-      tasks.filter(isReminder),
+      reminderTasks,
       day,
       minBlockMin
     ).filter((seg) => !ghostIds.has(seg.task.id));
@@ -1227,6 +1296,8 @@ function CalendarPage({
         key={day}
         className={`cal-col${isToday ? ' today' : ''}`}
         data-day={day}
+        onMouseEnter={(e) => showDayReminders(day, e.currentTarget)}
+        onMouseLeave={() => hideDayReminders(day)}
         onPointerDown={(e) => {
           // Right-drag selects a time band to zoom into, regardless of what's
           // underneath — left-click still ignores existing blocks/chains.
@@ -1268,9 +1339,9 @@ function CalendarPage({
         })}
 
         {/* Reminders: a read-only overlay pinned to the right edge of the
-            column, thin on purpose — nothing is legible on them, click to
-            open the editor and read what one is. Past its own end it fades to
-            a dashed grey outline instead of disappearing. */}
+            column, thin on purpose. Hovering the day gives every visible rail
+            its own connected detail card. Past its own end it fades to a
+            dashed grey outline instead of disappearing. */}
         {reminderSegments.map((seg) => {
           const task = seg.task;
           const lengthMin = seg.bottomMin - seg.topMin;
@@ -1279,6 +1350,12 @@ function CalendarPage({
           return (
             <div
               key={task.id}
+              ref={(element) => {
+                const key = `${day}:${task.id}`;
+                if (element) reminderStripRefs.current.set(key, element);
+                else reminderStripRefs.current.delete(key);
+              }}
+              data-reminder-id={task.id}
               className={`cal-reminder${expired ? ' expired' : ''}${
                 selectedIds.has(task.id) ? ' selected' : ''
               }`}
@@ -1548,6 +1625,164 @@ function CalendarPage({
     );
   };
 
+  const DAY_REMINDER_CARD_WIDTH = 288;
+  const DAY_REMINDER_CARD_GAP = 18;
+  const DAY_REMINDER_STACK_GAP = 8;
+
+  const renderDayReminderCard = () => {
+    // The task-specific card has priority while a regular block is hovered;
+    // the reminder cards return as soon as it is left.
+    if (!dayReminderCard || hoverCard) return null;
+    const { day, rect, anchors } = dayReminderCard;
+    const segmentsByTask = new Map(
+      daySegments(reminderTasks, day).map((segment) => [segment.task.id, segment])
+    );
+    const items = anchors
+      .map((anchor) => {
+        const segment = segmentsByTask.get(anchor.taskId);
+        return segment ? { ...anchor, segment } : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => a.rect.top - b.rect.top);
+    if (items.length === 0) return null;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(DAY_REMINDER_CARD_WIDTH, vw - 16);
+    const rightSpace = vw - rect.right;
+    const leftSpace = rect.left;
+    const onRight =
+      rightSpace >= width + DAY_REMINDER_CARD_GAP || rightSpace >= leftSpace;
+    const left = onRight
+      ? Math.min(vw - 8 - width, rect.right + DAY_REMINDER_CARD_GAP)
+      : Math.max(8, rect.left - DAY_REMINDER_CARD_GAP - width);
+    const scrollerRect = scrollerRef.current?.getBoundingClientRect();
+    const anchorTop = Math.max(8, scrollerRect?.top ?? 8);
+    const anchorBottom = Math.min(vh - 8, scrollerRect?.bottom ?? vh - 8);
+    const heights = items.map(({ key, segment }) => {
+      const descriptionLines = Math.ceil((segment.task.description?.length ?? 0) / 42);
+      return reminderDetailHeights[key] ?? 64 + Math.min(5, descriptionLines) * 16;
+    });
+
+    // Start each box across from its rail, then push colliding boxes apart.
+    // A backwards pass keeps the whole stack inside the viewport without
+    // breaking the connector between a reminder and its own card.
+    const tops: number[] = [];
+    items.forEach((item, index) => {
+      const anchorY = Math.min(
+        anchorBottom,
+        Math.max(anchorTop, (item.rect.top + item.rect.bottom) / 2)
+      );
+      const desiredTop = Math.min(
+        vh - 8 - heights[index],
+        Math.max(8, anchorY - heights[index] / 2)
+      );
+      tops[index] =
+        index === 0
+          ? desiredTop
+          : Math.max(desiredTop, tops[index - 1] + heights[index - 1] + DAY_REMINDER_STACK_GAP);
+    });
+    const lastIndex = tops.length - 1;
+    if (tops[lastIndex] + heights[lastIndex] > vh - 8) {
+      tops[lastIndex] = vh - 8 - heights[lastIndex];
+      for (let index = lastIndex - 1; index >= 0; index -= 1) {
+        tops[index] = Math.min(
+          tops[index],
+          tops[index + 1] - DAY_REMINDER_STACK_GAP - heights[index]
+        );
+      }
+    }
+    if (tops[0] < 8) {
+      const shift = 8 - tops[0];
+      for (let index = 0; index < tops.length; index += 1) tops[index] += shift;
+    }
+
+    const [y, m, d] = day.split('-').map(Number);
+    const label = new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+    });
+
+    return (
+      <>
+        <svg
+          className="cal-reminder-connectors"
+          width={vw}
+          height={vh}
+          viewBox={`0 0 ${vw} ${vh}`}
+          aria-hidden="true"
+        >
+          {items.map((item, index) => {
+            const task = item.segment.task;
+            const startX = onRight ? item.rect.right : item.rect.left;
+            const startY = Math.min(
+              anchorBottom,
+              Math.max(anchorTop, (item.rect.top + item.rect.bottom) / 2)
+            );
+            const endX = onRight ? left : left + width;
+            const endY = tops[index] + heights[index] / 2;
+            const direction = onRight ? 1 : -1;
+            const bend = Math.max(16, Math.abs(endX - startX) * 0.42);
+            return (
+              <g key={item.key} style={{ color: task.color }}>
+                <path
+                  d={`M ${startX} ${startY} C ${startX + direction * bend} ${startY}, ${endX - direction * bend} ${endY}, ${endX} ${endY}`}
+                />
+                <circle cx={startX} cy={startY} r="3" />
+              </g>
+            );
+          })}
+        </svg>
+
+        {items.map((item, index) => {
+          const seg = item.segment;
+          const task = seg.task;
+          const expired = taskEndMs(task) <= now;
+          const start = seg.startsHere ? hhmm(seg.topMin) : '↳ 00:00';
+          const end = seg.endsHere
+            ? seg.bottomMin >= DAY_MIN
+              ? '24:00'
+              : hhmm(seg.bottomMin)
+            : '24:00 ↪';
+          return (
+            <article
+              key={item.key}
+              ref={(element) => {
+                if (element) reminderDetailRefs.current.set(item.key, element);
+                else reminderDetailRefs.current.delete(item.key);
+              }}
+              className={`cal-reminder-detail-card ${onRight ? 'right' : 'left'}${
+                expired ? ' expired' : ''
+              }`}
+              style={{
+                left,
+                top: tops[index],
+                width,
+                transformOrigin: onRight ? 'left center' : 'right center',
+                '--task-color': task.color,
+              } as React.CSSProperties}
+              aria-hidden="true"
+            >
+              <div className="cal-reminder-detail-main">
+                <span className="cal-reminder-detail-emoji">{task.emoji || '🔔'}</span>
+                <span className="cal-reminder-detail-name">
+                  {task.name || 'Напоминание'}
+                </span>
+              </div>
+              <div className="cal-reminder-detail-time">
+                🔔 {label} · {start}–{end}
+                {expired && <span> · окно закрыто</span>}
+              </div>
+              <p className={`cal-reminder-detail-desc${task.description ? '' : ' empty'}`}>
+                {task.description || 'Без описания'}
+              </p>
+            </article>
+          );
+        })}
+      </>
+    );
+  };
+
   // ── month ────────────────────────────────────────────────────────
 
   const renderMonth = () => {
@@ -1740,11 +1975,16 @@ function CalendarPage({
               {visibleDays.map((day) => {
                 const [y, m, d] = day.split('-').map(Number);
                 const date = new Date(y, m - 1, d);
+                const reminderCount = daySegments(reminderTasks, day).length;
                 return (
                   <button
                     key={day}
                     type="button"
                     className={`cal-day-head${day === today ? ' today' : ''}`}
+                    onMouseEnter={(e) =>
+                      showDayReminders(day, e.currentTarget)
+                    }
+                    onMouseLeave={() => hideDayReminders(day)}
                     onClick={() => {
                       setAnchor(day);
                       setView('day');
@@ -1752,6 +1992,9 @@ function CalendarPage({
                   >
                     <span className="cal-day-name">{WEEKDAYS[(date.getDay() + 6) % 7]}</span>
                     <span className="cal-day-num">{d}</span>
+                    {(view === '3day' || view === 'week') && reminderCount > 0 && (
+                      <span className="cal-day-reminder-badge">🔔 {reminderCount}</span>
+                    )}
                   </button>
                 );
               })}
@@ -1806,6 +2049,7 @@ function CalendarPage({
       </div>
 
       {renderHoverCard()}
+      {renderDayReminderCard()}
 
       {dialog && (
         <TaskDialog
