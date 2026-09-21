@@ -261,6 +261,7 @@ def test_day_state_keeps_sessions(client, auth_headers):
                 'status': 'in-progress',
                 'sessionId': 's-1',
                 'sessionName': 'Утренний блок',
+                'sequenceGradient': 'linear-gradient(180deg, #00d4ff, #7c4dff)',
             },
             {
                 'id': 'b',
@@ -281,5 +282,6 @@ def test_day_state_keeps_sessions(client, auth_headers):
     tasks = client.get('/api/day/2026-09-10', headers=auth_headers).json()['tasks']
     assert tasks[0]['sessionId'] == 's-1'
     assert tasks[0]['sessionName'] == 'Утренний блок'
+    assert tasks[0]['sequenceGradient'] == 'linear-gradient(180deg, #00d4ff, #7c4dff)'
     assert tasks[1]['sessionId'] is None
     assert tasks[1]['sessionName'] is None

@@ -80,6 +80,9 @@ class DayTask(BaseModel):
     # name, so the sequence survives a reload and can be moved as one block.
     sessionId: Optional[str] = None
     sessionName: Optional[str] = None
+    # User-selected gradient for the calendar sequence/session spine. Stored on
+    # every member so a session keeps its appearance across reloads and moves.
+    sequenceGradient: Optional[str] = None
     # Optional link to a habit: completing this task grows that habit's daily
     # progress (time habits add the block's duration; count habits add 1).
     habitId: Optional[str] = None

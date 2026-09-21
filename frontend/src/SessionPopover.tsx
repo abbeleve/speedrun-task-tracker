@@ -12,11 +12,19 @@ import { useEffect, useRef, useState } from 'react';
 import type { Chain } from './schedule';
 import { clockTime, compactDur } from './format';
 import type { DialogAnchor } from './TaskDialog';
+import {
+  makeSequenceGradient,
+  randomSequenceGradient,
+  SEQUENCE_GRADIENT_PRESETS,
+  sequenceGradientColors,
+  sequenceGradientForTasks,
+} from './sequenceGradients';
 
 interface SessionPopoverProps {
   chain: Chain;
   anchor: DialogAnchor;
   now: number;
+  onGradientChange: (gradient: string) => void;
   // Neighbouring sequences close enough to be glued to this one, if any.
   glueBefore: Chain | null;
   glueAfter: Chain | null;
@@ -42,6 +50,7 @@ function SessionPopover({
   chain,
   anchor,
   now,
+  onGradientChange,
   glueBefore,
   glueAfter,
   onRename,
@@ -54,6 +63,10 @@ function SessionPopover({
 }: SessionPopoverProps) {
   const [name, setName] = useState(chain.name ?? '');
   const boxRef = useRef<HTMLDivElement>(null);
+  const gradient = sequenceGradientForTasks(chain.tasks, chain.sessionId ?? chain.id);
+  const [gradientStart, setGradientStart] = useState(() => sequenceGradientColors(gradient)[0]);
+  const [gradientEnd, setGradientEnd] = useState(() => sequenceGradientColors(gradient)[1]);
+  const [sequenceAccent] = sequenceGradientColors(gradient);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -63,13 +76,19 @@ function SessionPopover({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+
+  useEffect(() => {
+    const [start, end] = sequenceGradientColors(gradient);
+    setGradientStart(start);
+    setGradientEnd(end);
+  }, [gradient]);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const left =
     anchor.x + POP_MARGIN + POP_WIDTH <= vw - POP_MARGIN
       ? anchor.x + POP_MARGIN
       : Math.max(POP_MARGIN, anchor.x - POP_MARGIN - POP_WIDTH);
-  const top = Math.max(POP_MARGIN, Math.min(anchor.y - 30, vh - 260));
+  const top = Math.max(POP_MARGIN, Math.min(anchor.y - 30, vh - 480));
 
   const plannedSec = chain.tasks.reduce((sum, t) => sum + Math.max(0, t.plannedTime), 0);
   const started = now >= chain.startMs;
@@ -83,7 +102,13 @@ function SessionPopover({
       <div
         ref={boxRef}
         className="cal-session-pop"
-        style={{ left, top, width: POP_WIDTH }}
+        style={{
+          left,
+          top,
+          width: POP_WIDTH,
+          '--sequence-gradient': gradient,
+          '--sequence-accent': sequenceAccent,
+        } as React.CSSProperties}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="cal-session-head">
@@ -111,6 +136,61 @@ function SessionPopover({
           {clockTime(chain.startMs)}–{clockTime(chain.endMs)} · {chain.tasks.length} задач ·{' '}
           {compactDur(plannedSec)}
         </p>
+
+        <section className="cal-session-gradient" aria-label="Градиент секвенции">
+          <div className="cal-session-gradient-head">
+            <span>Градиент секвенции</span>
+            <button
+              type="button"
+              className="cal-session-gradient-random"
+              onClick={() => onGradientChange(randomSequenceGradient(gradient))}
+            >
+              🎲 Случайный
+            </button>
+          </div>
+          <div className="cal-session-gradient-presets">
+            {SEQUENCE_GRADIENT_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={`cal-session-gradient-preset${preset.value === gradient ? ' active' : ''}`}
+                style={{ background: preset.value }}
+                onClick={() => onGradientChange(preset.value)}
+                title={preset.name}
+                aria-label={`Градиент «${preset.name}»`}
+                aria-pressed={preset.value === gradient}
+              />
+            ))}
+          </div>
+          <div className="cal-session-gradient-custom">
+            <span>Свой</span>
+            <label title="Первый цвет градиента">
+              <input
+                type="color"
+                value={gradientStart}
+                aria-label="Первый цвет градиента"
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setGradientStart(next);
+                  onGradientChange(makeSequenceGradient(next, gradientEnd));
+                }}
+              />
+            </label>
+            <span>→</span>
+            <label title="Второй цвет градиента">
+              <input
+                type="color"
+                value={gradientEnd}
+                aria-label="Второй цвет градиента"
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setGradientEnd(next);
+                  onGradientChange(makeSequenceGradient(gradientStart, next));
+                }}
+              />
+            </label>
+          </div>
+        </section>
 
         <div className="cal-session-actions">
           <button type="button" className="cal-btn cal-btn--primary" onClick={onStartNow}>
