@@ -37,6 +37,17 @@ describe('dayStatsFromTasks', () => {
     expect(stats.restSec).toBe(0);
   });
 
+  it('counts a stretch worked back to back once, though nothing glued it', () => {
+    // Sequences are explicit now (see schedule.ts's buildChains), but the day's
+    // session count is about the clock, not about what is connected: an evening
+    // worked in one go is one session however many blocks it was split into.
+    const a = task({ start: 9 * 60, plannedTime: 3600 });
+    const b = task({ start: 10 * 60, plannedTime: 3600 });
+    const far = task({ start: 15 * 60, plannedTime: 3600 });
+    expect(dayStatsFromTasks(DAY, [a, b]).sessions).toBe(1);
+    expect(dayStatsFromTasks(DAY, [a, b, far]).sessions).toBe(2);
+  });
+
   it('does not add a reminder as a worked sequence of its own', () => {
     const real = task({ start: 9 * 60, plannedTime: 1800 });
     const reminder = task({ type: 'reminder', start: 11 * 60, plannedTime: 1800 });

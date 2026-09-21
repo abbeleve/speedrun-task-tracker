@@ -5,7 +5,7 @@
 // actually closed, and "sessions" counts the sequences a day was worked in.
 
 import type { DayStats, Task } from './types';
-import { buildChains, buildGroups, isDone, taskEndMs, taskStartMs } from './schedule';
+import { buildGroups, buildRuns, isDone, taskEndMs, taskStartMs } from './schedule';
 
 // Time a closed block really occupied: from its planned start to the moment it
 // was closed, never beyond its planned end (finishing late does not invent
@@ -28,8 +28,13 @@ export function dayStatsFromTasks(date: string, tasks: Task[]): Omit<DayStats, '
     if (task.type === 'rest') restSec += spent;
     else workSec += spent;
   }
-  const sessions = buildChains(buildGroups(tasks)).filter((chain) =>
-    chain.tasks.some(isDone)
+  // A day's "sessions" are the stretches it was actually worked in: the clock
+  // running without a break counts once, however many blocks that was split
+  // into. Reading runs rather than sequences keeps the count honest now that
+  // sequences are explicit — blocks worked back to back are still one stretch
+  // whether or not they were ever glued (see schedule.ts's buildRuns).
+  const sessions = buildRuns(buildGroups(tasks)).filter((run) =>
+    run.some((group) => group.tasks.some(isDone))
   ).length;
   return {
     date,

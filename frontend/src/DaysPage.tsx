@@ -117,19 +117,23 @@ function ChainCard({ chain, onOpenChain }: { chain: Chain; onOpenChain: (c: Chai
 }
 
 interface DaysPageProps {
-  chains: Chain[];
+  // Continuous stretches, not sequences: nothing listed here is glued
+  // together — see schedule.ts's buildRunChains.
+  runChains: Chain[];
   onOpenChain: (chain: Chain) => void;
 }
 
-// Every sequence that was actually worked, newest first — the history the
-// saved-runs list used to show, now read straight off the calendar.
-function DaysPage({ chains, onOpenChain }: DaysPageProps) {
+// Every stretch that was actually worked, newest first — the history the
+// saved-runs list used to show, now read straight off the calendar. A single
+// block on its own is not a stretch; a session always is, however it is laid
+// out.
+function DaysPage({ runChains, onOpenChain }: DaysPageProps) {
   const sessions = useMemo(
     () =>
-      chains
+      runChains
         .filter((c) => isSession(c) && c.tasks.some(isDone))
         .sort((a, b) => b.startMs - a.startMs),
-    [chains]
+    [runChains]
   );
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);

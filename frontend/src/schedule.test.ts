@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import type { Task } from './types';
 import {
+  absorbIntoSessions,
   buildChains,
   buildGroups,
-  coveredRests,
+  buildRunChains,
+  buildRuns,
   daySegments,
   dayStartMs,
-  fillSessionGaps,
+  isContinuous,
   layoutTasks,
   mergeSuggestions,
   migrateDayTasks,
   reorderPatches,
   resizePatches,
-  sessionGapRestTasks,
   shiftPatches,
   shiftedSlot,
   taskEndMs,
@@ -105,7 +106,7 @@ describe('buildGroups', () => {
 });
 
 describe('buildChains', () => {
-  it('joins back-to-back groups into one sequence', () => {
+  it('leaves back-to-back blocks unconnected until they are glued by hand', () => {
     const chains = buildChains(
       buildGroups([
         task({ start: hm(9), plannedTime: 3600 }),
@@ -113,33 +114,33 @@ describe('buildChains', () => {
         task({ start: hm(10, 30), plannedTime: 1800 }),
       ])
     );
+    // Three blocks touching exactly — and still three separate sequences.
+    expect(chains).toHaveLength(3);
+    expect(chains.every((c) => c.sessionId === null)).toBe(true);
+  });
+
+  it('makes one sequence of the blocks that share a session id', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+        task({ start: hm(10), plannedTime: 3600, sessionId: 's1' }),
+      ])
+    );
     expect(chains).toHaveLength(1);
-    expect(chains[0].tasks).toHaveLength(3);
+    expect(chains[0].tasks).toHaveLength(2);
+    expect(chains[0].name).toBe('Утро');
   });
 
   it('never pulls a reminder into a sequence, however tightly it is placed', () => {
     const chains = buildChains(
       buildGroups([
-        task({ start: hm(9), plannedTime: 3600 }),
-        task({ start: hm(10), plannedTime: 1800, type: 'reminder' }),
-        task({ start: hm(10, 30), plannedTime: 1800 }),
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+        task({ start: hm(10), plannedTime: 1800, type: 'reminder', sessionId: 's1' }),
+        task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's1' }),
       ])
     );
-    // The reminder is invisible to buildGroups, so the two real blocks are two
-    // separate sequences (their own gap is 60 min, well past SEQUENCE_GAP_MS)
-    // rather than one chain of three.
-    expect(chains).toHaveLength(2);
-    expect(chains.every((c) => c.tasks.every((t) => t.type !== 'reminder'))).toBe(true);
-  });
-
-  it('breaks the sequence on a real gap', () => {
-    const chains = buildChains(
-      buildGroups([
-        task({ start: hm(9), plannedTime: 3600 }),
-        task({ start: hm(11), plannedTime: 3600 }),
-      ])
-    );
-    expect(chains).toHaveLength(2);
+    expect(chains).toHaveLength(1);
+    expect(chains[0].tasks.every((t) => t.type !== 'reminder')).toBe(true);
   });
 
   it('holds an explicit session together across a gap', () => {
@@ -164,21 +165,7 @@ describe('buildChains', () => {
     expect(chains.map((c) => c.sessionId)).toEqual(['s1', 's2']);
   });
 
-  it('is not split by a loose block dropped into its gap', () => {
-    const chains = buildChains(
-      buildGroups([
-        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
-        task({ start: hm(11), plannedTime: 1800 }),
-        task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
-      ])
-    );
-    expect(chains).toHaveLength(2);
-    const session = chains.find((c) => c.sessionId === 's1')!;
-    expect(session.tasks).toHaveLength(2);
-    expect(session.endMs).toBe(dayStartMs(DAY) + hm(15) * 60_000);
-  });
-
-  it('does not let a loose block join a session', () => {
+  it('does not let a loose block join a session it merely follows', () => {
     const chains = buildChains(
       buildGroups([
         task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
@@ -186,6 +173,100 @@ describe('buildChains', () => {
       ])
     );
     expect(chains).toHaveLength(2);
+    expect(chains[1].sessionId).toBeNull();
+  });
+
+  it('swallows a loose block dropped inside a session, with no approval asked', () => {
+    const inside = task({ start: hm(11), plannedTime: 1800 });
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+        inside,
+        task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+      ])
+    );
+    expect(chains).toHaveLength(1);
+    expect(chains[0].sessionId).toBe('s1');
+    // Ordered by the clock, with the newcomer in the middle where it sits.
+    expect(chains[0].tasks[1].id).toBe(inside.id);
+    expect(chains[0].groups.map((g) => g.startMs)).toEqual(
+      [...chains[0].groups.map((g) => g.startMs)].sort((a, b) => a - b)
+    );
+    // Its span is unchanged: the block was already inside it.
+    expect(chains[0].endMs).toBe(dayStartMs(DAY) + hm(15) * 60_000);
+  });
+
+  it('leaves a block that only overhangs the session alone', () => {
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+        task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+        // 14:30–16:00 — starts inside, ends past the session's 15:00.
+        task({ start: hm(16), plannedTime: 3600 }),
+      ])
+    );
+    expect(chains).toHaveLength(2);
+    expect(chains.find((c) => c.sessionId === null)?.tasks).toHaveLength(1);
+  });
+
+  it('gives a block inside two nested sessions to the tighter one', () => {
+    const inside = task({ start: hm(11), plannedTime: 1800 });
+    const chains = buildChains(
+      buildGroups([
+        task({ start: hm(8), plannedTime: 3600, sessionId: 'wide' }),
+        task({ start: hm(10), plannedTime: 1800, sessionId: 'tight' }),
+        inside,
+        task({ start: hm(12), plannedTime: 1800, sessionId: 'tight' }),
+        task({ start: hm(18), plannedTime: 3600, sessionId: 'wide' }),
+      ])
+    );
+    const tight = chains.find((c) => c.sessionId === 'tight')!;
+    expect(tight.tasks.map((t) => t.id)).toContain(inside.id);
+    expect(chains.find((c) => c.sessionId === 'wide')!.tasks.map((t) => t.id)).not.toContain(
+      inside.id
+    );
+  });
+});
+
+describe('absorbIntoSessions', () => {
+  it('writes the membership down for a block standing inside a session', () => {
+    const inside = task({ start: hm(11), plannedTime: 1800 });
+    const after = absorbIntoSessions([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+      inside,
+      task({ start: hm(14), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+    ]);
+    const joined = after.find((t) => t.id === inside.id)!;
+    expect(joined.sessionId).toBe('s1');
+    expect(joined.sessionName).toBe('Утро');
+  });
+
+  it('never joins blocks that merely follow each other', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600 }),
+      task({ start: hm(10), plannedTime: 3600 }),
+    ];
+    expect(absorbIntoSessions(tasks)).toBe(tasks);
+    expect(absorbIntoSessions(tasks).every((t) => !t.sessionId)).toBe(true);
+  });
+
+  it('leaves a reminder inside a session out of it', () => {
+    const reminder = task({ start: hm(11), plannedTime: 600, type: 'reminder' });
+    const after = absorbIntoSessions([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+      reminder,
+      task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+    ]);
+    expect(after.find((t) => t.id === reminder.id)!.sessionId).toBeUndefined();
+  });
+
+  it('is idempotent — a second pass changes nothing', () => {
+    const once = absorbIntoSessions([
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+      task({ start: hm(11), plannedTime: 1800 }),
+      task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
+    ]);
+    expect(absorbIntoSessions(once)).toBe(once);
   });
 });
 
@@ -203,6 +284,17 @@ describe('mergeSuggestions', () => {
     expect(suggestions[0].gapMs).toBe(5 * 60_000);
   });
 
+  it('offers to glue blocks that touch exactly — nothing joins them otherwise', () => {
+    const suggestions = mergeSuggestions(
+      chainsOf([
+        task({ start: hm(9), plannedTime: 3600 }),
+        task({ start: hm(10), plannedTime: 3600 }),
+      ])
+    );
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].gapMs).toBe(0);
+  });
+
   it('says nothing about a gap that is a real break', () => {
     expect(
       mergeSuggestions(
@@ -214,110 +306,51 @@ describe('mergeSuggestions', () => {
     ).toHaveLength(0);
   });
 
-  it('says nothing when the blocks are already one sequence', () => {
+  it('says nothing when the blocks are already one session', () => {
     expect(
       mergeSuggestions(
         chainsOf([
-          task({ start: hm(9), plannedTime: 3600 }),
-          task({ start: hm(10), plannedTime: 3600 }),
+          task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
+          task({ start: hm(10), plannedTime: 3600, sessionId: 's1' }),
         ])
       )
     ).toHaveLength(0);
   });
 });
 
-describe('session rest gaps', () => {
-  it('fills a session hole bigger than five minutes with a rest block', () => {
-    const filled = fillSessionGaps([
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
-      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's1' }),
-    ]);
-    const rest = filled.find((t) => t.type === 'rest');
-    expect(rest).toBeDefined();
-    expect(rest!.start).toBe(hm(10)); // 09:00 end → gap 10:00–10:30
-    expect(rest!.plannedTime).toBe(30 * 60);
-    expect(rest!.day).toBe(DAY);
-    expect(rest!.sessionId).toBe('s1');
-    expect(rest!.sessionName).toBe('Утро');
-  });
-
-  it('leaves a gap of five minutes or less alone', () => {
-    const tasks = [
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
-      task({ start: hm(10, 5), plannedTime: 3600, sessionId: 's1' }),
-    ];
-    expect(sessionGapRestTasks(tasks)).toEqual([]);
-  });
-
-  it('ignores gaps between loose blocks that are not a session', () => {
+describe('continuous runs', () => {
+  it('reads back-to-back groups as one stretch without connecting them', () => {
     const tasks = [
       task({ start: hm(9), plannedTime: 3600 }),
-      task({ start: hm(11), plannedTime: 3600 }),
+      task({ start: hm(10), plannedTime: 3600 }),
+      task({ start: hm(13), plannedTime: 3600 }),
     ];
-    expect(sessionGapRestTasks(tasks)).toEqual([]);
-    expect(fillSessionGaps(tasks)).toHaveLength(2);
+    const runs = buildRuns(buildGroups(tasks));
+    expect(runs.map((run) => run.length)).toEqual([2, 1]);
+    // The stretch is a reading, not a bond: the blocks are still loose.
+    expect(buildChains(buildGroups(tasks))).toHaveLength(3);
   });
 
-  it('is idempotent once the hole is already filled', () => {
-    const filled = fillSessionGaps([
+  it('keeps a session together across its own gap', () => {
+    const groups = buildGroups([
       task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
-      task({ start: hm(11), plannedTime: 3600, sessionId: 's1' }),
+      task({ start: hm(14), plannedTime: 3600, sessionId: 's1' }),
     ]);
-    expect(filled.filter((t) => t.type === 'rest')).toHaveLength(1);
-    expect(sessionGapRestTasks(filled)).toEqual([]);
+    expect(isContinuous(groups[0], groups[1])).toBe(true);
+    expect(buildRuns(groups)).toHaveLength(1);
   });
 
-  it('does not rest over a block another session put in the gap', () => {
-    const tasks = [
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }),
-      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's2' }),
-      task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }),
-    ];
-    expect(sessionGapRestTasks(tasks)).toEqual([]);
-  });
-
-  it('fills the hole with rest right through a reminder sitting in it', () => {
-    // The reminder occupies part of the gap, but it is not real occupancy as
-    // far as the session is concerned — the auto-rest still gets inserted.
-    const filled = fillSessionGaps([
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1' }), // 9–10
-      task({ start: hm(10, 15), plannedTime: 1800, type: 'reminder' }), // 10:15–10:45
-      task({ start: hm(11), plannedTime: 1800, sessionId: 's1' }), // 11–11:30
-    ]);
-    const rest = filled.find((t) => t.type === 'rest');
-    expect(rest).toBeDefined();
-    expect(rest!.start).toBe(hm(10));
-    expect(rest!.plannedTime).toBe(60 * 60);
-  });
-});
-
-describe('covered rests', () => {
-  it('drops a rest that another task now spans completely', () => {
-    const rest = task({ start: hm(10), plannedTime: 3600, type: 'rest' }); // 10–11
-    const covering = task({ start: hm(9), plannedTime: 3 * 3600 }); // 9–12 covers it
-    expect(coveredRests([rest, covering]).map((t) => t.id)).toEqual([rest.id]);
-  });
-
-  it('keeps a rest that is only partially covered', () => {
-    const rest = task({ start: hm(10), plannedTime: 3600, type: 'rest' }); // 10–11
-    const partial = task({ start: hm(10, 30), plannedTime: 1800 }); // 10:30–11 only
-    expect(coveredRests([rest, partial])).toEqual([]);
-  });
-
-  it('cleans up a rest through fillSessionGaps when a block covers it', () => {
-    // Auto-insert the rest between 09:00–10:00 and 10:30–11:00 of the session.
-    const filled = fillSessionGaps([
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
-      task({ start: hm(10, 30), plannedTime: 1800, sessionId: 's1' }),
-    ]);
-    const rest = filled.find((t) => t.type === 'rest')!;
-    expect(rest).toBeDefined();
-    // Pull the second block left until it covers the whole rest (10:00–10:30).
-    const second = filled.find((t) => t.id !== rest.id && t.start !== hm(9))!;
-    const after = fillSessionGaps(
-      filled.map((t) => (t.id === second.id ? { ...t, start: hm(10) } : t))
+  it('wraps a stretch as a chain the history can render', () => {
+    const chains = buildRunChains(
+      buildGroups([
+        task({ start: hm(9), plannedTime: 3600 }),
+        task({ start: hm(10), plannedTime: 3600 }),
+      ])
     );
-    expect(after.filter((t) => t.type === 'rest')).toHaveLength(0);
+    expect(chains).toHaveLength(1);
+    expect(chains[0].tasks).toHaveLength(2);
+    expect(chains[0].startMs).toBe(dayStartMs(DAY) + hm(9) * 60_000);
+    expect(chains[0].endMs).toBe(dayStartMs(DAY) + hm(11) * 60_000);
   });
 });
 

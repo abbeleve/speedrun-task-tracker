@@ -15,6 +15,7 @@ import {
   MIN_MS,
   buildChains,
   buildGroups,
+  buildRunChains,
   chainOfTask,
   dayKeyOf,
   isDone,
@@ -137,6 +138,9 @@ function App() {
 
   const groups = useMemo(() => buildGroups(store.tasks), [store.tasks]);
   const chains = useMemo(() => buildChains(groups), [groups]);
+  // What was worked in one go, which is not the same question as what is glued
+  // into a sequence — the history timeline lists stretches, not sessions.
+  const runChains = useMemo(() => buildRunChains(groups), [groups]);
   const credit = useMemo(() => computeCredit(groups, now), [groups, now]);
 
   // Save each day's final lead to history once it closes — see overtakeHistory.ts.
@@ -648,7 +652,7 @@ function App() {
             void store.reload();
             openSequence(chain);
           }}
-          chains={chains}
+          runChains={runChains}
           habits={habits}
           tasks={store.tasks}
           weekOvertakeSec={weekOvertakeSec}

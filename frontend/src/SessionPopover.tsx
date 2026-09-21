@@ -1,11 +1,12 @@
 // Editor for one session — a run of blocks the calendar treats as a whole.
 //
-// A session is either *implicit* (blocks that simply follow each other with no
-// gap) or *explicit* (blocks glued by hand, which then hold together whatever
-// the gaps inside them are, move as one and carry a name). This popover is
-// where the two are told apart: it names a sequence, glues it to the neighbour
-// it nearly touches, pulls it apart again, drags it to the current moment so it
-// can be started early, and opens it in the tracker.
+// A session is always explicit: blocks only ever hold together because they
+// were glued by hand, and then they keep whatever gaps are inside them, move as
+// one and carry a name. Blocks that merely follow each other are not a session
+// and never become one on their own. This popover is where that gluing is
+// approved: it names a sequence, glues it to the neighbour it touches or nearly
+// touches, pulls it apart again, drags it to the current moment so it can be
+// started early, and opens it in the tracker.
 
 import { useEffect, useRef, useState } from 'react';
 import type { Chain } from './schedule';
@@ -30,6 +31,12 @@ interface SessionPopoverProps {
 
 const POP_WIDTH = 300;
 const POP_MARGIN = 12;
+
+// A neighbour can now also be touching exactly — back-to-back blocks no longer
+// glue themselves, so they are offered here like any other close pair.
+function gapLabel(gapMs: number): string {
+  return gapMs <= 0 ? 'подряд' : compactDur(gapMs / 1000);
+}
 
 function SessionPopover({
   chain,
@@ -123,12 +130,12 @@ function SessionPopover({
           )}
           {glueBefore && (
             <button type="button" className="cal-btn" onClick={() => onGlue(glueBefore, chain)}>
-              ⬆ Склеить с предыдущей ({compactDur((chain.startMs - glueBefore.endMs) / 1000)})
+              ⬆ Склеить с предыдущей ({gapLabel(chain.startMs - glueBefore.endMs)})
             </button>
           )}
           {glueAfter && (
             <button type="button" className="cal-btn" onClick={() => onGlue(chain, glueAfter)}>
-              ⬇ Склеить со следующей ({compactDur((glueAfter.startMs - chain.endMs) / 1000)})
+              ⬇ Склеить со следующей ({gapLabel(glueAfter.startMs - chain.endMs)})
             </button>
           )}
         </div>

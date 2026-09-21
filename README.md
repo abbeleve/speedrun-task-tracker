@@ -20,8 +20,9 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag its bottom edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time.
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
-- **Sequences** — blocks that follow each other with no gap form a sequence, marked by a spine on the left of the day column. Click the spine to open the session editor, drag it to move the whole run at once.
-- **Sessions** — blocks that nearly touch (a gap of 5 minutes or less) get a 🔗 handle in the gap: press it and they are pulled together into one named session. A session holds together however its blocks are later moved, can be renamed, dragged as a whole (gaps intact, across midnight too) and pulled apart again. If the blocks of a session are pushed further apart than the merge gap, the hole is filled automatically with a ☕ rest block — a session never sits with an empty stretch in the middle. Pull a block back until it covers that rest completely and the rest disappears again.
+- **Sequences are explicit** — blocks never connect to each other on their own, however tightly they are laid out: two blocks that touch stay two separate blocks until you say otherwise. A sequence is marked by a spine on the left of the day column; click the spine to open the session editor, drag it to move the whole run at once.
+- **Sessions** — blocks that touch or nearly touch (a gap of 5 minutes or less) get a 🔗 handle in the gap: press it and they are pulled together into one named session. Selecting any batch of blocks and pressing *Собрать в отдельную сессию* does the same without them having to be neighbours. A session holds together however its blocks are later moved, can be renamed, dragged as a whole (gaps intact, across midnight too) and pulled apart again.
+- **Blocks inside a session join it** — the one connection that needs no approval: drop a block entirely inside a session's span and it becomes a real member of it, so it is never left behind when the session is dragged.
 - **Start a session early** — the session editor (and the tracker header) offers ▶ *Начать сейчас*: the whole run slides to the current moment and opens in the tracker views.
 - **Thermometer timeline** — vertical fill bar that grows as the sequence's time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
@@ -102,8 +103,8 @@ images there — they are picked up automatically and are not committed to git.
 1. **Register / log in** — data is tied to your account.
 2. **Plan the day** — on the calendar, drag on the grid to create a block, or drop one from the backlog. Set the emoji, colour, length and (optionally) a repeat rule in the dialog. Blocks may overlap: that is a parallel group.
 3. **Work the plan** — press ✓ on a block the moment you really finish it. The HUD shows your lead, what closing the running block right now would bank, and when the rest of the plan will be done.
-4. **Open a sequence** — click the spine next to a run of back-to-back blocks to open it in the thermometer / spiral / list views, and close splits from there.
-5. **Look back** — the dashboard (🏠) holds the kanban board, every sequence you have worked, and the statistics page.
+4. **Glue a sequence** — press the 🔗 handle between two blocks (or select a batch and *Собрать в отдельную сессию*) to make them one session, then click its spine to open it in the thermometer / spiral / list views and close splits from there.
+5. **Look back** — the dashboard (🏠) holds the kanban board, every stretch you have worked, and the statistics page.
 
 ## CI / CD
 

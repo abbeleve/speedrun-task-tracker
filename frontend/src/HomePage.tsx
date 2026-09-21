@@ -11,7 +11,8 @@ import DaysPage from './DaysPage';
 import { ActivityHeatmap, ActivityStatsSummary, SleepTracker, useStatsData } from './StatsPage';
 
 interface HomePageProps {
-  chains: Chain[];
+  // The stretches the day was worked in — see schedule.ts's buildRunChains.
+  runChains: Chain[];
   onOpenCalendar: () => void;
   onOpenChain: (chain: Chain) => void;
   habits: HabitStore;
@@ -88,7 +89,7 @@ function WeekOvertakeBar({ sec }: { sec: number }) {
 // The board still reads and writes the backend directly, so the calendar's
 // store is flushed before this page is shown and re-read when it is left.
 function HomePage({
-  chains,
+  runChains,
   onOpenCalendar,
   onOpenChain,
   habits,
@@ -113,7 +114,7 @@ function HomePage({
         <KanbanPage activeDay={todayKey()} onOpenCalendar={onOpenCalendar} />
       </section>
       <section className="home-panel home-panel--days">
-        <DaysPage chains={chains} onOpenChain={onOpenChain} />
+        <DaysPage runChains={runChains} onOpenChain={onOpenChain} />
       </section>
     </div>
   );

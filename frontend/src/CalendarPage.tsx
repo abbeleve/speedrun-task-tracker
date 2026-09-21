@@ -1539,11 +1539,15 @@ function CalendarPage({
             type="button"
             className="cal-glue"
             style={{ top: minToPx((spot.atMs - dayFrom) / MIN_MS) }}
-            title={`Между блоками ${dur(spot.gapMs / 1000)} — склеить в одну сессию`}
+            title={
+              spot.gapMs === 0
+                ? 'Блоки идут подряд, но не связаны — склеить в одну сессию'
+                : `Между блоками ${dur(spot.gapMs / 1000)} — склеить в одну сессию`
+            }
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => glueChains(spot.before, spot.after)}
           >
-            🔗 {dur(spot.gapMs / 1000)}
+            🔗 {spot.gapMs === 0 ? 'подряд' : dur(spot.gapMs / 1000)}
           </button>
         ))}
 
@@ -1868,19 +1872,20 @@ function CalendarPage({
   const nextGroup = credit.remaining[0] ?? null;
   const leadClass = credit.lead >= 0 ? 'ahead' : 'behind';
 
-  // What the batch menu can offer. Cutting a batch out only means something
-  // when its blocks share one sequence: a whole sequence that is already an
-  // explicit session has nothing left to be cut out of, and blocks from
-  // different sequences are not a sequence to break up in the first place.
+  // What the batch menu can offer — the other half of the approval, next to
+  // the 🔗 handle: any batch of blocks can be declared a session, whether or
+  // not they touch. The only batch with nothing to do is one that already *is*
+  // a whole explicit session. A batch that is part of a bigger sequence is cut
+  // out of it instead of merely joined.
   const selectionWholeChain =
     selectionChain !== null && selectedTasks.length === selectionChain.tasks.length;
   const canSplit =
     selectedTasks.length >= 2 &&
-    selectionChain !== null &&
-    !(selectionWholeChain && selectionChain.sessionId !== null);
-  const splitLabel = selectionWholeChain
-    ? '🔗 Собрать в отдельную сессию'
-    : '✂ Вынести в отдельную секвенцию';
+    !(selectionWholeChain && selectionChain !== null && selectionChain.sessionId !== null);
+  const splitLabel =
+    selectionChain !== null && !selectionWholeChain
+      ? '✂ Вынести в отдельную секвенцию'
+      : '🔗 Собрать в отдельную сессию';
   const selectionSpan =
     selectedTasks.length > 0
       ? `${wallTime(taskStartMs(selectedTasks[0]))}–${wallTime(
@@ -1889,11 +1894,7 @@ function CalendarPage({
       : '';
   const selectionSec = selectedTasks.reduce((sum, t) => sum + t.plannedTime, 0);
   const splitHint =
-    selectedTasks.length < 2
-      ? 'Выдели хотя бы два блока'
-      : selectionChain === null
-        ? 'Блоки из разных секвенций — вынести можно только соседей по одной'
-        : 'Эта секвенция уже отдельная сессия';
+    selectedTasks.length < 2 ? 'Выдели хотя бы два блока' : 'Эти блоки уже отдельная сессия';
 
   return (
     <div className="cal-page">
@@ -2144,7 +2145,7 @@ function CalendarPage({
                 onClick={() => splitSelection(groupMenu)}
                 title={
                   canSplit
-                    ? 'Выделенные блоки станут отдельной секвенцией — остальные останутся своей'
+                    ? 'Выделенные блоки станут одной сессией — остальные останутся сами по себе'
                     : splitHint
                 }
               >

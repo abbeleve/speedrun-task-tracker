@@ -104,8 +104,8 @@ describe('tasksInBand', () => {
 });
 
 describe('chainOfSelection', () => {
-  const a = task({ start: hm(9), plannedTime: 3600 });
-  const b = task({ start: hm(10), plannedTime: 3600 });
+  const a = task({ start: hm(9), plannedTime: 3600, sessionId: 's1' });
+  const b = task({ start: hm(10), plannedTime: 3600, sessionId: 's1' });
   const far = task({ start: hm(18), plannedTime: 3600 });
   const chains = buildChains(buildGroups([a, b, far]));
 
@@ -117,6 +117,12 @@ describe('chainOfSelection', () => {
     expect(chainOfSelection(chains, [a.id, far.id])).toBeNull();
   });
 
+  it('returns null for blocks that merely touch, since those are not one sequence', () => {
+    const x = task({ start: hm(9), plannedTime: 3600 });
+    const y = task({ start: hm(10), plannedTime: 3600 });
+    expect(chainOfSelection(buildChains(buildGroups([x, y])), [x.id, y.id])).toBeNull();
+  });
+
   it('returns null for an empty selection', () => {
     expect(chainOfSelection(chains, [])).toBeNull();
   });
@@ -124,9 +130,9 @@ describe('chainOfSelection', () => {
 
 describe('splitPatches', () => {
   it('cuts the batch out into a sequence of its own, leaving the rest behind', () => {
-    const a = task({ start: hm(9), plannedTime: 3600 });
-    const b = task({ start: hm(10), plannedTime: 3600 });
-    const c = task({ start: hm(11), plannedTime: 3600 });
+    const a = task({ start: hm(9), plannedTime: 3600, sessionId: 's-old' });
+    const b = task({ start: hm(10), plannedTime: 3600, sessionId: 's-old' });
+    const c = task({ start: hm(11), plannedTime: 3600, sessionId: 's-old' });
     const all = [a, b, c];
     expect(buildChains(buildGroups(all))).toHaveLength(1);
 
@@ -137,6 +143,16 @@ describe('splitPatches', () => {
       [b.id, c.id],
     ]);
     expect(chains[1].sessionId).toBe('s-new');
+  });
+
+  it('makes one sequence of loose blocks that were not connected before', () => {
+    const a = task({ start: hm(9), plannedTime: 3600 });
+    const b = task({ start: hm(10), plannedTime: 3600 });
+    expect(buildChains(buildGroups([a, b]))).toHaveLength(2);
+
+    const chains = buildChains(buildGroups(apply([a, b], splitPatches([a, b], 's-new'))));
+    expect(chains).toHaveLength(1);
+    expect(chains[0].tasks.map((t) => t.id)).toEqual([a.id, b.id]);
   });
 
   it('keeps the blocks exactly where they were', () => {

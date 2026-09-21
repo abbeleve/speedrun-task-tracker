@@ -6,28 +6,33 @@
 //
 //   groups  — tasks that overlap in time are one *parallel group*; the group is
 //             finished only when its last task is finished.
-//   chains  — groups that follow each other with no real gap form a *sequence*
-//             (the thing the thermometer/spiral/list views can be opened on).
+//   chains  — a *sequence*: the blocks of one explicit session (the thing the
+//             thermometer/spiral/list views can be opened on). Nothing is ever
+//             glued on its own — see buildChains.
+//   runs    — the stretches the clock ran without a break. Not a sequence:
+//             purely geometric, and nothing in one is connected to anything.
 //   layout  — side-by-side columns for overlapping blocks, like Google Calendar.
 
 import type { Task } from './types';
-import { DEFAULT_COLOR, DEFAULT_START_MIN } from './types';
+import { DEFAULT_START_MIN } from './types';
 import { dateKey } from './history';
-import { newTaskId } from './tasks';
 
 export const MIN_MS = 60_000;
 export const HOUR_MS = 3_600_000;
 export const DAY_MIN = 24 * 60;
 
 // Two blocks separated by no more than this count as "идущие подряд": the next
-// one starts immediately, so the overtake keeps running through the seam
-// instead of freezing. A minute of slack absorbs rounding and hand-placed
-// blocks that miss each other by seconds.
+// one starts immediately, so the clock never really stopped between them and
+// the overtake keeps running through the seam instead of freezing. A minute of
+// slack absorbs rounding and hand-placed blocks that miss each other by
+// seconds. This says nothing about *sequences* — those are explicit now (see
+// buildChains); it is only what isContinuous/buildRuns read off the geometry.
 export const SEQUENCE_GAP_MS = 60_000;
 
-// Blocks that miss each other by no more than this are close enough that they
-// were probably *meant* to be one session: the calendar offers to glue them
-// together (it never does it on its own — see mergeSuggestions).
+// Blocks that miss each other by no more than this — touching ones included —
+// are close enough that they were probably *meant* to be one session: the
+// calendar offers to glue them together. It never does it on its own, and
+// without that press they stay two separate blocks (see mergeSuggestions).
 export const MERGE_GAP_MS = 5 * MIN_MS;
 
 export function dayStartMs(day: string): number {
@@ -53,8 +58,7 @@ export function isReminder(task: Task): boolean {
 
 // Scheduled tasks that count as actual work for the schedule engine: no
 // reminders. Feeds buildGroups (and, through it, the overtake engine and
-// sequences) and the session-gap rest filler, so a reminder can never join a
-// group, a chain/session, or trigger/absorb an auto-inserted rest block.
+// sequences), so a reminder can never join a group or a chain/session.
 export function isEngineTask(task: Task): boolean {
   return isScheduled(task) && !isReminder(task);
 }
@@ -146,40 +150,27 @@ function groupSessionId(group: TaskGroup): string | null {
   return null;
 }
 
-// Groups that start (almost) exactly when the previous one ends are one
-// sequence — and so are groups glued into the same explicit session, however
-// far apart they sit. A block that belongs to a session never joins anything
-// else, so two sessions laid back to back stay two sessions.
+// Sequences are explicit. Only blocks glued into the same session by hand are
+// one sequence, however tightly anything else is laid out: two blocks that
+// merely touch stay two separate blocks until the calendar's 🔗 handle or the
+// batch menu is actually pressed (see mergeSuggestions, splitPatches).
+//
+// The one thing that happens without being asked is the reverse — a loose block
+// standing *entirely inside* a session's span is swallowed by it. On the clock
+// it is already in the middle of that session, and a block that reads as part
+// of one but is not really in it would be left behind the moment the session is
+// dragged.
 export function buildChains(groups: TaskGroup[]): Chain[] {
   const chains: Chain[] = [];
   // Every chain of a session is found by its id, not by being the previous one:
   // a loose block dropped into a gap of the session must not split it in two.
   const bySession = new Map<string, Chain>();
 
-  const extend = (chain: Chain, group: TaskGroup) => {
-    chain.groups.push(group);
-    chain.tasks.push(...group.tasks);
-    chain.endMs = Math.max(chain.endMs, group.endMs);
-    chain.name = chain.name ?? sessionNameOf(group.tasks);
-  };
-
   for (const group of groups) {
     const sessionId = groupSessionId(group);
     const openSession = sessionId !== null ? bySession.get(sessionId) : undefined;
     if (openSession) {
-      extend(openSession, group);
-      continue;
-    }
-    const last = chains[chains.length - 1];
-    // Only loose blocks grow by proximity: a block that belongs to a session
-    // never joins anything else, so two sessions laid back to back stay two.
-    if (
-      last &&
-      sessionId === null &&
-      last.sessionId === null &&
-      group.startMs - last.endMs <= SEQUENCE_GAP_MS
-    ) {
-      extend(last, group);
+      extendChain(openSession, group);
       continue;
     }
     const chain: Chain = {
@@ -194,7 +185,99 @@ export function buildChains(groups: TaskGroup[]): Chain[] {
     chains.push(chain);
     if (sessionId !== null) bySession.set(sessionId, chain);
   }
-  return chains;
+
+  return absorbLooseChains(chains);
+}
+
+function extendChain(chain: Chain, group: TaskGroup): void {
+  chain.groups.push(group);
+  chain.tasks.push(...group.tasks);
+  chain.endMs = Math.max(chain.endMs, group.endMs);
+  chain.name = chain.name ?? sessionNameOf(group.tasks);
+}
+
+// Hand every loose chain that fits entirely inside a session over to it. The
+// tightest session wins, so one nested inside another keeps what sits in it.
+// A swallowed group never reaches past its host's edges, so no span grows and
+// nothing cascades: one pass is enough.
+function absorbLooseChains(chains: Chain[]): Chain[] {
+  const sessions = chains.filter((c) => c.sessionId !== null);
+  if (sessions.length === 0) return chains;
+
+  const swallowed = new Set<Chain>();
+  for (const chain of chains) {
+    if (chain.sessionId !== null) continue;
+    let host: Chain | null = null;
+    for (const session of sessions) {
+      if (chain.startMs < session.startMs || chain.endMs > session.endMs) continue;
+      if (host === null || session.endMs - session.startMs < host.endMs - host.startMs) {
+        host = session;
+      }
+    }
+    if (host === null) continue;
+    for (const group of chain.groups) extendChain(host, group);
+    swallowed.add(chain);
+  }
+  if (swallowed.size === 0) return chains;
+
+  // A block absorbed from the middle arrived after the ones around it — put the
+  // chain back in clock order, which is what every consumer reads it as. Its
+  // `id` stays the block it was born on: nothing can be absorbed ahead of that
+  // one (an equal start would have made them the same group), and the calendar
+  // keys its spine on it.
+  for (const session of sessions) {
+    session.groups.sort((a, b) => a.startMs - b.startMs);
+    session.tasks.sort((a, b) => taskStartMs(a) - taskStartMs(b) || a.id.localeCompare(b.id));
+  }
+  return chains.filter((c) => !swallowed.has(c));
+}
+
+// ── Continuous runs ────────────────────────────────────────────────
+
+// Nothing separates two consecutive groups when they run back to back, or when
+// they are two blocks of the same explicit session. This is *not* connection:
+// it is the reporting question "did the clock keep running here?", asked of the
+// geometry alone, and it moves nothing.
+export function isContinuous(prev: TaskGroup, next: TaskGroup): boolean {
+  const sessionId = groupSessionId(prev);
+  if (sessionId !== null && sessionId === groupSessionId(next)) return true;
+  return next.startMs - prev.endMs <= SEQUENCE_GAP_MS;
+}
+
+// The stretches the clock ran without a break. `groups` must be chronological
+// (buildGroups returns them that way).
+export function buildRuns(groups: TaskGroup[]): TaskGroup[][] {
+  const runs: TaskGroup[][] = [];
+  for (const group of groups) {
+    const last = runs[runs.length - 1];
+    const prev = last?.[last.length - 1];
+    if (last && prev && isContinuous(prev, group)) last.push(group);
+    else runs.push([group]);
+  }
+  return runs;
+}
+
+// Those stretches wrapped as chains, so the views built to render a sequence
+// can render one. A stretch is still not a sequence — its blocks are not glued
+// and dragging one leaves the others where they are — but "what was worked in
+// one go" is exactly what the history timeline lists.
+export function buildRunChains(groups: TaskGroup[]): Chain[] {
+  return buildRuns(groups).map((run) => {
+    const chain: Chain = {
+      id: run[0].tasks[0].id,
+      groups: [...run],
+      tasks: run.flatMap((g) => g.tasks),
+      startMs: run[0].startMs,
+      endMs: Math.max(...run.map((g) => g.endMs)),
+      sessionId: null,
+      name: null,
+    };
+    for (const group of run) {
+      chain.sessionId = chain.sessionId ?? groupSessionId(group);
+      chain.name = chain.name ?? sessionNameOf(group.tasks);
+    }
+    return chain;
+  });
 }
 
 function sessionNameOf(tasks: Task[]): string | null {
@@ -208,8 +291,10 @@ export function chainOfTask(chains: Chain[], taskId: string): Chain | null {
   return chains.find((c) => c.tasks.some((t) => t.id === taskId)) ?? null;
 }
 
-// A chain is worth showing as a session spine once it holds more than one block
-// or has been glued by hand.
+// A chain worth drawing as a spine / listing as something that was worked. For
+// a sequence (buildChains) that means it was glued by hand — a loose chain is
+// always exactly one group. For a run (buildRunChains) it also covers a stretch
+// of several blocks worked back to back, which is what the history lists.
 export function isSession(chain: Chain): boolean {
   return chain.sessionId !== null || chain.groups.length > 1;
 }
@@ -224,14 +309,18 @@ export interface MergeSuggestion {
 
 // Pairs of neighbouring sequences that sit close enough to be one session (a
 // gap of no more than MERGE_GAP_MS). The calendar draws a "склеить" handle in
-// that gap; nothing is merged until it is pressed.
+// that gap; nothing is merged until it is pressed — that press *is* the
+// approval, and it is the only way two blocks ever become one sequence.
+//
+// A gap of exactly zero counts: blocks laid back to back used to be glued on
+// their own, so without the handle there would be no way left to join them.
 export function mergeSuggestions(chains: Chain[]): MergeSuggestion[] {
   const out: MergeSuggestion[] = [];
   for (let i = 1; i < chains.length; i++) {
     const before = chains[i - 1];
     const after = chains[i];
     const gapMs = after.startMs - before.endMs;
-    if (gapMs > 0 && gapMs <= MERGE_GAP_MS) out.push({ before, after, gapMs });
+    if (gapMs >= 0 && gapMs <= MERGE_GAP_MS) out.push({ before, after, gapMs });
   }
   return out;
 }
@@ -240,98 +329,31 @@ export function newSessionId(): string {
   return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-// ── Rest gaps inside a session ────────────────────────────────────
+// ── Blocks that sit inside a session ──────────────────────────────
 
-// A session holds its blocks together whatever the gaps inside it are, so two
-// blocks of the same session can end up standing hours apart. A playable day
-// should not leave an empty hole in the middle of a session though: once the
-// gap between two consecutive blocks grows beyond MERGE_GAP_MS the plan fills
-// it automatically with a rest task, so the run reads task → отдых → task
-// instead of a stretch that has nothing to close.
-export function sessionGapRestTasks(tasks: Task[]): Task[] {
-  const scheduled = tasks.filter(isEngineTask);
-  const bySession = new Map<string, TaskGroup[]>();
-  for (const group of buildGroups(scheduled)) {
-    const sid = groupSessionId(group);
-    if (sid === null) continue;
-    const list = bySession.get(sid);
-    if (list) list.push(group);
-    else bySession.set(sid, [group]);
-  }
-  const rests: Task[] = [];
-  for (const [sid, groups] of bySession) {
-    const sorted = [...groups].sort((a, b) => a.startMs - b.startMs);
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
-      const next = sorted[i];
-      const gapMs = next.startMs - prev.endMs;
-      // A gap of a few minutes is "идущие подряд"; only a real hole needs rest.
-      if (gapMs <= MERGE_GAP_MS) continue;
-      const fromMs = prev.endMs;
-      const toMs = next.startMs;
-      // Never double-book: a rest fills only a gap nothing else already occupies.
-      if (scheduled.some((t) => taskStartMs(t) < toMs && taskEndMs(t) > fromMs)) continue;
-      const sessionName = sessionNameOf(prev.tasks) ?? sessionNameOf(next.tasks);
-      rests.push(restTaskFor(fromMs, toMs, sid, sessionName));
+// buildChains already *reads* a block standing entirely inside a session as
+// part of it; this writes that down. A block that only looks like a member is
+// a trap — it is drawn under the session's spine, is counted in it and runs
+// with it, yet would be left behind the first time the session is dragged — so
+// the plan makes the membership real as soon as it appears.
+//
+// This is the one join that needs no approval: the block is already inside the
+// session on the clock. Two blocks merely following each other are never
+// touched — that still takes the 🔗 handle.
+export function absorbIntoSessions(tasks: Task[]): Task[] {
+  const joined = new Map<string, { sessionId: string; sessionName: string | null }>();
+  for (const chain of buildChains(buildGroups(tasks))) {
+    if (chain.sessionId === null) continue;
+    for (const task of chain.tasks) {
+      if (task.sessionId === chain.sessionId) continue;
+      joined.set(task.id, { sessionId: chain.sessionId, sessionName: chain.name });
     }
   }
-  return rests;
-}
-
-// The tasks of a day with every hole inside a session filled with a rest block.
-export function fillSessionGaps(tasks: Task[]): Task[] {
-  const covered = new Set(coveredRests(tasks).map((t) => t.id));
-  const kept = covered.size > 0 ? tasks.filter((t) => !covered.has(t.id)) : tasks;
-  const extra = sessionGapRestTasks(kept);
-  return extra.length === 0 ? kept : [...kept, ...extra];
-}
-
-// The rest tasks of a day that some task now spans completely. The reverse of
-// sessionGapRestTasks: closing a session back up — pulling a block all the way
-// over the rest — makes the rest redundant, so it is dropped.
-export function coveredRests(tasks: Task[]): Task[] {
-  const scheduled = tasks.filter(isEngineTask);
-  const out: Task[] = [];
-  for (const rest of scheduled) {
-    if (rest.type !== 'rest') continue;
-    const rStart = taskStartMs(rest);
-    const rEnd = taskEndMs(rest);
-    const covered = scheduled.some(
-      (t) =>
-        t.id !== rest.id &&
-        t.type !== 'rest' &&
-        taskStartMs(t) <= rStart &&
-        taskEndMs(t) >= rEnd
-    );
-    if (covered) out.push(rest);
-  }
-  return out;
-}
-
-function restTaskFor(
-  fromMs: number,
-  toMs: number,
-  sessionId: string,
-  sessionName: string | null
-): Task {
-  const day = dayKeyOf(fromMs);
-  const base = dayStartMs(day);
-  return {
-    id: newTaskId(),
-    name: 'Отдых',
-    plannedTime: Math.round((toMs - fromMs) / 1000),
-    completedAt: null,
-    start: Math.round((fromMs - base) / MIN_MS),
-    finishedAt: null,
-    order: 0,
-    emoji: '☕',
-    color: DEFAULT_COLOR,
-    type: 'rest',
-    day,
-    status: 'in-progress',
-    sessionId,
-    sessionName,
-  };
+  if (joined.size === 0) return tasks;
+  return tasks.map((task) => {
+    const patch = joined.get(task.id);
+    return patch ? { ...task, ...patch } : task;
+  });
 }
 
 // ── Moving a whole sequence ────────────────────────────────────────

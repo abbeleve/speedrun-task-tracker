@@ -26,7 +26,11 @@ function task(start: number, minutes: number, done?: number): Task {
   };
 }
 
-const chainOf = (tasks: Task[]) => buildChains(buildGroups(tasks))[0];
+// The tracker is only ever opened on a real sequence, and blocks are one
+// sequence only once they have been glued by hand — so the fixture glues them
+// (see schedule.ts's buildChains).
+const chainOf = (tasks: Task[]) =>
+  buildChains(buildGroups(tasks.map((t) => ({ ...t, sessionId: 's1' }))))[0];
 
 describe('buildChainRun', () => {
   it('flattens a back-to-back sequence one second per second', () => {

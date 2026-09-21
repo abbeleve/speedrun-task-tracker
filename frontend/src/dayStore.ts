@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from './types';
 import * as api from './api';
 import { normalizeTasks } from './tasks';
-import { migrateDayTasks, fillSessionGaps } from './schedule';
+import { migrateDayTasks, absorbIntoSessions } from './schedule';
 import { dayStatsFromTasks } from './dayStats';
 
 export type DaysByDate = Record<string, Task[]>;
@@ -124,15 +124,16 @@ export function useDayStore(): DayStore {
   // state updater (which may run twice).
   const commit = useCallback(
     (next: DaysByDate, touched: string[]) => {
-      // Keep the invariant that no session has a hole bigger than the merge gap:
-      // any gap a mutation just opened is filled with a rest task on the spot.
+      // Keep the invariant that a block standing entirely inside a session is
+      // really a member of it, and not just visually in the middle of one: a
+      // mutation that drops a block into a session's span joins it on the spot.
       // Touched dates are the only ones whose session layout could have changed.
-      const filled: DaysByDate = {};
+      const joined: DaysByDate = {};
       for (const [date, list] of Object.entries(next)) {
-        filled[date] = touched.includes(date) ? fillSessionGaps(list) : list;
+        joined[date] = touched.includes(date) ? absorbIntoSessions(list) : list;
       }
-      daysRef.current = filled;
-      setDays(filled);
+      daysRef.current = joined;
+      setDays(joined);
       markDirty(touched);
     },
     [markDirty]

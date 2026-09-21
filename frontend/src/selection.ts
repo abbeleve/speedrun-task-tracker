@@ -4,7 +4,8 @@
 // creates a block, held still on the spot for HOLD_MS it arms a *marquee*
 // instead — a rectangle swept over the grid that picks up every block it
 // touches, across day columns. What it picks then moves as one batch, and can
-// be pulled out of the sequence it sits in into a sequence of its own.
+// be declared a session of its own — or pulled out of the sequence it sits in
+// into a sequence of its own.
 
 import type { Task } from './types';
 import type { Chain } from './schedule';
@@ -82,9 +83,9 @@ export function chainOfSelection(chains: Chain[], ids: Iterable<string>): Chain 
 }
 
 // Pull a batch of blocks into a session of their own. They keep their slots —
-// nothing moves — but an explicit session id makes them a sequence in their
-// own right (see buildChains: a block in a session never joins anything else),
-// so the blocks left behind stay a separate one.
+// nothing moves — but an explicit session id makes them a sequence in their own
+// right (see buildChains: that id is the *only* thing that makes blocks one
+// sequence), so the blocks left behind stay separate.
 export function splitPatches(
   tasks: Task[],
   sessionId: string,

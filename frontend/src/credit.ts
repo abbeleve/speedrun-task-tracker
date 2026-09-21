@@ -33,7 +33,7 @@
 // still recomputed from the plan every time, never read back.
 
 import type { TaskGroup } from './schedule';
-import { buildChains, dayKeyOf } from './schedule';
+import { dayKeyOf, isContinuous } from './schedule';
 
 export interface CreditSnapshot {
   // Seconds of lead carried out of the last closed group (negative = behind).
@@ -75,15 +75,6 @@ const EMPTY: CreditSnapshot = {
 export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapshot {
   if (groups.length === 0) return { ...EMPTY, closedDays: [] };
 
-  // Which schedule.ts chain each group belongs to. Two groups in the same
-  // chain are "идущие подряд" (or explicitly glued into one session) and never
-  // take a day boundary between them, however far their times land from
-  // midnight — that is exactly a "sequence crossing into the next day".
-  const chainIndexByGroup = new Map<TaskGroup, number>();
-  buildChains(groups).forEach((chain, idx) => {
-    for (const g of chain.groups) chainIndexByGroup.set(g, idx);
-  });
-
   let banked = 0;
   let epochDay: string | null = null;
   let epochStartMs: number | null = null;
@@ -100,9 +91,14 @@ export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapsho
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     const groupDay = dayKeyOf(group.startMs);
-    const sameChain =
-      i > 0 && chainIndexByGroup.get(groups[i - 1]) === chainIndexByGroup.get(group);
-    const boundary = prevEndMs !== null && !sameChain && groupDay !== epochDay;
+    // Two groups the clock ran straight through — back to back, or two blocks
+    // of one session — never take a day boundary between them, however far
+    // their times land from midnight: that is a stretch of work carried into
+    // the next day, not a new day. It says nothing about them being connected
+    // (sequences are explicit — see schedule.ts's buildChains); it is only
+    // whether the clock ever stopped.
+    const sameRun = i > 0 && isContinuous(groups[i - 1], group);
+    const boundary = prevEndMs !== null && !sameRun && groupDay !== epochDay;
 
     if (boundary) {
       // Two different reasons a day is not over yet, depending on what it is
