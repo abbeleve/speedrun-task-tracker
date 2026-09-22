@@ -122,6 +122,7 @@ function TaskDialog({
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(task.repeat?.mode ?? 'fixed');
   const [repeatBase, setRepeatBase] = useState(String(task.repeat?.baseDays ?? 7));
+  const [pinned, setPinned] = useState(task.pinned ?? false);
   // Backdating a completion: a task placed on the calendar (backlog items have
   // no slot to credit against) can be marked done — or have its done moment
   // corrected — at any timestamp, not just "now". This is what lets a task
@@ -168,8 +169,9 @@ function TaskDialog({
       color,
       type,
       habitId: habitId || null,
+      pinned,
     });
-  }, [name, description, day, time, minutes, emoji, color, type, habitId]);
+  }, [name, description, day, time, minutes, emoji, color, type, habitId, pinned]);
 
   const formRef = useRef<HTMLFormElement>(null);
   const [popHeight, setPopHeight] = useState(0);
@@ -227,6 +229,7 @@ function TaskDialog({
       emoji: resolveTaskEmoji(emoji),
       color,
       type,
+      pinned,
       habitId: isReminder ? null : habitId || null,
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
@@ -344,11 +347,22 @@ function TaskDialog({
         <div className="cal-modal-row">
           <label className="cal-field">
             <span>Дата</span>
-            <input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+            <input
+              type="date"
+              value={day}
+              disabled={pinned}
+              onChange={(e) => setDay(e.target.value)}
+            />
           </label>
           <label className="cal-field">
             <span>Начало</span>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} step={300} />
+            <input
+              type="time"
+              value={time}
+              disabled={pinned}
+              onChange={(e) => setTime(e.target.value)}
+              step={300}
+            />
           </label>
           <label className="cal-field cal-field--sm">
             <span>Минут</span>
@@ -363,6 +377,20 @@ function TaskDialog({
               onChange={(e) => setMinutes(e.target.value)}
             />
           </label>
+        </div>
+
+        <div className="cal-modal-row">
+          <label className="cal-check">
+            <input
+              type="checkbox"
+              checked={pinned}
+              onChange={(e) => setPinned(e.target.checked)}
+            />
+            <span>📌 Закрепить на месте</span>
+          </label>
+          <span className="cal-repeat-hint">
+            Закреплённую задачу нельзя перенести, пока флажок не снят
+          </span>
         </div>
 
         <div className="cal-modal-row">

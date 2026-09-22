@@ -4031,7 +4031,7 @@
 
 .kanban-card.locked {
   cursor: default;
-  opacity: 0.75;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent-gold) 75%, transparent);
 }
 
 .kanban-card.offered {

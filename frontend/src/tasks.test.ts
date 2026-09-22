@@ -8,6 +8,7 @@ import {
   nextRepeatIntervalDays,
   normalizeTask,
   normalizeTasks,
+  preservePinnedPlacement,
   reindexTasks,
   scheduledDayFor,
   spawnNextOccurrence,
@@ -56,8 +57,50 @@ describe('normalizeTask', () => {
     expect(t.day).toBe('2026-09-12');
   });
 
+  it('defaults legacy tasks to unpinned', () => {
+    expect(normalizeTask(legacy({}), '2026-09-10').pinned).toBe(false);
+  });
+
   it('normalizes a whole list', () => {
     expect(normalizeTasks([legacy({ id: 'a' }), legacy({ id: 'b' })], '2026-09-10')).toHaveLength(2);
+  });
+});
+
+describe('pinned placement', () => {
+  it('keeps day, slot and backlog/timeline placement while pinned', () => {
+    const pinned = task('p', 'in-progress', 0);
+    pinned.start = 9 * 60;
+    pinned.pinned = true;
+    const attemptedMove = preservePinnedPlacement(pinned, {
+      ...pinned,
+      day: '2026-09-11',
+      start: 12 * 60,
+      status: 'open',
+    });
+    expect(attemptedMove.day).toBe('2026-09-10');
+    expect(attemptedMove.start).toBe(9 * 60);
+    expect(attemptedMove.status).toBe('in-progress');
+  });
+
+  it('allows completion without moving a pinned task', () => {
+    const pinned = task('p', 'in-progress', 0);
+    pinned.start = 9 * 60;
+    pinned.pinned = true;
+    expect(preservePinnedPlacement(pinned, { ...pinned, status: 'done' }).status).toBe('done');
+  });
+
+  it('allows movement in the same edit that unpins the task', () => {
+    const pinned = task('p', 'in-progress', 0);
+    pinned.start = 9 * 60;
+    pinned.pinned = true;
+    const moved = preservePinnedPlacement(pinned, {
+      ...pinned,
+      pinned: false,
+      day: '2026-09-11',
+      start: 12 * 60,
+    });
+    expect(moved.day).toBe('2026-09-11');
+    expect(moved.start).toBe(12 * 60);
   });
 });
 
@@ -118,6 +161,14 @@ describe('recurrence', () => {
     expect(child!.start).toBe(9 * 60);
     expect(child!.status).toBe('in-progress');
     expect(child!.finishedAt).toBeNull();
+  });
+
+  it('carries the pinned setting to the next occurrence', () => {
+    const placed = recurring(
+      { mode: 'fixed', baseDays: 2 },
+      { start: 9 * 60, pinned: true }
+    );
+    expect(spawnNextOccurrence(placed, makeId, '2026-09-10')!.pinned).toBe(true);
   });
 
   it('schedules an unplaced recurrence back into the backlog on day+interval', () => {

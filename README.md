@@ -17,7 +17,8 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 
 ## Features
 
-- **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag its bottom edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time.
+- **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag either edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time. Hover a day in the 3-day/week views to see reminder details and the first real break after the current or next uninterrupted work stretch.
+- **Pinned tasks** — pin a calendar block or backlog item to lock its placement. It can still be completed and edited; uncheck the pin to move it again.
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
 - **Sequences are explicit** — blocks never connect to each other on their own, however tightly they are laid out: two blocks that touch stay two separate blocks until you say otherwise. A sequence is marked by a spine on the left of the day column; click the spine to open the session editor, drag it to move the whole run at once.

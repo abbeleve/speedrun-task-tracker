@@ -34,6 +34,7 @@ export function normalizeTask(task: Task, day: string): Task {
     // itself is filled in by migrateDayTasks() once the whole day is known.
     start: task.start ?? null,
     finishedAt: task.finishedAt ?? null,
+    pinned: task.pinned ?? false,
   };
 }
 
@@ -59,6 +60,23 @@ export function getOpenTasks(tasks: Task[]): Task[] {
 // sequence so the two groups never collide on `order`.
 export function reindexTasks(tasks: Task[]): Task[] {
   return [...getTimelineTasks(tasks), ...getOpenTasks(tasks)].map((t, i) => ({ ...t, order: i }));
+}
+
+// Keep the placement of an already-pinned task immutable at the store boundary,
+// not only in drag handlers. Completion/reopening remains allowed because it
+// moves between done and in-progress without changing calendar placement.
+// Supplying pinned:false explicitly unlocks the task and permits the same edit
+// to move it, which is useful when the dialog is saved after unchecking the pin.
+export function preservePinnedPlacement(previous: Task | undefined, next: Task): Task {
+  if (!previous?.pinned || next.pinned === false) return next;
+  const changesPlacementKind =
+    (previous.status === 'open') !== (next.status === 'open');
+  return {
+    ...next,
+    day: previous.day,
+    start: previous.start,
+    status: changesPlacementKind ? previous.status : next.status,
+  };
 }
 
 // ── Recurrence (spaced repetition) ─────────────────────────────────
@@ -118,6 +136,7 @@ export function spawnNextOccurrence(
     type: task.type,
     day: shiftDayKey(baseDay, interval),
     status: placed ? 'in-progress' : 'open',
+    pinned: task.pinned ?? false,
     repeat: task.repeat,
     repeatIndex: index + 1,
     repeatOf: task.id,

@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from './types';
 import * as api from './api';
-import { normalizeTasks } from './tasks';
+import { normalizeTasks, preservePinnedPlacement } from './tasks';
 import { migrateDayTasks, absorbIntoSessions } from './schedule';
 import { dayStatsFromTasks } from './dayStats';
 
@@ -150,14 +150,16 @@ export function useDayStore(): DayStore {
   const upsertTask = useCallback(
     (task: Task) => {
       const prev = daysRef.current;
+      const previousTask = Object.values(prev).flat().find((candidate) => candidate.id === task.id);
+      const safeTask = preservePinnedPlacement(previousTask, task);
       const next: DaysByDate = {};
-      const touched = new Set<string>([task.day]);
+      const touched = new Set<string>([safeTask.day]);
       for (const [date, list] of Object.entries(prev)) {
-        const without = list.filter((t) => t.id !== task.id);
-        if (without.length !== list.length && date !== task.day) touched.add(date);
+        const without = list.filter((t) => t.id !== safeTask.id);
+        if (without.length !== list.length && date !== safeTask.day) touched.add(date);
         next[date] = without;
       }
-      next[task.day] = [...(next[task.day] ?? []), task];
+      next[safeTask.day] = [...(next[safeTask.day] ?? []), safeTask];
       commit(next, [...touched]);
     },
     [commit]
@@ -183,7 +185,7 @@ export function useDayStore(): DayStore {
             continue;
           }
           changed = true;
-          const patched = { ...task, ...patch };
+          const patched = preservePinnedPlacement(task, { ...task, ...patch });
           // A patch that moves the task to another date re-buckets it.
           if (patched.day !== date) moved.push(patched);
           else updated.push(patched);

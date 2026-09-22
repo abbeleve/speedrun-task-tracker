@@ -58,6 +58,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
   const [repeatOn, setRepeatOn] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('fixed');
   const [repeatBase, setRepeatBase] = useState('7');
+  const [pinned, setPinned] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -168,6 +169,9 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
 
   const moveTaskTo = useCallback(
     (task: Task, status: TaskStatus) => {
+      // A pin locks backlog/calendar placement, but completing or reopening a
+      // placed task is still allowed.
+      if (task.pinned && ((task.status === 'open') !== (status === 'open'))) return;
       const becomesDone = status === 'done' && task.status !== 'done';
       const becomesUndone = status !== 'done' && task.status === 'done';
       // Leaving the backlog puts the task on the calendar; going back to it
@@ -231,14 +235,16 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
         type,
         day: planDay,
         status: 'open',
+        pinned,
         repeat: repeatOn ? { mode: repeatMode, baseDays } : null,
         repeatIndex: 0,
       };
       void applyToDay(planDay, (ts) => reindexTasks([...ts, task]));
       setName('');
+      setPinned(false);
       closeAdd();
     },
-    [name, minutes, emoji, color, type, planDay, repeatOn, repeatMode, repeatBase, applyToDay, closeAdd]
+    [name, minutes, emoji, color, type, planDay, pinned, repeatOn, repeatMode, repeatBase, applyToDay, closeAdd]
   );
 
   const onDropColumn = (col: TaskStatus) => (e: React.DragEvent) => {
@@ -248,7 +254,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
     setDropCol(null);
     if (!id) return;
     const task = allTasks.find((t) => t.id === id);
-    if (!task || task.status === col) return;
+    if (!task || task.status === col || task.pinned) return;
     moveTaskTo(task, col);
   };
 
@@ -381,6 +387,14 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                 />
                 🔁 повтор
               </label>
+              <label className="kanban-repeat-toggle" title="Нельзя переносить, пока закрепление не снято">
+                <input
+                  type="checkbox"
+                  checked={pinned}
+                  onChange={(e) => setPinned(e.target.checked)}
+                />
+                📌 закрепить
+              </label>
               {repeatOn && (
                 <div className="kanban-repeat-opts">
                   <select
@@ -491,7 +505,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                 const offered = status === 'open' && task.day === activeDay;
                 // Any card can be dragged between columns now that the plan
                 // is not tied to one open day.
-                const movable = true;
+                const movable = !task.pinned;
                 return (
                   <div
                     key={task.id}
@@ -524,6 +538,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                           {task.day === today ? 'сегодня' : fmtDay(task.day)}
                         </span>
                         {task.type === 'rest' && <span className="kanban-rest">☕</span>}
+                        {task.pinned && <span className="kanban-lock" title="Закреплено">📌</span>}
                         {task.repeat && (
                           <span className="kanban-repeat" title={describeRepeat(task.repeat)}>
                             🔁
@@ -550,7 +565,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                           🔒
                         </span>
                       )}
-                      {status === 'in-progress' && movable && (
+                      {status === 'in-progress' && (
                         <button
                           type="button"
                           className="btn btn-complete"
@@ -560,7 +575,7 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                           ✓
                         </button>
                       )}
-                      {status === 'done' && movable && (
+                      {status === 'done' && (
                         <button
                           type="button"
                           className="btn btn-undo"

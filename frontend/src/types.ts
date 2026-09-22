@@ -42,6 +42,10 @@ export interface Task {
   type: TaskType;
   day: string; // 'YYYY-MM-DD' the task is planned for
   status: TaskStatus;
+  // A pinned task keeps its calendar position (or its place in the backlog).
+  // It may still be completed, reopened and edited; clearing the pin unlocks
+  // day/start/status moves again. Optional so legacy rows remain valid.
+  pinned?: boolean;
   repeat?: RepeatConfig | null; // recurrence rule; absent/null = one-off task
   repeatIndex?: number; // 0-based step in the recurrence series
   repeatOf?: string; // id of the occurrence this one was spawned from

@@ -257,6 +257,58 @@ export function buildRuns(groups: TaskGroup[]): TaskGroup[][] {
   return runs;
 }
 
+export interface ScheduleGap {
+  currentTasks: Task[];
+  nextTasks: Task[];
+  currentStartMs: number;
+  currentEndMs: number;
+  nextStartMs: number;
+  gapMs: number;
+}
+
+// The first real break after the work that is active now (or the next work on
+// a future/today schedule). Overlapping and exactly back-to-back groups are one
+// current stretch; even an explicitly named session is split here when its
+// geometry contains a gap, because this card answers "when is the next break?"
+// rather than "which blocks are linked?". Past days and breaks beyond the
+// hovered day deliberately return nothing.
+export function firstGapAfterCurrent(
+  tasks: Task[],
+  day: string,
+  nowMs: number
+): ScheduleGap | null {
+  const dayFrom = dayStartMs(day);
+  const dayTo = dayFrom + DAY_MIN * MIN_MS;
+  if (nowMs >= dayTo) return null;
+  const referenceMs = Math.max(dayFrom, nowMs);
+  const groups = buildGroups(tasks).filter(
+    (group) => group.endMs > dayFrom && group.startMs < dayTo
+  );
+  const firstIndex = groups.findIndex((group) => group.endMs > referenceMs);
+  if (firstIndex < 0) return null;
+
+  const currentGroups = [groups[firstIndex]];
+  let currentEndMs = groups[firstIndex].endMs;
+  for (let index = firstIndex + 1; index < groups.length; index += 1) {
+    const next = groups[index];
+    if (next.startMs <= currentEndMs) {
+      currentGroups.push(next);
+      currentEndMs = Math.max(currentEndMs, next.endMs);
+      continue;
+    }
+    if (currentEndMs >= dayTo || next.startMs >= dayTo) return null;
+    return {
+      currentTasks: currentGroups.flatMap((group) => group.tasks),
+      nextTasks: next.tasks,
+      currentStartMs: currentGroups[0].startMs,
+      currentEndMs,
+      nextStartMs: next.startMs,
+      gapMs: next.startMs - currentEndMs,
+    };
+  }
+  return null;
+}
+
 // Those stretches wrapped as chains, so the views built to render a sequence
 // can render one. A stretch is still not a sequence — its blocks are not glued
 // and dragging one leaves the others where they are — but "what was worked in

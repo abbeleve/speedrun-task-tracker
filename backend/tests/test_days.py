@@ -219,6 +219,7 @@ def test_day_state_keeps_calendar_slots(client, auth_headers):
                 'type': 'task',
                 'day': '2026-09-10',
                 'status': 'done',
+                'pinned': True,
             },
             {
                 'id': 'b',
@@ -239,9 +240,11 @@ def test_day_state_keeps_calendar_slots(client, auth_headers):
     assert tasks[0]['start'] == 600
     assert tasks[0]['finishedAt'] == 1_772_000_000_000
     assert tasks[0]['status'] == 'done'
+    assert tasks[0]['pinned'] is True
     # An unplaced backlog task simply has no slot.
     assert tasks[1]['start'] is None
     assert tasks[1]['finishedAt'] is None
+    assert tasks[1]['pinned'] is False
 
 
 def test_day_state_keeps_sessions(client, auth_headers):

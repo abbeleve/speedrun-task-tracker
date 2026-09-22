@@ -8,6 +8,7 @@ import {
   buildRuns,
   daySegments,
   dayStartMs,
+  firstGapAfterCurrent,
   isContinuous,
   layoutTasks,
   mergeSuggestions,
@@ -354,6 +355,48 @@ describe('continuous runs', () => {
     expect(chains[0].tasks).toHaveLength(2);
     expect(chains[0].startMs).toBe(dayStartMs(DAY) + hm(9) * 60_000);
     expect(chains[0].endMs).toBe(dayStartMs(DAY) + hm(11) * 60_000);
+  });
+});
+
+describe('first gap after current work', () => {
+  const at = (h: number, m = 0) => dayStartMs(DAY) + hm(h, m) * 60_000;
+
+  it('combines overlapping and back-to-back work before reporting the first gap', () => {
+    const gap = firstGapAfterCurrent(
+      [
+        task({ start: hm(9), plannedTime: 3600 }),
+        task({ start: hm(9, 30), plannedTime: 3600 }),
+        task({ start: hm(10, 30), plannedTime: 1800 }),
+        task({ start: hm(13), plannedTime: 3600 }),
+      ],
+      DAY,
+      at(9, 45)
+    );
+    expect(gap?.currentTasks).toHaveLength(3);
+    expect(gap?.currentEndMs).toBe(at(11));
+    expect(gap?.nextStartMs).toBe(at(13));
+    expect(gap?.gapMs).toBe(2 * 3_600_000);
+  });
+
+  it('starts with the next work stretch when the day has not started or is currently idle', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600 }),
+      task({ start: hm(11), plannedTime: 3600 }),
+      task({ start: hm(15), plannedTime: 3600 }),
+    ];
+    expect(firstGapAfterCurrent(tasks, DAY, at(8))?.gapMs).toBe(3_600_000);
+    expect(firstGapAfterCurrent(tasks, DAY, at(10, 30))?.gapMs).toBe(3 * 3_600_000);
+  });
+
+  it('ignores reminders and does not report past days or a final open-ended gap', () => {
+    const tasks = [
+      task({ start: hm(9), plannedTime: 3600 }),
+      task({ start: hm(10), plannedTime: 1800, type: 'reminder' }),
+      task({ start: hm(11), plannedTime: 3600 }),
+    ];
+    expect(firstGapAfterCurrent(tasks, DAY, at(9, 30))?.gapMs).toBe(3_600_000);
+    expect(firstGapAfterCurrent(tasks, DAY, at(12))).toBeNull();
+    expect(firstGapAfterCurrent(tasks, DAY, dayStartMs(DAY) + 24 * 3_600_000)).toBeNull();
   });
 });
 

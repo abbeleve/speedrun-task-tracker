@@ -71,6 +71,8 @@ class DayTask(BaseModel):
     # defaults below fill them in.
     day: str = ''
     status: str = 'open'
+    # A pinned task cannot change its calendar/backlog placement until unpinned.
+    pinned: bool = False
     # Optional recurrence; absent for one-off tasks. `repeatIndex` is the step in
     # the series and `repeatOf` links an auto-scheduled occurrence to its source.
     repeat: Optional[RepeatConfig] = None

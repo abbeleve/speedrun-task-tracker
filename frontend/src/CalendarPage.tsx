@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { Habit, Task } from './types';
 import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
 import type { DayStore } from './dayStore';
-import type { Chain } from './schedule';
+import type { Chain, ScheduleGap } from './schedule';
 import {
   DAY_MIN,
   MIN_MS,
@@ -12,6 +12,7 @@ import {
   dayKeyOf,
   dayStartMs,
   daySegments,
+  firstGapAfterCurrent,
   isDone,
   isReminder,
   isScheduled,
@@ -139,6 +140,16 @@ type Gesture =
       toBacklog: boolean; // pointer is currently over the backlog rail
     }
   | { kind: 'resize'; task: Task; day: string; lengthMin: number }
+  // Dragging the top edge keeps the planned end fixed while changing start and
+  // duration together. Unlike bottom resize, this is a placement change.
+  | {
+      kind: 'resize-start';
+      task: Task;
+      endMs: number;
+      day: string;
+      startMin: number;
+      lengthMin: number;
+    }
   // Dragging a session by its spine: every block of it moves by the same
   // delta, so the gaps inside the session are kept.
   | { kind: 'chain'; chain: Chain; anchorMs: number; deltaMs: number; moved: boolean }
@@ -224,6 +235,11 @@ function CalendarPage({
     day: string;
     rect: DOMRect;
     anchors: { key: string; taskId: string; rect: DOMRect }[];
+    gapAnchor: {
+      key: string;
+      gap: ScheduleGap;
+      rect: { left: number; right: number; top: number; bottom: number };
+    } | null;
   } | null>(null);
   const reminderDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [reminderDetailHeights, setReminderDetailHeights] = useState<Record<string, number>>({});
@@ -720,6 +736,11 @@ function CalendarPage({
         });
         return;
       }
+      const placementLocked =
+        (g.kind === 'move' && Boolean(g.task.pinned)) ||
+        (g.kind === 'chain' && g.chain.tasks.some((task) => task.pinned)) ||
+        (g.kind === 'multi' && g.tasks.some((task) => task.pinned));
+      if (placementLocked) return;
       if (g.kind === 'move') {
         const rect = backlogRef.current?.getBoundingClientRect();
         const overBacklog =
@@ -768,6 +789,16 @@ function CalendarPage({
       } else if (g.kind === 'resize') {
         const lengthMin = Math.max(MIN_LENGTH_MIN, snap(slot.min - (g.task.start ?? 0)));
         setGestureState({ ...g, lengthMin });
+      } else if (g.kind === 'resize-start') {
+        const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
+        const startMs = Math.min(snapMs(cursorMs), g.endMs - MIN_LENGTH_MIN * MIN_MS);
+        const next = slotAtMs(startMs);
+        setGestureState({
+          ...g,
+          day: next.day,
+          startMin: next.start,
+          lengthMin: (g.endMs - startMs) / MIN_MS,
+        });
       }
     };
 
@@ -816,6 +847,17 @@ function CalendarPage({
         else if (g.deltaMs !== 0) store.patchTasks(shiftPatches(g.tasks, g.deltaMs));
       } else if (g.kind === 'resize' && g.lengthMin * 60 !== g.task.plannedTime) {
         store.patchTask(g.task.id, { plannedTime: g.lengthMin * 60 });
+      } else if (
+        g.kind === 'resize-start' &&
+        (g.day !== g.task.day ||
+          g.startMin !== g.task.start ||
+          g.lengthMin * 60 !== g.task.plannedTime)
+      ) {
+        store.patchTask(g.task.id, {
+          day: g.day,
+          start: g.startMin,
+          plannedTime: g.lengthMin * 60,
+        });
       }
     };
 
@@ -958,6 +1000,23 @@ function CalendarPage({
     [setGestureState]
   );
 
+  const startResizeTop = useCallback(
+    (e: React.PointerEvent, task: Task) => {
+      if (e.button !== 0 || task.pinned) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setGestureState({
+        kind: 'resize-start',
+        task,
+        endMs: taskEndMs(task),
+        day: task.day,
+        startMin: task.start ?? 0,
+        lengthMin: task.plannedTime / 60,
+      });
+    },
+    [setGestureState]
+  );
+
   // Right-drag anywhere on the canvas selects a time band to zoom into —
   // which day/column it happens over doesn't matter, only the vertical
   // position. A drag too short to be deliberate is handled as a reset in onUp.
@@ -978,7 +1037,7 @@ function CalendarPage({
       e.preventDefault();
       const id = e.dataTransfer.getData('text/plain');
       const task = store.tasks.find((t) => t.id === id);
-      if (!task) return;
+      if (!task || task.pinned) return;
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
       store.patchTask(id, {
@@ -1050,7 +1109,9 @@ function CalendarPage({
     const gapMs = freeUntilMs - now;
     if (gapMs < 10 * MIN_MS) return null;
 
-    const candidates = openTasks.filter((t) => t.plannedTime * 1000 <= gapMs && !isReminder(t));
+    const candidates = openTasks.filter(
+      (t) => t.plannedTime * 1000 <= gapMs && !isReminder(t) && !t.pinned
+    );
     if (candidates.length === 0) return null;
 
     return { day, startMs: now, endMs: freeUntilMs, gapMs, candidates };
@@ -1065,6 +1126,7 @@ function CalendarPage({
 
   const acceptGapTask = useCallback(
     (task: Task, day: string, startMs: number) => {
+      if (task.pinned) return;
       const startMin = snap(Math.round((startMs - dayStartMs(day)) / MIN_MS));
       store.patchTask(task.id, {
         day,
@@ -1165,16 +1227,18 @@ function CalendarPage({
   const showDayReminders = (day: string, target: HTMLElement) => {
     if (view !== '3day' && view !== 'week') return;
     const segments = daySegments(reminderTasks, day);
+    const gap = firstGapAfterCurrent(tasks, day, now);
     const column = target.classList.contains('cal-col')
       ? target
       : Array.from(columnsRef.current?.querySelectorAll<HTMLElement>('.cal-col') ?? []).find(
           (candidate) => candidate.dataset.day === day
         );
     const scrollerRect = scrollerRef.current?.getBoundingClientRect();
-    if (!column || !scrollerRect || segments.length === 0) {
+    if (!column || !scrollerRect) {
       setDayReminderCard(null);
       return;
     }
+    const columnRect = column.getBoundingClientRect();
     const anchors = segments.flatMap((segment) => {
       const key = `${day}:${segment.task.id}`;
       const rect = reminderStripRefs.current.get(key)?.getBoundingClientRect();
@@ -1183,11 +1247,32 @@ function CalendarPage({
       if (!rect || rect.bottom < scrollerRect.top || rect.top > scrollerRect.bottom) return [];
       return [{ key, taskId: segment.task.id, rect }];
     });
-    if (anchors.length === 0) {
+    const gapAnchor = gap
+      ? (() => {
+          const dayFrom = dayStartMs(day);
+          const rawTop = columnRect.top + minToPx((gap.currentEndMs - dayFrom) / MIN_MS);
+          const rawBottom = columnRect.top + minToPx((gap.nextStartMs - dayFrom) / MIN_MS);
+          const middle = Math.min(
+            scrollerRect.bottom,
+            Math.max(scrollerRect.top, (rawTop + rawBottom) / 2)
+          );
+          return {
+            key: `gap:${day}`,
+            gap,
+            rect: {
+              left: columnRect.left,
+              right: columnRect.right,
+              top: middle,
+              bottom: middle,
+            },
+          };
+        })()
+      : null;
+    if (anchors.length === 0 && !gapAnchor) {
       setDayReminderCard(null);
       return;
     }
-    setDayReminderCard({ day, rect: column.getBoundingClientRect(), anchors });
+    setDayReminderCard({ day, rect: columnRect, anchors, gapAnchor });
   };
 
   const hideDayReminders = (day: string) => {
@@ -1216,6 +1301,8 @@ function CalendarPage({
           ? dragMulti.tasks.map((t) => t.id)
           : g?.kind === 'move'
             ? [g.task.id]
+            : g?.kind === 'resize-start'
+              ? [g.task.id]
             : []
     );
     if (livePreview) ghostIds.add(livePreview.id);
@@ -1294,6 +1381,13 @@ function CalendarPage({
       }
     } else if (g?.kind === 'move' && !g.toBacklog) {
       pushGhost(g.task.id, g.task, { day: g.day, start: g.startMin }, false);
+    } else if (g?.kind === 'resize-start') {
+      pushGhost(
+        g.task.id,
+        { ...g.task, plannedTime: g.lengthMin * 60 },
+        { day: g.day, start: g.startMin },
+        false
+      );
     }
     if (livePreview) {
       pushGhost(
@@ -1337,6 +1431,7 @@ function CalendarPage({
                 'cal-chain',
                 chain.sessionId ? 'session' : '',
                 chain.name ? 'named' : '',
+                chain.tasks.some((task) => task.pinned) ? 'locked' : '',
                 dragChain?.chain.id === chain.id ? 'dragging' : '',
               ]
                 .filter(Boolean)
@@ -1347,7 +1442,11 @@ function CalendarPage({
                 '--sequence-gradient': sequenceGradient,
                 '--sequence-accent': sequenceAccent,
               } as React.CSSProperties}
-              title={`${chain.name ?? 'Секвенция'} · ${chain.tasks.length} задач — открыть настройки сессии, потянуть — перенести целиком`}
+              title={
+                chain.tasks.some((task) => task.pinned)
+                  ? `${chain.name ?? 'Секвенция'} · содержит закреплённую задачу — перенос заблокирован`
+                  : `${chain.name ?? 'Секвенция'} · ${chain.tasks.length} задач — открыть настройки сессии, потянуть — перенести целиком`
+              }
               onPointerDown={(e) => startChainDrag(e, chain)}
             >
               {chain.name && height > 40 && (
@@ -1386,7 +1485,7 @@ function CalendarPage({
                 '--task-color': task.color,
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
-              title={`🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
+              title={`${task.pinned ? '📌 ' : ''}🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
                 seg.topMin + lengthMin
               )}${expired ? ' · окно закрыто' : ''} — нажми, чтобы посмотреть`}
             />
@@ -1430,6 +1529,7 @@ function CalendarPage({
                 active ? 'active' : '',
                 task.type === 'rest' ? 'rest' : '',
                 task.sessionId ? 'in-session' : '',
+                task.pinned ? 'pinned' : '',
                 selectedIds.has(task.id) ? 'selected' : '',
                 resizing ? 'dragging' : '',
                 !seg.startsHere ? 'cont-top' : '',
@@ -1451,6 +1551,11 @@ function CalendarPage({
               <div className="cal-block-head">
                 <span className="cal-block-emoji">{task.emoji}</span>
                 <span className="cal-block-name">{task.name || 'Без названия'}</span>
+                {task.pinned && (
+                  <span className="cal-block-pin" title="Закреплено — снимите флажок в редакторе, чтобы перенести">
+                    📌
+                  </span>
+                )}
                 <button
                   type="button"
                   className="cal-block-check"
@@ -1483,8 +1588,15 @@ function CalendarPage({
                   title={`Закрыто в ${wallTime(task.finishedAt)}`}
                 />
               )}
+              {seg.startsHere && !task.pinned && (
+                <div
+                  className="cal-block-resize cal-block-resize--top"
+                  onPointerDown={(e) => startResizeTop(e, task)}
+                  title="Потянуть — изменить начало и длительность"
+                />
+              )}
               <div
-                className="cal-block-resize"
+                className="cal-block-resize cal-block-resize--bottom"
                 onPointerDown={(e) => startResize(e, task)}
                 title="Потянуть — изменить длительность"
               />
@@ -1682,16 +1794,20 @@ function CalendarPage({
     // The task-specific card has priority while a regular block is hovered;
     // the reminder cards return as soon as it is left.
     if (!dayReminderCard || hoverCard) return null;
-    const { day, rect, anchors } = dayReminderCard;
+    const { day, rect, anchors, gapAnchor } = dayReminderCard;
     const segmentsByTask = new Map(
       daySegments(reminderTasks, day).map((segment) => [segment.task.id, segment])
     );
-    const items = anchors
+    const reminderItems = anchors
       .map((anchor) => {
         const segment = segmentsByTask.get(anchor.taskId);
-        return segment ? { ...anchor, segment } : null;
+        return segment ? { kind: 'reminder' as const, ...anchor, segment } : null;
       })
-      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const items = [
+      ...reminderItems,
+      ...(gapAnchor ? [{ kind: 'gap' as const, ...gapAnchor }] : []),
+    ]
       .sort((a, b) => a.rect.top - b.rect.top);
     if (items.length === 0) return null;
 
@@ -1708,9 +1824,10 @@ function CalendarPage({
     const scrollerRect = scrollerRef.current?.getBoundingClientRect();
     const anchorTop = Math.max(8, scrollerRect?.top ?? 8);
     const anchorBottom = Math.min(vh - 8, scrollerRect?.bottom ?? vh - 8);
-    const heights = items.map(({ key, segment }) => {
-      const descriptionLines = Math.ceil((segment.task.description?.length ?? 0) / 42);
-      return reminderDetailHeights[key] ?? 64 + Math.min(5, descriptionLines) * 16;
+    const heights = items.map((item) => {
+      if (item.kind === 'gap') return reminderDetailHeights[item.key] ?? 88;
+      const descriptionLines = Math.ceil((item.segment.task.description?.length ?? 0) / 42);
+      return reminderDetailHeights[item.key] ?? 64 + Math.min(5, descriptionLines) * 16;
     });
 
     // Start each box across from its rail, then push colliding boxes apart.
@@ -1762,7 +1879,7 @@ function CalendarPage({
           aria-hidden="true"
         >
           {items.map((item, index) => {
-            const task = item.segment.task;
+            const color = item.kind === 'gap' ? 'var(--accent-gold)' : item.segment.task.color;
             const startX = onRight ? item.rect.right : item.rect.left;
             const startY = Math.min(
               anchorBottom,
@@ -1773,7 +1890,7 @@ function CalendarPage({
             const direction = onRight ? 1 : -1;
             const bend = Math.max(16, Math.abs(endX - startX) * 0.42);
             return (
-              <g key={item.key} style={{ color: task.color }}>
+              <g key={item.key} style={{ color }}>
                 <path
                   d={`M ${startX} ${startY} C ${startX + direction * bend} ${startY}, ${endX - direction * bend} ${endY}, ${endX} ${endY}`}
                 />
@@ -1784,6 +1901,43 @@ function CalendarPage({
         </svg>
 
         {items.map((item, index) => {
+          if (item.kind === 'gap') {
+            const currentNames = item.gap.currentTasks.map((task) => task.name).join(', ');
+            const nextNames = item.gap.nextTasks.map((task) => task.name).join(', ');
+            return (
+              <article
+                key={item.key}
+                ref={(element) => {
+                  if (element) reminderDetailRefs.current.set(item.key, element);
+                  else reminderDetailRefs.current.delete(item.key);
+                }}
+                className={`cal-reminder-detail-card cal-gap-detail-card ${onRight ? 'right' : 'left'}`}
+                style={
+                  {
+                    left,
+                    top: tops[index],
+                    width,
+                    transformOrigin: onRight ? 'left center' : 'right center',
+                    '--task-color': 'var(--accent-gold)',
+                  } as React.CSSProperties
+                }
+                aria-hidden="true"
+              >
+                <div className="cal-reminder-detail-main">
+                  <span className="cal-reminder-detail-emoji">⏳</span>
+                  <span className="cal-reminder-detail-name">
+                    Первый перерыв · {dur(item.gap.gapMs / 1000)}
+                  </span>
+                </div>
+                <div className="cal-reminder-detail-time">
+                  {label} · {wallTime(item.gap.currentEndMs)}–{wallTime(item.gap.nextStartMs)}
+                </div>
+                <p className="cal-reminder-detail-desc">
+                  После {currentNames || 'текущей серии'} · дальше {nextNames || 'следующая задача'}
+                </p>
+              </article>
+            );
+          }
           const seg = item.segment;
           const task = seg.task;
           const expired = taskEndMs(task) <= now;
@@ -2078,15 +2232,22 @@ function CalendarPage({
             {openTasks.map((task) => (
               <div
                 key={task.id}
-                className="cal-backlog-card"
+                className={`cal-backlog-card${task.pinned ? ' pinned' : ''}`}
                 style={{ '--task-color': task.color } as React.CSSProperties}
-                draggable
-                onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+                draggable={!task.pinned}
+                onDragStart={(e) => {
+                  if (task.pinned) {
+                    e.preventDefault();
+                    return;
+                  }
+                  e.dataTransfer.setData('text/plain', task.id);
+                }}
                 onClick={(e) => openDialog(task, false, e)}
               >
                 <span className="cal-chip-emoji">{task.emoji}</span>
                 <span className="cal-chip-name">{task.name}</span>
                 <span className="cal-chip-time">{dur(task.plannedTime)}</span>
+                {task.pinned && <span className="cal-backlog-pin" title="Закреплено">📌</span>}
               </div>
             ))}
             {openTasks.length === 0 && <p className="cal-backlog-empty">Пусто</p>}
