@@ -4056,43 +4056,29 @@
 
 /* User-authored task gradient. Direction is an animation choice rather than a
    static angle so the preview and every task surface move the same way. */
+@property --task-flow-phase {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
 .task-color-flow {
   background-image: var(--task-gradient);
-  background-size: 200% 200%;
+  animation-name: task-color-flow;
   animation-duration: var(--task-flow-duration, 6s);
   animation-timing-function: linear;
   animation-iteration-count: infinite;
 }
 
-.task-color-flow--right { animation-name: task-flow-right; }
-.task-color-flow--left { animation-name: task-flow-left; }
-.task-color-flow--down { animation-name: task-flow-down; }
-.task-color-flow--up { animation-name: task-flow-up; }
-
-@keyframes task-flow-right {
-  from { background-position: 100% 50%; }
-  to { background-position: 0% 50%; }
-}
-
-@keyframes task-flow-left {
-  from { background-position: 0% 50%; }
-  to { background-position: 100% 50%; }
-}
-
-@keyframes task-flow-down {
-  from { background-position: 50% 100%; }
-  to { background-position: 50% 0%; }
-}
-
-@keyframes task-flow-up {
-  from { background-position: 50% 0%; }
-  to { background-position: 50% 100%; }
+@keyframes task-color-flow {
+  from { --task-flow-phase: 0%; }
+  to { --task-flow-phase: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .task-color-flow {
     animation: none;
-    background-position: 50% 50%;
+    --task-flow-phase: 0%;
   }
 }
 

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -51,7 +51,9 @@ class RepeatConfig(BaseModel):
 class TaskColorAnimation(BaseModel):
     type: str = 'flow'
     colors: List[str] = Field(default_factory=list)
-    direction: str = 'right'
+    # Degrees in new clients; cardinal strings remain accepted so tasks saved
+    # before the 360° direction control continue to load and migrate.
+    direction: Union[float, str] = 0
     durationSec: float = 6
 
 

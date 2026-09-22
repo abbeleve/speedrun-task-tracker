@@ -4,7 +4,6 @@ import type {
   RepeatMode,
   Task,
   TaskColorAnimation,
-  TaskFlowDirection,
   TaskType,
 } from './types';
 import {
@@ -135,9 +134,7 @@ function TaskDialog({
   const [flowColors, setFlowColors] = useState<string[]>(
     initialFlow?.colors ?? [task.color, ...DEFAULT_FLOW_COLORS.slice(1)]
   );
-  const [flowDirection, setFlowDirection] = useState<TaskFlowDirection>(
-    initialFlow?.direction ?? 'right'
-  );
+  const [flowDirection, setFlowDirection] = useState(initialFlow?.direction ?? 0);
   const [flowDurationSec, setFlowDurationSec] = useState(
     initialFlow?.durationSec ?? DEFAULT_FLOW_DURATION_SEC
   );
@@ -657,27 +654,38 @@ function TaskDialog({
                   </div>
 
                   <div className="cal-flow-options">
-                    <div className="cal-field">
-                      <span>Направление</span>
-                      <div className="cal-seg cal-flow-directions">
-                        {(
-                          [
-                            ['right', '→'],
-                            ['left', '←'],
-                            ['down', '↓'],
-                            ['up', '↑'],
-                          ] as [TaskFlowDirection, string][]
-                        ).map(([direction, arrow]) => (
-                          <button
-                            type="button"
-                            key={direction}
-                            className={flowDirection === direction ? 'active' : ''}
-                            onClick={() => setFlowDirection(direction)}
-                            title={`Поток ${arrow}`}
-                          >
-                            {arrow}
-                          </button>
-                        ))}
+                    <div className="cal-field cal-flow-direction-field">
+                      <span>Направление · {flowDirection}°</span>
+                      <div className="cal-flow-direction-control">
+                        <span
+                          className="cal-flow-direction-arrow"
+                          style={{ transform: `rotate(${flowDirection}deg)` }}
+                          aria-hidden="true"
+                        >
+                          →
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={359}
+                          step={1}
+                          value={flowDirection}
+                          aria-label="Направление потока градиента"
+                          onChange={(e) => setFlowDirection(Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={359}
+                          step={1}
+                          value={flowDirection}
+                          aria-label="Направление в градусах"
+                          onChange={(e) =>
+                            setFlowDirection(
+                              Math.min(359, Math.max(0, Math.round(Number(e.target.value))))
+                            )
+                          }
+                        />
                       </div>
                     </div>
                     <label className="cal-field cal-field--grow">

@@ -1744,8 +1744,38 @@
   color: var(--text-primary);
 }
 
-.cal-flow-directions button {
-  min-width: 32px;
+.cal-flow-direction-field {
+  flex: 1 1 100%;
+}
+
+.cal-flow-direction-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cal-flow-direction-arrow {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--accent-cyan);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.cal-flow-direction-control input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cal-flow-direction-control input[type='number'] {
+  width: 62px;
+  flex: none;
+  text-align: center;
 }
 
 .cal-flow-options input[type='range'] {
@@ -1761,7 +1791,6 @@
 .cal-reminder.task-color-flow,
 .cal-flow-preview.task-color-flow {
   background-image: var(--task-gradient);
-  background-size: 200% 200%;
 }
 
 .cal-block.rest.task-color-flow {

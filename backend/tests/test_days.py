@@ -301,3 +301,28 @@ def test_day_state_keeps_sessions(client, auth_headers):
     assert tasks[0]['sequenceGradient'] == 'linear-gradient(180deg, #00d4ff, #7c4dff)'
     assert tasks[1]['sessionId'] is None
     assert tasks[1]['sessionName'] is None
+
+
+def test_day_state_keeps_gradient_direction_degrees(client, auth_headers):
+    body = {
+        'tasks': [
+            {
+                'id': 'gradient',
+                'name': 'Diagonal flow',
+                'plannedTime': 600,
+                'color': '#3498db',
+                'colorAnimation': {
+                    'type': 'flow',
+                    'colors': ['#3498db', '#7c4dff'],
+                    'direction': 237,
+                    'durationSec': 5,
+                },
+            },
+        ]
+    }
+    assert client.put('/api/day/2026-09-13', headers=auth_headers, json=body).status_code == 200
+
+    animation = client.get('/api/day/2026-09-13', headers=auth_headers).json()['tasks'][0][
+        'colorAnimation'
+    ]
+    assert animation['direction'] == 237

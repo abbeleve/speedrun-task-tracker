@@ -36,7 +36,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Space background** — layered depth: far starfield and constellation clusters stay fixed, near stars endlessly stream outward from the spiral's center
 - **Time scrubbing** — drag the thermometer or the spiral route to inspect another moment of a sequence; one click returns to now
 - **Per-user accounts** — register / log in; the plan, the daily totals and the sleep log are stored server-side per user
-- **Task customization** — emoji and color per task, including a user-built animated gradient with 2–5 colors, adjustable flow direction and speed; reflected across the calendar, backlog and Kanban views
+- **Task customization** — emoji and color per task, including a user-built animated gradient with 2–5 colors, a full 360° flow direction and adjustable speed; reflected across the calendar, backlog and Kanban views
 - **Habits** — per-user habit tracker on the home page. Each habit is either *count* (a daily quota of units, e.g. 10 отжиманий) or *time* (a daily quota of minutes, e.g. 300 ≈ 5 часов). The habit cards live in a draggable grid you can reorder; each card shows today's progress vs its quota and a per-day history. Link a task to a habit in the block editor: closing that task adds the block's minutes to a *time* habit automatically, and count habits are advanced by hand with +/−.
 
 ## The overtake

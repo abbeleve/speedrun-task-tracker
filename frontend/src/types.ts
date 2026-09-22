@@ -18,15 +18,14 @@ export interface RepeatConfig {
   baseDays: number;
 }
 
-export type TaskFlowDirection = 'right' | 'left' | 'down' | 'up';
-
 // Extensible per-task colour animation. `flow` moves a user-built gradient
 // through every task surface; more animation types can be added later without
 // replacing the task's base colour.
 export interface TaskColorAnimation {
   type: 'flow';
   colors: string[];
-  direction: TaskFlowDirection;
+  // Screen-space degrees: 0 = right, 90 = down, 180 = left, 270 = up.
+  direction: number;
   durationSec: number;
 }
 

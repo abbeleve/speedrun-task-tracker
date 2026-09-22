@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RepeatConfig, Task, TaskStatus } from './types';
+import type { RepeatConfig, Task, TaskColorAnimation, TaskStatus } from './types';
 import {
   describeRepeat,
   getOpenTasks,
@@ -69,14 +69,14 @@ describe('normalizeTask', () => {
           colors: ['#FF0000', 'invalid', '#0000FF'],
           direction: 'left',
           durationSec: 99,
-        },
+        } as unknown as TaskColorAnimation,
       }),
       '2026-09-10'
     );
     expect(normalized.colorAnimation).toEqual({
       type: 'flow',
       colors: ['#ff0000', '#3498db', '#0000ff'],
-      direction: 'left',
+      direction: 180,
       durationSec: 20,
     });
   });
@@ -195,7 +195,7 @@ describe('recurrence', () => {
     const colorAnimation = {
       type: 'flow' as const,
       colors: ['#ff0000', '#0000ff'],
-      direction: 'down' as const,
+      direction: 90,
       durationSec: 8,
     };
     const placed = recurring(
