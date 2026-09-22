@@ -231,14 +231,16 @@ describe('buildChains', () => {
 describe('absorbIntoSessions', () => {
   it('writes the membership down for a block standing inside a session', () => {
     const inside = task({ start: hm(11), plannedTime: 1800 });
+    const sequenceGradient = 'linear-gradient(180deg, #00d4ff, #7c4dff)';
     const after = absorbIntoSessions([
-      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
+      task({ start: hm(9), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро', sequenceGradient }),
       inside,
       task({ start: hm(14), plannedTime: 3600, sessionId: 's1', sessionName: 'Утро' }),
     ]);
     const joined = after.find((t) => t.id === inside.id)!;
     expect(joined.sessionId).toBe('s1');
     expect(joined.sessionName).toBe('Утро');
+    expect(joined.sequenceGradient).toBe(sequenceGradient);
   });
 
   it('never joins blocks that merely follow each other', () => {

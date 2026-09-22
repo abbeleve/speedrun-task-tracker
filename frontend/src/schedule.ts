@@ -341,12 +341,28 @@ export function newSessionId(): string {
 // session on the clock. Two blocks merely following each other are never
 // touched — that still takes the 🔗 handle.
 export function absorbIntoSessions(tasks: Task[]): Task[] {
-  const joined = new Map<string, { sessionId: string; sessionName: string | null }>();
+  const joined = new Map<
+    string,
+    { sessionId: string; sessionName: string | null; sequenceGradient: string | null }
+  >();
   for (const chain of buildChains(buildGroups(tasks))) {
     if (chain.sessionId === null) continue;
+    const sequenceGradient =
+      chain.tasks.find(
+        (member) => member.sessionId === chain.sessionId && member.sequenceGradient
+      )?.sequenceGradient ?? null;
     for (const task of chain.tasks) {
-      if (task.sessionId === chain.sessionId) continue;
-      joined.set(task.id, { sessionId: chain.sessionId, sessionName: chain.name });
+      if (
+        task.sessionId === chain.sessionId &&
+        (sequenceGradient === null || task.sequenceGradient === sequenceGradient)
+      ) {
+        continue;
+      }
+      joined.set(task.id, {
+        sessionId: chain.sessionId,
+        sessionName: chain.name,
+        sequenceGradient,
+      });
     }
   }
   if (joined.size === 0) return tasks;

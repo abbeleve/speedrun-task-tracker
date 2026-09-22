@@ -8,6 +8,12 @@ import {
 } from './types';
 import { INCREASING_SERIES } from './tasks';
 import { DAY_MIN, isDone } from './schedule';
+import type { ColorPreset } from './colorPresets';
+import {
+  loadColorPresets,
+  newColorPresetId,
+  saveColorPresets,
+} from './colorPresets';
 
 export interface DialogAnchor {
   x: number; // client coordinates of the block the popover belongs to
@@ -107,6 +113,10 @@ function TaskDialog({
   const [minutes, setMinutes] = useState(String(Math.max(1, Math.round(task.plannedTime / 60))));
   const [emoji, setEmoji] = useState(task.emoji);
   const [color, setColor] = useState(task.color);
+  const [colorPresets, setColorPresets] = useState<ColorPreset[]>(() => loadColorPresets());
+  const [colorEditorOpen, setColorEditorOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [newPresetColor, setNewPresetColor] = useState(task.color);
   const [type, setType] = useState<TaskType>(task.type);
   const [habitId, setHabitId] = useState(task.habitId ?? '');
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
@@ -166,9 +176,31 @@ function TaskDialog({
   useLayoutEffect(() => {
     if (!anchor) return;
     setPopHeight(formRef.current?.offsetHeight ?? 0);
-  }, [anchor, emojiOpen, repeatOn]);
+  }, [anchor, emojiOpen, repeatOn, colorEditorOpen, colorPresets.length]);
 
   const emojiGroups = useMemo(() => groupedEmojis(emojiSearch), [emojiSearch]);
+  const commitColorPresets = (next: ColorPreset[]) => {
+    setColorPresets(next);
+    saveColorPresets(next);
+  };
+  const patchColorPreset = (id: string, patch: Partial<ColorPreset>) => {
+    commitColorPresets(colorPresets.map((preset) => (preset.id === id ? { ...preset, ...patch } : preset)));
+  };
+  const removeColorPreset = (id: string) => {
+    commitColorPresets(colorPresets.filter((preset) => preset.id !== id));
+  };
+  const addColorPreset = () => {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const preset: ColorPreset = {
+      id: newColorPresetId(),
+      name,
+      color: newPresetColor.toLowerCase(),
+    };
+    commitColorPresets([...colorPresets, preset]);
+    setColor(preset.color);
+    setNewPresetName('');
+  };
   const emojiGridRef = useRef<HTMLDivElement>(null);
   const scrollToCategory = (category: string) => {
     const grid = emojiGridRef.current;
@@ -336,6 +368,102 @@ function TaskDialog({
         <div className="cal-modal-row">
           <div className="cal-field cal-field--grow">
             <span>Цвет</span>
+            <div className="cal-color-preset-bar">
+              <div className="cal-color-preset-chips">
+                {colorPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`cal-color-preset-chip${preset.color === color ? ' active' : ''}`}
+                    style={{ '--sw': preset.color } as React.CSSProperties}
+                    onClick={() => setColor(preset.color)}
+                    title={`${preset.name}: ${preset.color}`}
+                  >
+                    <span className="cal-color-preset-dot" />
+                    <span>{preset.name}</span>
+                  </button>
+                ))}
+                {colorPresets.length === 0 && (
+                  <span className="cal-color-preset-empty">Назовите цвета, чтобы быстро выбирать их по смыслу</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`cal-color-preset-edit${colorEditorOpen ? ' active' : ''}`}
+                onClick={() => setColorEditorOpen((open) => !open)}
+                title={colorEditorOpen ? 'Закрыть редактор пресетов' : 'Создать или изменить цветовые пресеты'}
+                aria-pressed={colorEditorOpen}
+              >
+                ✎
+              </button>
+            </div>
+
+            {colorEditorOpen && (
+              <div className="cal-color-preset-editor">
+                {colorPresets.map((preset) => (
+                  <div className="cal-color-preset-row" key={preset.id}>
+                    <input
+                      type="color"
+                      value={preset.color}
+                      aria-label={`Цвет пресета ${preset.name}`}
+                      onChange={(e) => {
+                        const nextColor = e.target.value.toLowerCase();
+                        const wasSelected = preset.color === color;
+                        patchColorPreset(preset.id, { color: nextColor });
+                        if (wasSelected) setColor(nextColor);
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={preset.name}
+                      maxLength={40}
+                      aria-label="Название цветового пресета"
+                      onChange={(e) => patchColorPreset(preset.id, { name: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="cal-color-preset-remove"
+                      onClick={() => removeColorPreset(preset.id)}
+                      title={`Удалить пресет «${preset.name}»`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="cal-color-preset-row cal-color-preset-row--new">
+                  <input
+                    type="color"
+                    value={newPresetColor}
+                    aria-label="Цвет нового пресета"
+                    onChange={(e) => setNewPresetColor(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    value={newPresetName}
+                    maxLength={40}
+                    placeholder="Название, например «Созвон»"
+                    aria-label="Название нового цветового пресета"
+                    onChange={(e) => setNewPresetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addColorPreset();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="cal-color-preset-add"
+                    onClick={addColorPreset}
+                    disabled={!newPresetName.trim()}
+                    title="Добавить цветовой пресет"
+                  >
+                    ＋
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="cal-colors">
               {TASK_COLORS.map((c) => (
                 <button
@@ -344,7 +472,7 @@ function TaskDialog({
                   className={`cal-color${c === color ? ' active' : ''}`}
                   style={{ background: c, '--sw': c } as React.CSSProperties}
                   onClick={() => setColor(c)}
-                  title={c}
+                  title={colorPresets.find((preset) => preset.color === c)?.name ?? c}
                 >
                   {c === color && <span className="cal-color-check">✓</span>}
                 </button>
@@ -355,7 +483,7 @@ function TaskDialog({
                   className="cal-color active"
                   style={{ background: color, '--sw': color } as React.CSSProperties}
                   onClick={() => colorInputRef.current?.click()}
-                  title={color}
+                  title={colorPresets.find((preset) => preset.color === color)?.name ?? color}
                 >
                   <span className="cal-color-check">✓</span>
                 </button>

@@ -34,11 +34,13 @@ import {
 import type { CreditSnapshot } from './credit';
 import { computeCredit, projectedFinishMs } from './credit';
 import { clockTime, compactDur, signedDur } from './format';
+import { focusMotivation } from './focusMotivation';
 import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
 import { newTaskId, spawnNextOccurrence } from './tasks';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
 import SessionPopover from './SessionPopover';
+import { sequenceGradientColors, sequenceGradientForTasks } from './sequenceGradients';
 
 export type CalView = 'day' | '3day' | 'week' | 'month';
 
@@ -486,8 +488,18 @@ function CalendarPage({
     (chain: Chain, name?: string | null) => {
       const sessionId = chain.sessionId ?? newSessionId();
       const sessionName = name !== undefined ? name || null : (chain.name ?? null);
+      const sequenceGradient = sequenceGradientForTasks(chain.tasks, chain.sessionId ?? chain.id);
       store.patchTasks(
-        chain.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName } }))
+        chain.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName, sequenceGradient } }))
+      );
+    },
+    [store]
+  );
+
+  const setChainGradient = useCallback(
+    (chain: Chain, sequenceGradient: string) => {
+      store.patchTasks(
+        chain.tasks.map((task) => ({ id: task.id, patch: { sequenceGradient } }))
       );
     },
     [store]
@@ -508,12 +520,13 @@ function CalendarPage({
     (before: Chain, after: Chain) => {
       const sessionId = before.sessionId ?? after.sessionId ?? newSessionId();
       const sessionName = before.name ?? after.name ?? null;
+      const sequenceGradient = sequenceGradientForTasks([...before.tasks, ...after.tasks], sessionId);
       const deltaMs = before.endMs - after.startMs;
       store.patchTasks([
-        ...before.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName } })),
+        ...before.tasks.map((t) => ({ id: t.id, patch: { sessionId, sessionName, sequenceGradient } })),
         ...after.tasks.map((t) => ({
           id: t.id,
-          patch: { ...shiftedSlot(t, deltaMs), sessionId, sessionName },
+          patch: { ...shiftedSlot(t, deltaMs), sessionId, sessionName, sequenceGradient },
         })),
       ]);
       setSessionPop(null);
@@ -1315,6 +1328,8 @@ function CalendarPage({
           const top = minToPx(Math.max(0, (startMs - dayFrom) / MIN_MS));
           const bottom = minToPx(Math.min(DAY_MIN, (endMs - dayFrom) / MIN_MS));
           const height = Math.max(12, bottom - top);
+          const sequenceGradient = sequenceGradientForTasks(chain.tasks, chain.sessionId ?? chain.id);
+          const [sequenceAccent] = sequenceGradientColors(sequenceGradient);
           return (
             <div
               key={chain.id}
@@ -1326,7 +1341,12 @@ function CalendarPage({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              style={{ top, height }}
+              style={{
+                top,
+                height,
+                '--sequence-gradient': sequenceGradient,
+                '--sequence-accent': sequenceAccent,
+              } as React.CSSProperties}
               title={`${chain.name ?? 'Секвенция'} · ${chain.tasks.length} задач — открыть настройки сессии, потянуть — перенести целиком`}
               onPointerDown={(e) => startChainDrag(e, chain)}
             >
@@ -1448,6 +1468,7 @@ function CalendarPage({
                   <span>
                     {hhmm(seg.topMin)}–{hhmm(seg.topMin + lengthMin)}
                   </span>
+                  <strong className="cal-block-duration">{dur(lengthMin * 60)}</strong>
                 </div>
               )}
               {done && task.finishedAt !== null && task.finishedAt < taskEndMs(task) && (
@@ -1497,6 +1518,7 @@ function CalendarPage({
               <span>
                 {hhmm(ghost.startMin)}–{hhmm(ghost.startMin + ghost.lengthMin)}
               </span>
+              <strong className="cal-block-duration">{dur(ghost.lengthMin * 60)}</strong>
             </div>
           </div>
         ))}
@@ -1513,6 +1535,7 @@ function CalendarPage({
               <span>
                 {hhmm(g.startMin)}–{hhmm(g.endMin)}
               </span>
+              <strong className="cal-block-duration">{dur((g.endMin - g.startMin) * 60)}</strong>
             </div>
           </div>
         )}
@@ -1589,6 +1612,8 @@ function CalendarPage({
   const renderHoverCard = () => {
     if (!hoverCard) return null;
     const { task, rect } = hoverCard;
+    const taskChain = chainOfTask(chains, task.id);
+    const focusSequence = taskChain && isSession(taskChain) ? taskChain : null;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const fitsRight = rect.right + HOVER_CARD_GAP + HOVER_CARD_WIDTH <= vw - 8;
@@ -1601,6 +1626,9 @@ function CalendarPage({
     const origin = fitsRight ? 'left top' : 'right top';
     const start = hhmm(task.start ?? 0);
     const end = wallTime(taskEndMs(task));
+    const sequenceDuration = focusSequence
+      ? dur((focusSequence.endMs - focusSequence.startMs) / 1000)
+      : null;
     return (
       <div
         ref={hoverCardRef}
@@ -1615,6 +1643,16 @@ function CalendarPage({
         } as React.CSSProperties}
         aria-hidden="true"
       >
+        {focusSequence && sequenceDuration && (
+          <div className="cal-hover-card-focus">
+            <div className="cal-hover-card-focus-title">
+              DEEP FOCUS FOR <span>{sequenceDuration}</span>
+            </div>
+            <div className="cal-hover-card-motivation">
+              {focusMotivation(focusSequence.id)}
+            </div>
+          </div>
+        )}
         <div className="cal-hover-card-head">
           <span className="cal-hover-card-emoji">{task.emoji}</span>
           <span className="cal-hover-card-name">{task.name || 'Без названия'}</span>
@@ -2083,6 +2121,7 @@ function CalendarPage({
           chain={popChain}
           anchor={sessionPop.anchor}
           now={now}
+          onGradientChange={(gradient) => setChainGradient(popChain, gradient)}
           glueBefore={suggestions.find((s) => s.after.id === popChain.id)?.before ?? null}
           glueAfter={suggestions.find((s) => s.before.id === popChain.id)?.after ?? null}
           onRename={(name) => makeSession(popChain, name)}

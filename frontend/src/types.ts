@@ -51,6 +51,9 @@ export interface Task {
   // sequence its neighbours happen to form.
   sessionId?: string | null;
   sessionName?: string | null;
+  // Gradient painted on the sequence/session spine. Every member of an
+  // explicit session carries the same value so the choice survives reloads.
+  sequenceGradient?: string | null;
   // Optional link to a habit tracker (see Habit). Completing a linked task
   // grows that habit's daily progress: a time habit gains the block's duration,
   // a count habit gains 1.
