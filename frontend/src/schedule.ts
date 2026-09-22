@@ -372,15 +372,20 @@ export function absorbIntoSessions(tasks: Task[]): Task[] {
   });
 }
 
-// ── Moving a whole sequence ────────────────────────────────────────
+// ── Moving blocks around ───────────────────────────────────────────
 
-// Where a task lands when the thing it belongs to is shifted by `deltaMs`. The
-// slot is recomputed against the date it lands on, so a session may be dragged
-// across midnight and keeps its shape.
-export function shiftedSlot(task: Task, deltaMs: number): { day: string; start: number } {
-  const ms = taskStartMs(task) + deltaMs;
+// The slot an absolute moment names. Every drag resolves its landing place
+// through this, so a block dropped near the bottom of a column simply belongs
+// to the next date instead of being pushed back up into the day it left.
+export function slotAtMs(ms: number): { day: string; start: number } {
   const day = dayKeyOf(ms);
   return { day, start: Math.round((ms - dayStartMs(day)) / MIN_MS) };
+}
+
+// Where a task lands when the thing it belongs to is shifted by `deltaMs`, so
+// a session dragged across midnight keeps its shape.
+export function shiftedSlot(task: Task, deltaMs: number): { day: string; start: number } {
+  return slotAtMs(taskStartMs(task) + deltaMs);
 }
 
 // The patches that move a set of tasks together, keeping every gap inside them.

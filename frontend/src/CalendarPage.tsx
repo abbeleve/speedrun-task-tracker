@@ -20,6 +20,7 @@ import {
   newSessionId,
   shiftPatches,
   shiftedSlot,
+  slotAtMs,
   taskEndMs,
   taskStartMs,
 } from './schedule';
@@ -131,7 +132,7 @@ type Gesture =
   | {
       kind: 'move';
       task: Task;
-      grabMin: number; // where inside the block the pointer grabbed it
+      grabMs: number; // how far into the block the pointer grabbed it
       day: string;
       startMin: number;
       moved: boolean;
@@ -735,14 +736,9 @@ function CalendarPage({
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
       if (g.kind === 'move') {
-        const startMin = snap(slot.min - g.grabMin);
-        setGestureState({
-          ...g,
-          day: slot.day,
-          startMin: clampStartMin(startMin, g.task.plannedTime),
-          moved: true,
-          toBacklog: false,
-        });
+        const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
+        const next = slotAtMs(snapMs(cursorMs - g.grabMs));
+        setGestureState({ ...g, day: next.day, startMin: next.start, moved: true, toBacklog: false });
       } else if (g.kind === 'chain') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
@@ -919,7 +915,7 @@ function CalendarPage({
       setGestureState({
         kind: 'move',
         task,
-        grabMin: slot.min - (task.day === slot.day ? (task.start ?? 0) : 0),
+        grabMs: dayStartMs(slot.day) + slot.min * MIN_MS - taskStartMs(task),
         day: task.day,
         startMin: task.start ?? 0,
         moved: false,
@@ -1258,50 +1254,54 @@ function CalendarPage({
     // the saved plan. A reminder being dragged/edited goes into its own bucket
     // so it is drawn as a strip rather than a normal block — a chain drag never
     // needs the split, since a reminder can never belong to one.
-    type Ghost = { key: string; task: Task; startMin: number; lengthMin: number; live: boolean };
+    type Ghost = {
+      key: string;
+      task: Task;
+      topMin: number;
+      lengthMin: number;
+      startsHere: boolean;
+      endsHere: boolean;
+      live: boolean;
+    };
     const ghosts: Ghost[] = [];
     const reminderGhosts: Ghost[] = [];
+    // A block being dragged may hang over midnight, so its ghost is clipped to
+    // this column and drawn in every day it touches — the same seam a saved
+    // block gets from daySegments.
+    const pushGhost = (key: string, task: Task, slot: { day: string; start: number }, live: boolean) => {
+      const startMs = dayStartMs(slot.day) + slot.start * MIN_MS;
+      const endMs = startMs + task.plannedTime * 1000;
+      if (endMs <= dayFrom || startMs >= dayTo) return;
+      const top = Math.max(startMs, dayFrom);
+      const bottom = Math.min(endMs, dayTo);
+      (isReminder(task) ? reminderGhosts : ghosts).push({
+        key,
+        task,
+        topMin: (top - dayFrom) / MIN_MS,
+        lengthMin: (bottom - top) / MIN_MS,
+        startsHere: startMs >= dayFrom,
+        endsHere: endMs <= dayTo,
+        live,
+      });
+    };
     if (dragChain) {
       for (const task of dragChain.chain.tasks) {
-        const slot = shiftedSlot(task, dragChain.deltaMs);
-        if (slot.day !== day) continue;
-        ghosts.push({
-          key: task.id,
-          task,
-          startMin: slot.start,
-          lengthMin: task.plannedTime / 60,
-          live: false,
-        });
+        pushGhost(task.id, task, shiftedSlot(task, dragChain.deltaMs), false);
       }
     } else if (dragMulti) {
       for (const task of dragMulti.tasks) {
-        const slot = shiftedSlot(task, dragMulti.deltaMs);
-        if (slot.day !== day) continue;
-        (isReminder(task) ? reminderGhosts : ghosts).push({
-          key: task.id,
-          task,
-          startMin: slot.start,
-          lengthMin: task.plannedTime / 60,
-          live: false,
-        });
+        pushGhost(task.id, task, shiftedSlot(task, dragMulti.deltaMs), false);
       }
-    } else if (g?.kind === 'move' && !g.toBacklog && g.day === day) {
-      (isReminder(g.task) ? reminderGhosts : ghosts).push({
-        key: g.task.id,
-        task: g.task,
-        startMin: g.startMin,
-        lengthMin: g.task.plannedTime / 60,
-        live: false,
-      });
+    } else if (g?.kind === 'move' && !g.toBacklog) {
+      pushGhost(g.task.id, g.task, { day: g.day, start: g.startMin }, false);
     }
-    if (livePreview && livePreview.day === day) {
-      (isReminder(livePreview) ? reminderGhosts : ghosts).push({
-        key: `preview-${livePreview.id}`,
-        task: livePreview,
-        startMin: livePreview.start ?? 0,
-        lengthMin: livePreview.plannedTime / 60,
-        live: true,
-      });
+    if (livePreview) {
+      pushGhost(
+        `preview-${livePreview.id}`,
+        livePreview,
+        { day: livePreview.day, start: livePreview.start ?? 0 },
+        true
+      );
     }
 
     return (
@@ -1398,7 +1398,7 @@ function CalendarPage({
             key={ghost.key}
             className={ghost.live ? 'cal-reminder live' : 'cal-reminder dragging'}
             style={{
-              top: minToPx(ghost.startMin),
+              top: minToPx(ghost.topMin),
               height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
               right: 2,
               '--task-color': ghost.task.color,
@@ -1503,9 +1503,16 @@ function CalendarPage({
         {ghosts.map((ghost) => (
           <div
             key={ghost.key}
-            className={ghost.live ? 'cal-block live' : 'cal-block dragging'}
+            className={[
+              'cal-block',
+              ghost.live ? 'live' : 'dragging',
+              ghost.startsHere ? '' : 'cont-top',
+              ghost.endsHere ? '' : 'cont-bottom',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             style={{
-              top: minToPx(ghost.startMin),
+              top: minToPx(ghost.topMin),
               height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
               '--task-color': ghost.task.color,
             } as React.CSSProperties}
@@ -1516,7 +1523,7 @@ function CalendarPage({
             </div>
             <div className="cal-block-meta">
               <span>
-                {hhmm(ghost.startMin)}–{hhmm(ghost.startMin + ghost.lengthMin)}
+                {hhmm(ghost.topMin)}–{hhmm(ghost.topMin + ghost.lengthMin)}
               </span>
               <strong className="cal-block-duration">{dur(ghost.lengthMin * 60)}</strong>
             </div>

@@ -16,6 +16,7 @@ import {
   resizePatches,
   shiftPatches,
   shiftedSlot,
+  slotAtMs,
   taskEndMs,
 } from './schedule';
 
@@ -369,6 +370,23 @@ describe('shifting a sequence', () => {
       day: '2026-03-11',
       start: hm(1),
     });
+  });
+
+  it('rolls a block dropped at the very bottom of a column onto the next date', () => {
+    expect(slotAtMs(dayStartMs(DAY) + 24 * 60 * 60_000)).toEqual({
+      day: '2026-03-11',
+      start: 0,
+    });
+  });
+
+  it('draws a block dropped near midnight in both days', () => {
+    // A single block moved to 23:30 is two hours long: half an hour on the
+    // day it starts, ninety minutes on the next.
+    const spilling = task({ start: hm(23, 30), plannedTime: 2 * 3600 });
+    const [first] = daySegments([spilling], DAY);
+    const [second] = daySegments([spilling], '2026-03-11');
+    expect(first).toMatchObject({ topMin: hm(23, 30), bottomMin: hm(24), endsHere: false });
+    expect(second).toMatchObject({ topMin: 0, bottomMin: hm(1, 30), startsHere: false });
   });
 
   it('keeps the gaps inside the sequence it moves', () => {
