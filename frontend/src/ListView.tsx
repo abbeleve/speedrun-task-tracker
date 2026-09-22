@@ -31,7 +31,23 @@ const EXIT_MS = 420;
 const TUBE_PATH =
   'M 0.5 0 C 0.5 0.05 0 0.085 0 0.22 L 0 0.78 C 0 0.915 0.5 0.95 0.5 1 ' +
   'C 0.5 0.95 1 0.915 1 0.78 L 1 0.22 C 1 0.085 0.5 0.05 0.5 0 Z';
-const TUBE_CLIP_ID = 'liquid-tube-clip';
+
+// The same silhouette as a self-contained mask image. A CSS `url(#id)` pointing
+// at a <clipPath> in the document only resolves in dev, where Vite injects the
+// styles as an inline <style>; in a production build the stylesheet is an
+// external file and the fragment resolves against *it*, so the tube rendered as
+// a bare rectangle on the server. A data URI has nothing to resolve against.
+// `preserveAspectRatio="none"` + `mask-size: 100% 100%` (see App.css) reproduce
+// clipPathUnits="objectBoundingBox", so the shape still tracks the tube through
+// the grow/collapse animations and the narrow-screen size.
+const TUBE_MASK = `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'>` +
+    `<path d='${TUBE_PATH}' fill='#000'/></svg>`
+)}")`;
+const TUBE_MASK_STYLE: CSSProperties = {
+  maskImage: TUBE_MASK,
+  WebkitMaskImage: TUBE_MASK,
+};
 
 // Plain-text list timeline: every task is a row (emoji avatar on the spine,
 // name + duration + finish time to the right). The spine fills with colour as
@@ -111,158 +127,149 @@ export function ListView({
   }
 
   return (
-    <>
-      <svg className="liquid-clip-defs" width="0" height="0" aria-hidden="true">
-        <defs>
-          <clipPath id={TUBE_CLIP_ID} clipPathUnits="objectBoundingBox">
-            <path d={TUBE_PATH} />
-          </clipPath>
-        </defs>
-      </svg>
+    <div className={`liquid-list${active ? ' liquid-list--focused' : ''}`}>
+      {tasks.map((task, idx) => {
+        const startSec = cumulativeTimes[idx] ?? 0;
+        const endSec = startSec + task.plannedTime;
+        const isCompleted = task.completedAt !== null;
+        // Everything up to the current task has been reached, so its connector
+        // and node are tinted — even if the previous task was closed early.
+        const reached = sessionState !== 'idle' && idx <= currentTaskIdx;
+        const filled = isCompleted || reached;
+        const isActive = active && idx === currentTaskIdx;
+        // A just-finished task is still drawn with its tube (full) while it
+        // collapses back into the spine.
+        const isExit = exitingIdx === idx;
+        // Schedule delta: actual once the task is completed, live for the
+        // current one, and none for tasks still ahead. Negative = ahead.
+        const delta = isCompleted ? taskDeltaMs(task, endSec) : isActive ? deltaMs : null;
+        const deltaClass =
+          delta !== null && delta < 0 ? 'ahead' : delta !== null && delta > 0 ? 'behind' : '';
 
-      <div className={`liquid-list${active ? ' liquid-list--focused' : ''}`}>
-        {tasks.map((task, idx) => {
-          const startSec = cumulativeTimes[idx] ?? 0;
-          const endSec = startSec + task.plannedTime;
-          const isCompleted = task.completedAt !== null;
-          // Everything up to the current task has been reached, so its connector
-          // and node are tinted — even if the previous task was closed early.
-          const reached = sessionState !== 'idle' && idx <= currentTaskIdx;
-          const filled = isCompleted || reached;
-          const isActive = active && idx === currentTaskIdx;
-          // A just-finished task is still drawn with its tube (full) while it
-          // collapses back into the spine.
-          const isExit = exitingIdx === idx;
-          // Schedule delta: actual once the task is completed, live for the
-          // current one, and none for tasks still ahead. Negative = ahead.
-          const delta = isCompleted ? taskDeltaMs(task, endSec) : isActive ? deltaMs : null;
-          const deltaClass =
-            delta !== null && delta < 0 ? 'ahead' : delta !== null && delta > 0 ? 'behind' : '';
-
-          if (isActive || isExit) {
-            const cat = pictureFor(task.id);
-            const rowPct = isActive ? pct : 100;
-            return (
-              <div
-                className={
-                  'liquid-row liquid-row--active' +
-                  (isActive ? ' liquid-row--enter' : ' liquid-row--exit')
-                }
-                key={task.id}
-                style={{ '--thermo-color': task.color, '--node-color': task.color } as CSSProperties}
-              >
-                <div className="liquid-thermo-wrap">
-                  <div className="liquid-connector filled" />
-                  <div
-                    className="timeline-thermo liquid-thermo"
-                    onPointerDown={(e) => {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      draggingRef.current = true;
-                      seekFromTube(e);
-                    }}
-                    onPointerMove={(e) => {
-                      if (draggingRef.current) seekFromTube(e);
-                    }}
-                    onPointerUp={(e) => {
-                      draggingRef.current = false;
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                    }}
-                    title="Потяните, чтобы перемотать время"
-                  >
-                    <div className="liquid-thermo-ticks" aria-hidden="true" />
-                    <div className="thermo-fill" style={{ height: `${rowPct}%` }} />
-                    <svg
-                      className="liquid-thermo-outline"
-                      viewBox="0 0 1 1"
-                      preserveAspectRatio="none"
-                      aria-hidden="true"
-                    >
-                      <path d={TUBE_PATH} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                    </svg>
-                  </div>
-                </div>
-
-                <div className="liquid-active-info">
-                  <div className="liquid-active-stats">
-                    <div className="liquid-active-name">
-                      <span className="liquid-active-emoji">{task.emoji}</span>
-                      {task.name}
-                    </div>
-                    <div className="liquid-progress">
-                      Выполнено <strong>{Math.round(rowPct)}%</strong>
-                      <span className={`liquid-delta ${deltaClass}`} title="Обгон/отставание от графика">
-                        {delta !== null ? formatDelta(delta) : '—'}
-                      </span>
-                    </div>
-                    <div className="liquid-active-end">
-                      длительность {formatTime(task.plannedTime * 1000, false)} · закончится в{' '}
-                      {formatEnd(endSec)}
-                    </div>
-                    {isActive && sessionState === 'running' && (
-                      <button
-                        className="btn btn-complete liquid-complete"
-                        onClick={() => onCompleteTask(task.id)}
-                        title="Завершить задачу"
-                      >
-                        ✓ Выполнено
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="liquid-cat">
-                    {cat ? (
-                      <img
-                        className="liquid-cat-img"
-                        src={cat}
-                        alt="Мотивация"
-                        loading="lazy"
-                        decoding="async"
-                        fetchPriority="low"
-                      />
-                    ) : (
-                      <div className="liquid-cat-mock" title="Добавьте картинки в MOTIVATION_DIR на бэкенде">
-                        🐱
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
+        if (isActive || isExit) {
+          const cat = pictureFor(task.id);
+          const rowPct = isActive ? pct : 100;
           return (
             <div
-              className="liquid-row"
+              className={
+                'liquid-row liquid-row--active' +
+                (isActive ? ' liquid-row--enter' : ' liquid-row--exit')
+              }
               key={task.id}
-              style={{ '--node-color': task.color } as CSSProperties}
+              style={{ '--thermo-color': task.color, '--node-color': task.color } as CSSProperties}
             >
-              <div className="liquid-marker">
-                <div className={`liquid-connector ${reached ? 'filled' : ''}`} />
-                <div className={`liquid-node ${filled ? 'filled' : ''} ${isCompleted ? 'done' : ''}`}>
-                  <span className="liquid-node-emoji">{task.emoji}</span>
+              <div className="liquid-thermo-wrap">
+                <div className="liquid-connector filled" />
+                <div
+                  className="timeline-thermo liquid-thermo"
+                  style={TUBE_MASK_STYLE}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    draggingRef.current = true;
+                    seekFromTube(e);
+                  }}
+                  onPointerMove={(e) => {
+                    if (draggingRef.current) seekFromTube(e);
+                  }}
+                  onPointerUp={(e) => {
+                    draggingRef.current = false;
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }}
+                  title="Потяните, чтобы перемотать время"
+                >
+                  <div className="liquid-thermo-ticks" aria-hidden="true" />
+                  <div className="thermo-fill" style={{ height: `${rowPct}%` }} />
+                  <svg
+                    className="liquid-thermo-outline"
+                    viewBox="0 0 1 1"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
+                    <path d={TUBE_PATH} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  </svg>
                 </div>
               </div>
-              <div className="liquid-info">
-                <span className="liquid-name">{task.name}</span>
-                <span className="liquid-times">
-                  <span className="liquid-duration" title="Длительность задачи">
-                    ⏱ {formatTime(task.plannedTime * 1000, false)}
-                  </span>
-                  <span className="liquid-end" title="Время окончания задачи">
-                    🏁 {formatEnd(endSec)}
-                  </span>
-                  <span
-                    className={`liquid-delta ${deltaClass}`}
-                    title="Обгон/отставание от графика"
-                  >
-                    {delta !== null ? formatDelta(delta) : '—'}
-                  </span>
-                </span>
+
+              <div className="liquid-active-info">
+                <div className="liquid-active-stats">
+                  <div className="liquid-active-name">
+                    <span className="liquid-active-emoji">{task.emoji}</span>
+                    {task.name}
+                  </div>
+                  <div className="liquid-progress">
+                    Выполнено <strong>{Math.round(rowPct)}%</strong>
+                    <span className={`liquid-delta ${deltaClass}`} title="Обгон/отставание от графика">
+                      {delta !== null ? formatDelta(delta) : '—'}
+                    </span>
+                  </div>
+                  <div className="liquid-active-end">
+                    длительность {formatTime(task.plannedTime * 1000, false)} · закончится в{' '}
+                    {formatEnd(endSec)}
+                  </div>
+                  {isActive && sessionState === 'running' && (
+                    <button
+                      className="btn btn-complete liquid-complete"
+                      onClick={() => onCompleteTask(task.id)}
+                      title="Завершить задачу"
+                    >
+                      ✓ Выполнено
+                    </button>
+                  )}
+                </div>
+
+                <div className="liquid-cat">
+                  {cat ? (
+                    <img
+                      className="liquid-cat-img"
+                      src={cat}
+                      alt="Мотивация"
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
+                    />
+                  ) : (
+                    <div className="liquid-cat-mock" title="Добавьте картинки в MOTIVATION_DIR на бэкенде">
+                      🐱
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );
-        })}
-      </div>
-    </>
+        }
+
+        return (
+          <div
+            className="liquid-row"
+            key={task.id}
+            style={{ '--node-color': task.color } as CSSProperties}
+          >
+            <div className="liquid-marker">
+              <div className={`liquid-connector ${reached ? 'filled' : ''}`} />
+              <div className={`liquid-node ${filled ? 'filled' : ''} ${isCompleted ? 'done' : ''}`}>
+                <span className="liquid-node-emoji">{task.emoji}</span>
+              </div>
+            </div>
+            <div className="liquid-info">
+              <span className="liquid-name">{task.name}</span>
+              <span className="liquid-times">
+                <span className="liquid-duration" title="Длительность задачи">
+                  ⏱ {formatTime(task.plannedTime * 1000, false)}
+                </span>
+                <span className="liquid-end" title="Время окончания задачи">
+                  🏁 {formatEnd(endSec)}
+                </span>
+                <span
+                  className={`liquid-delta ${deltaClass}`}
+                  title="Обгон/отставание от графика"
+                >
+                  {delta !== null ? formatDelta(delta) : '—'}
+                </span>
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

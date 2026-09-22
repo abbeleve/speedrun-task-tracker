@@ -3232,13 +3232,6 @@
   color: var(--text-secondary);
 }
 
-.liquid-clip-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
 /* Connector between two nodes. Drawn per row (not as one global line) so the
    part the run has already passed can be tinted with the task colour. */
 .liquid-connector {
@@ -3510,11 +3503,16 @@
   height: 360px;
   margin: 0;
   flex-shrink: 0;
-  /* Flask silhouette — narrow neck top/bottom, full-width body — provided by
-     the SVG clipPath so the tube grows out of the timeline spine. */
+  /* Flask silhouette — narrow neck top/bottom, full-width body — so the tube
+     grows out of the timeline spine. The mask image itself is a data URI built
+     from TUBE_PATH in ListView.tsx; see the comment there for why it is not a
+     clip-path pointing at a <clipPath> in the document. */
   border: none;
   border-radius: 0;
-  clip-path: url(#liquid-tube-clip);
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 28%, transparent 72%, rgba(0, 0, 0, 0.08)),
     var(--bg-secondary);
