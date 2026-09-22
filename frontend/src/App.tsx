@@ -29,6 +29,7 @@ import { useOvertakeHistorySync } from './overtakeHistory';
 import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
 import { newTaskId, spawnNextOccurrence } from './tasks';
+import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
 import './App.css';
 import './calendar.css';
@@ -834,7 +835,10 @@ function App() {
                             </span>
                           )}
                           <span className="task-emoji">{task.emoji}</span>
-                          <span className="task-color-swatch" style={{ background: task.color }} />
+                          <span
+                            className={`task-color-swatch ${taskColorAnimationClass(task.colorAnimation)}`}
+                            style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
+                          />
                           {task.type === 'rest' && (
                             <span className="task-type-badge" title="Rest / break">
                               ☕ Rest

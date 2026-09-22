@@ -18,6 +18,18 @@ export interface RepeatConfig {
   baseDays: number;
 }
 
+export type TaskFlowDirection = 'right' | 'left' | 'down' | 'up';
+
+// Extensible per-task colour animation. `flow` moves a user-built gradient
+// through every task surface; more animation types can be added later without
+// replacing the task's base colour.
+export interface TaskColorAnimation {
+  type: 'flow';
+  colors: string[];
+  direction: TaskFlowDirection;
+  durationSec: number;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -39,6 +51,7 @@ export interface Task {
   order: number;
   emoji: string; // single emoji icon
   color: string; // hex color
+  colorAnimation?: TaskColorAnimation | null;
   type: TaskType;
   day: string; // 'YYYY-MM-DD' the task is planned for
   status: TaskStatus;

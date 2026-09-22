@@ -43,6 +43,7 @@ import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
 import SessionPopover from './SessionPopover';
 import { sequenceGradientColors, sequenceGradientForTasks } from './sequenceGradients';
+import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 
 export type CalView = 'day' | '3day' | 'week' | 'month';
 
@@ -1475,14 +1476,14 @@ function CalendarPage({
                 else reminderStripRefs.current.delete(key);
               }}
               data-reminder-id={task.id}
-              className={`cal-reminder${expired ? ' expired' : ''}${
+              className={`cal-reminder ${taskColorAnimationClass(task.colorAnimation)}${expired ? ' expired' : ''}${
                 selectedIds.has(task.id) ? ' selected' : ''
               }`}
               style={{
                 top: minToPx(seg.topMin),
                 height,
                 right: 2 + seg.col * 11,
-                '--task-color': task.color,
+                ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
               title={`${task.pinned ? '📌 ' : ''}🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
@@ -1495,12 +1496,12 @@ function CalendarPage({
         {reminderGhosts.map((ghost) => (
           <div
             key={ghost.key}
-            className={ghost.live ? 'cal-reminder live' : 'cal-reminder dragging'}
+            className={`${ghost.live ? 'cal-reminder live' : 'cal-reminder dragging'} ${taskColorAnimationClass(ghost.task.colorAnimation)}`}
             style={{
               top: minToPx(ghost.topMin),
               height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
               right: 2,
-              '--task-color': ghost.task.color,
+              ...taskColorStyle(ghost.task.color, ghost.task.colorAnimation),
             } as React.CSSProperties}
           />
         ))}
@@ -1530,6 +1531,7 @@ function CalendarPage({
                 task.type === 'rest' ? 'rest' : '',
                 task.sessionId ? 'in-session' : '',
                 task.pinned ? 'pinned' : '',
+                taskColorAnimationClass(task.colorAnimation),
                 selectedIds.has(task.id) ? 'selected' : '',
                 resizing ? 'dragging' : '',
                 !seg.startsHere ? 'cont-top' : '',
@@ -1542,7 +1544,7 @@ function CalendarPage({
                 height,
                 left: `${seg.col * width}%`,
                 width: `${width}%`,
-                '--task-color': task.color,
+                ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
               onMouseEnter={(e) => setHoverCard({ task, rect: e.currentTarget.getBoundingClientRect() })}
@@ -1618,6 +1620,7 @@ function CalendarPage({
             className={[
               'cal-block',
               ghost.live ? 'live' : 'dragging',
+              taskColorAnimationClass(ghost.task.colorAnimation),
               ghost.startsHere ? '' : 'cont-top',
               ghost.endsHere ? '' : 'cont-bottom',
             ]
@@ -1626,7 +1629,7 @@ function CalendarPage({
             style={{
               top: minToPx(ghost.topMin),
               height: Math.max(MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
-              '--task-color': ghost.task.color,
+              ...taskColorStyle(ghost.task.color, ghost.task.colorAnimation),
             } as React.CSSProperties}
           >
             <div className="cal-block-head">
@@ -2040,8 +2043,8 @@ function CalendarPage({
                     <button
                       key={task.id}
                       type="button"
-                      className={`cal-chip${isDone(task) ? ' done' : ''}`}
-                      style={{ '--task-color': task.color } as React.CSSProperties}
+                      className={`cal-chip ${taskColorAnimationClass(task.colorAnimation)}${isDone(task) ? ' done' : ''}`}
+                      style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
                       onClick={(e) => {
                         e.stopPropagation();
                         openDialog(task, false, e);
@@ -2232,8 +2235,8 @@ function CalendarPage({
             {openTasks.map((task) => (
               <div
                 key={task.id}
-                className={`cal-backlog-card${task.pinned ? ' pinned' : ''}`}
-                style={{ '--task-color': task.color } as React.CSSProperties}
+                className={`cal-backlog-card ${taskColorAnimationClass(task.colorAnimation)}${task.pinned ? ' pinned' : ''}`}
+                style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
                 draggable={!task.pinned}
                 onDragStart={(e) => {
                   if (task.pinned) {

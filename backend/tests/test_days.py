@@ -216,6 +216,12 @@ def test_day_state_keeps_calendar_slots(client, auth_headers):
                 'order': 0,
                 'emoji': '💻',
                 'color': '#3498db',
+                'colorAnimation': {
+                    'type': 'flow',
+                    'colors': ['#3498db', '#7c4dff', '#00d4ff'],
+                    'direction': 'left',
+                    'durationSec': 8,
+                },
                 'type': 'task',
                 'day': '2026-09-10',
                 'status': 'done',
@@ -241,10 +247,17 @@ def test_day_state_keeps_calendar_slots(client, auth_headers):
     assert tasks[0]['finishedAt'] == 1_772_000_000_000
     assert tasks[0]['status'] == 'done'
     assert tasks[0]['pinned'] is True
+    assert tasks[0]['colorAnimation'] == {
+        'type': 'flow',
+        'colors': ['#3498db', '#7c4dff', '#00d4ff'],
+        'direction': 'left',
+        'durationSec': 8,
+    }
     # An unplaced backlog task simply has no slot.
     assert tasks[1]['start'] is None
     assert tasks[1]['finishedAt'] is None
     assert tasks[1]['pinned'] is False
+    assert tasks[1]['colorAnimation'] is None
 
 
 def test_day_state_keeps_sessions(client, auth_headers):

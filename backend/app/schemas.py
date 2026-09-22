@@ -48,6 +48,13 @@ class RepeatConfig(BaseModel):
     baseDays: float = 1
 
 
+class TaskColorAnimation(BaseModel):
+    type: str = 'flow'
+    colors: List[str] = Field(default_factory=list)
+    direction: str = 'right'
+    durationSec: float = 6
+
+
 class DayTask(BaseModel):
     id: str
     name: str
@@ -64,6 +71,7 @@ class DayTask(BaseModel):
     order: int = 0
     emoji: str = ''
     color: str = ''
+    colorAnimation: Optional[TaskColorAnimation] = None
     type: str = 'task'
     # Kanban planning: the day the task is scheduled for ('YYYY-MM-DD') and its
     # column — 'open' (backlog), 'in-progress' (on a timeline) or 'done'. Tasks

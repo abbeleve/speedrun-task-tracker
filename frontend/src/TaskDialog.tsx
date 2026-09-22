@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Habit, RepeatMode, Task, TaskType } from './types';
+import type {
+  Habit,
+  RepeatMode,
+  Task,
+  TaskColorAnimation,
+  TaskFlowDirection,
+  TaskType,
+} from './types';
 import {
   EMOJI_CATEGORY_ICONS,
   TASK_COLORS,
@@ -14,6 +21,12 @@ import {
   newColorPresetId,
   saveColorPresets,
 } from './colorPresets';
+import {
+  DEFAULT_FLOW_COLORS,
+  DEFAULT_FLOW_DURATION_SEC,
+  taskColorAnimationClass,
+  taskColorStyle,
+} from './taskAppearance';
 
 export interface DialogAnchor {
   x: number; // client coordinates of the block the popover belongs to
@@ -117,6 +130,17 @@ function TaskDialog({
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetColor, setNewPresetColor] = useState(task.color);
+  const initialFlow = task.colorAnimation?.type === 'flow' ? task.colorAnimation : null;
+  const [flowOn, setFlowOn] = useState(Boolean(initialFlow));
+  const [flowColors, setFlowColors] = useState<string[]>(
+    initialFlow?.colors ?? [task.color, ...DEFAULT_FLOW_COLORS.slice(1)]
+  );
+  const [flowDirection, setFlowDirection] = useState<TaskFlowDirection>(
+    initialFlow?.direction ?? 'right'
+  );
+  const [flowDurationSec, setFlowDurationSec] = useState(
+    initialFlow?.durationSec ?? DEFAULT_FLOW_DURATION_SEC
+  );
   const [type, setType] = useState<TaskType>(task.type);
   const [habitId, setHabitId] = useState(task.habitId ?? '');
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
@@ -134,6 +158,18 @@ function TaskDialog({
   );
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [emojiSearch, setEmojiSearch] = useState('');
+  const colorAnimation = useMemo<TaskColorAnimation | null>(
+    () =>
+      flowOn
+        ? {
+            type: 'flow',
+            colors: flowColors,
+            direction: flowDirection,
+            durationSec: flowDurationSec,
+          }
+        : null,
+    [flowOn, flowColors, flowDirection, flowDurationSec]
+  );
 
   const nameRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
@@ -167,18 +203,27 @@ function TaskDialog({
       plannedTime: minutesToSec(minutes),
       emoji,
       color,
+      colorAnimation,
       type,
       habitId: habitId || null,
       pinned,
     });
-  }, [name, description, day, time, minutes, emoji, color, type, habitId, pinned]);
+  }, [name, description, day, time, minutes, emoji, color, colorAnimation, type, habitId, pinned]);
 
   const formRef = useRef<HTMLFormElement>(null);
   const [popHeight, setPopHeight] = useState(0);
   useLayoutEffect(() => {
     if (!anchor) return;
     setPopHeight(formRef.current?.offsetHeight ?? 0);
-  }, [anchor, emojiOpen, repeatOn, colorEditorOpen, colorPresets.length]);
+  }, [
+    anchor,
+    emojiOpen,
+    repeatOn,
+    colorEditorOpen,
+    colorPresets.length,
+    flowOn,
+    flowColors.length,
+  ]);
 
   const emojiGroups = useMemo(() => groupedEmojis(emojiSearch), [emojiSearch]);
   const commitColorPresets = (next: ColorPreset[]) => {
@@ -228,6 +273,7 @@ function TaskDialog({
       plannedTime,
       emoji: resolveTaskEmoji(emoji),
       color,
+      colorAnimation,
       type,
       pinned,
       habitId: isReminder ? null : habitId || null,
@@ -533,6 +579,121 @@ function TaskDialog({
                 tabIndex={-1}
                 aria-label="Выбрать цвет из палитры"
               />
+            </div>
+
+            <div className="cal-color-animation">
+              <span className="cal-color-animation-label">Анимация</span>
+              <div className="cal-seg">
+                <button
+                  type="button"
+                  className={!flowOn ? 'active' : ''}
+                  onClick={() => setFlowOn(false)}
+                >
+                  Однотонный
+                </button>
+                <button
+                  type="button"
+                  className={flowOn ? 'active' : ''}
+                  onClick={() => setFlowOn(true)}
+                >
+                  Поток градиента
+                </button>
+              </div>
+
+              {flowOn && (
+                <div className="cal-flow-editor">
+                  <div
+                    className={`cal-flow-preview ${taskColorAnimationClass(colorAnimation)}`}
+                    style={taskColorStyle(color, colorAnimation) as React.CSSProperties}
+                  >
+                    Поток градиента
+                  </div>
+
+                  <div className="cal-flow-stops">
+                    {flowColors.map((stop, index) => (
+                      <label className="cal-flow-stop" key={`${index}-${stop}`}>
+                        <input
+                          type="color"
+                          value={stop}
+                          aria-label={`Цвет градиента ${index + 1}`}
+                          onChange={(e) =>
+                            setFlowColors((colors) =>
+                              colors.map((value, colorIndex) =>
+                                colorIndex === index ? e.target.value.toLowerCase() : value
+                              )
+                            )
+                          }
+                        />
+                        <span>{index + 1}</span>
+                        {flowColors.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFlowColors((colors) =>
+                                colors.filter((_, colorIndex) => colorIndex !== index)
+                              )
+                            }
+                            title="Убрать цвет"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </label>
+                    ))}
+                    {flowColors.length < 5 && (
+                      <button
+                        type="button"
+                        className="cal-flow-add"
+                        onClick={() =>
+                          setFlowColors((colors) => [
+                            ...colors,
+                            colors[colors.length - 1] ?? color,
+                          ])
+                        }
+                      >
+                        ＋ цвет
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="cal-flow-options">
+                    <div className="cal-field">
+                      <span>Направление</span>
+                      <div className="cal-seg cal-flow-directions">
+                        {(
+                          [
+                            ['right', '→'],
+                            ['left', '←'],
+                            ['down', '↓'],
+                            ['up', '↑'],
+                          ] as [TaskFlowDirection, string][]
+                        ).map(([direction, arrow]) => (
+                          <button
+                            type="button"
+                            key={direction}
+                            className={flowDirection === direction ? 'active' : ''}
+                            onClick={() => setFlowDirection(direction)}
+                            title={`Поток ${arrow}`}
+                          >
+                            {arrow}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="cal-field cal-field--grow">
+                      <span>Скорость · {flowDurationSec} сек.</span>
+                      <input
+                        type="range"
+                        min={2}
+                        max={20}
+                        step={1}
+                        value={flowDurationSec}
+                        onChange={(e) => setFlowDurationSec(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="cal-field">

@@ -20,6 +20,7 @@ import {
   spawnNextOccurrence,
   STATUS_LABELS,
 } from './tasks';
+import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { todayKey } from './history';
 
 interface KanbanPageProps {
@@ -524,7 +525,10 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                       setDropCol(null);
                     }}
                   >
-                    <span className="kanban-card-emoji" style={{ '--task-color': task.color } as React.CSSProperties}>
+                    <span
+                      className={`kanban-card-emoji ${taskColorAnimationClass(task.colorAnimation)}`}
+                      style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
+                    >
                       {task.emoji}
                     </span>
                     <div className="kanban-card-body">

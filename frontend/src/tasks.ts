@@ -3,6 +3,7 @@
 
 import type { RepeatConfig, Task, TaskStatus } from './types';
 import { shiftDayKey, todayKey } from './history';
+import { normalizeTaskColorAnimation } from './taskAppearance';
 
 export const TASK_STATUSES: TaskStatus[] = ['open', 'in-progress', 'done'];
 
@@ -35,6 +36,7 @@ export function normalizeTask(task: Task, day: string): Task {
     start: task.start ?? null,
     finishedAt: task.finishedAt ?? null,
     pinned: task.pinned ?? false,
+    colorAnimation: normalizeTaskColorAnimation(task.colorAnimation, task.color),
   };
 }
 
@@ -133,6 +135,7 @@ export function spawnNextOccurrence(
     order: 0,
     emoji: task.emoji,
     color: task.color,
+    colorAnimation: task.colorAnimation ?? null,
     type: task.type,
     day: shiftDayKey(baseDay, interval),
     status: placed ? 'in-progress' : 'open',

@@ -61,6 +61,26 @@ describe('normalizeTask', () => {
     expect(normalizeTask(legacy({}), '2026-09-10').pinned).toBe(false);
   });
 
+  it('normalizes a stored task color animation', () => {
+    const normalized = normalizeTask(
+      legacy({
+        colorAnimation: {
+          type: 'flow',
+          colors: ['#FF0000', 'invalid', '#0000FF'],
+          direction: 'left',
+          durationSec: 99,
+        },
+      }),
+      '2026-09-10'
+    );
+    expect(normalized.colorAnimation).toEqual({
+      type: 'flow',
+      colors: ['#ff0000', '#3498db', '#0000ff'],
+      direction: 'left',
+      durationSec: 20,
+    });
+  });
+
   it('normalizes a whole list', () => {
     expect(normalizeTasks([legacy({ id: 'a' }), legacy({ id: 'b' })], '2026-09-10')).toHaveLength(2);
   });
@@ -169,6 +189,22 @@ describe('recurrence', () => {
       { start: 9 * 60, pinned: true }
     );
     expect(spawnNextOccurrence(placed, makeId, '2026-09-10')!.pinned).toBe(true);
+  });
+
+  it('carries the color animation to the next occurrence', () => {
+    const colorAnimation = {
+      type: 'flow' as const,
+      colors: ['#ff0000', '#0000ff'],
+      direction: 'down' as const,
+      durationSec: 8,
+    };
+    const placed = recurring(
+      { mode: 'fixed', baseDays: 2 },
+      { start: 9 * 60, colorAnimation }
+    );
+    expect(spawnNextOccurrence(placed, makeId, '2026-09-10')!.colorAnimation).toEqual(
+      colorAnimation
+    );
   });
 
   it('schedules an unplaced recurrence back into the backlog on day+interval', () => {
