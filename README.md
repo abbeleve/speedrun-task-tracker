@@ -18,6 +18,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 ## Features
 
 - **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag either edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time. Hover a day in the 3-day/week views to see reminder details and the first real break after the current or next uninterrupted work stretch.
+- **Backlog templates** — hide the calendar backlog rail when you need more room. Its Templates tab stores reusable task details per account; each use makes a new unscheduled backlog task for the chosen day. This suits tasks such as a rest-type meal whose time is not known in advance.
 - **Pinned tasks** — pin a calendar block or backlog item to lock its placement. It can still be completed and edited; uncheck the pin to move it again.
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
@@ -103,6 +104,7 @@ images there — they are picked up automatically and are not committed to git.
 
 1. **Register / log in** — data is tied to your account.
 2. **Plan the day** — on the calendar, drag on the grid to create a block, or drop one from the backlog. Set the emoji, colour, length and (optionally) a repeat rule in the dialog. Blocks may overlap: that is a parallel group.
+   Open **Шаблоны** in the backlog to save a task for later use (or press ☆ on an existing backlog card), then choose a day and press **В бэклог** whenever you need a new copy. Use **Скрыть бэклог** to give the calendar more space; the same button shows it again.
 3. **Work the plan** — press ✓ on a block the moment you really finish it. The HUD shows your lead, what closing the running block right now would bank, and when the rest of the plan will be done.
 4. **Glue a sequence** — press the 🔗 handle between two blocks (or select a batch and *Собрать в отдельную сессию*) to make them one session, then click its spine to open it in the thermometer / spiral / list views and close splits from there.
 5. **Look back** — the dashboard (🏠) holds the kanban board, every stretch you have worked, and the statistics page.

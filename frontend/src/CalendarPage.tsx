@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Habit, Task } from './types';
+import type { Habit, Task, TaskTemplate, TaskType } from './types';
 import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
+import * as api from './api';
 import type { DayStore } from './dayStore';
 import type { Chain, ScheduleGap } from './schedule';
 import {
@@ -39,6 +40,7 @@ import { clockTime, compactDur, signedDur } from './format';
 import { focusMotivation } from './focusMotivation';
 import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
 import { newTaskId, spawnNextOccurrence } from './tasks';
+import { taskFromTemplate } from './taskTemplates';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
 import SessionPopover from './SessionPopover';
@@ -75,6 +77,15 @@ const MONTHS = [
   'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
 ];
+
+type TemplateDraft = {
+  id: string | null;
+  name: string;
+  minutes: string;
+  emoji: string;
+  color: string;
+  type: TaskType;
+};
 
 // ── small formatters ───────────────────────────────────────────────
 
@@ -178,6 +189,15 @@ function CalendarPage({
     return saved === 'day' || saved === '3day' || saved === 'month' ? saved : 'week';
   });
   const [anchor, setAnchor] = useState<string>(() => todayKey());
+  const [backlogVisible, setBacklogVisible] = useState(
+    () => localStorage.getItem('speedrun_backlog_visible') !== 'false'
+  );
+  const [backlogTab, setBacklogTab] = useState<'tasks' | 'templates'>('tasks');
+  const [templates, setTemplates] = useState<TaskTemplate[] | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
+  const [templateDay, setTemplateDay] = useState(() => todayKey());
+  const [templateBusy, setTemplateBusy] = useState(false);
   // The block editor. `anchor` is where on the screen it was opened from: with
   // one it floats next to the block (and the block stays drawn on the grid),
   // without one it is a centred modal.
@@ -262,6 +282,24 @@ function CalendarPage({
   useEffect(() => {
     localStorage.setItem('speedrun_cal_view', view);
   }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem('speedrun_backlog_visible', String(backlogVisible));
+  }, [backlogVisible]);
+
+  useEffect(() => {
+    let active = true;
+    void api.loadTaskTemplates().then(
+      (items) => {
+        if (active) setTemplates(items);
+      },
+      (error) => {
+        console.error('Failed to load task templates', error);
+        if (active) setTemplateError('Не удалось загрузить шаблоны');
+      }
+    );
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -356,6 +394,78 @@ function CalendarPage({
         .sort((a, b) => a.day.localeCompare(b.day) || a.order - b.order),
     [tasks]
   );
+
+  const startTemplate = useCallback((task?: Task) => {
+    setTemplateDraft({
+      id: null,
+      name: task?.name ?? '',
+      minutes: task ? String(task.plannedTime / 60) : '30',
+      emoji: task?.emoji ?? TASK_EMOJIS[0],
+      color: task?.color ?? DEFAULT_COLOR,
+      type: task?.type ?? 'task',
+    });
+    setTemplateError(null);
+    setBacklogTab('templates');
+  }, []);
+
+  const editTemplate = useCallback((template: TaskTemplate) => {
+    setTemplateDraft({
+      id: template.id,
+      name: template.name,
+      minutes: String(template.plannedTime / 60),
+      emoji: template.emoji,
+      color: template.color,
+      type: template.type,
+    });
+    setTemplateError(null);
+  }, []);
+
+  const saveTemplate = useCallback(async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!templateDraft || templateBusy) return;
+    const name = templateDraft.name.trim();
+    const minutes = Number(templateDraft.minutes);
+    if (!name || !Number.isFinite(minutes) || minutes <= 0) return;
+    const template: TaskTemplate = {
+      id: templateDraft.id ?? `template-${newTaskId()}`,
+      name,
+      plannedTime: Math.round(minutes * 60),
+      emoji: templateDraft.emoji || TASK_EMOJIS[0],
+      color: templateDraft.color,
+      type: templateDraft.type,
+    };
+    setTemplateBusy(true);
+    try {
+      await api.saveTaskTemplate(template);
+      setTemplates((previous) => {
+        const others = (previous ?? []).filter((item) => item.id !== template.id);
+        return [...others, template];
+      });
+      setTemplateDraft(null);
+      setTemplateError(null);
+    } catch (error) {
+      console.error('Failed to save task template', error);
+      setTemplateError('Не удалось сохранить шаблон');
+    } finally {
+      setTemplateBusy(false);
+    }
+  }, [templateDraft, templateBusy]);
+
+  const deleteTemplate = useCallback(async (id: string) => {
+    if (templateBusy) return;
+    setTemplateBusy(true);
+    try {
+      await api.deleteTaskTemplate(id);
+      setTemplates((previous) => (previous ?? []).filter((item) => item.id !== id));
+      if (templateDraft?.id === id) setTemplateDraft(null);
+      setTemplateError(null);
+    } catch (error) {
+      console.error('Failed to delete task template', error);
+      setTemplateError('Не удалось удалить шаблон');
+    } finally {
+      setTemplateBusy(false);
+    }
+  }, [templateBusy, templateDraft]);
 
   // ── task mutations ───────────────────────────────────────────────
 
@@ -2135,6 +2245,14 @@ function CalendarPage({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className="cal-btn cal-backlog-toggle"
+          aria-pressed={backlogVisible}
+          onClick={() => setBacklogVisible((visible) => !visible)}
+        >
+          🗂 {backlogVisible ? 'Скрыть бэклог' : 'Показать бэклог'}
+        </button>
       </div>
 
       <div className={`cal-hud ${leadClass}${credit.frozen ? ' frozen' : ''}`}>
@@ -2206,56 +2324,107 @@ function CalendarPage({
           </div>
         )}
 
-        <aside
+        {backlogVisible && <aside
           className={`cal-backlog${gesture?.kind === 'move' && gesture.toBacklog ? ' drop-target' : ''}`}
-          ref={backlogRef}
+          ref={backlogTab === 'tasks' ? backlogRef : null}
         >
           <header className="cal-backlog-head">
             <h3>🗂 Бэклог</h3>
-            <button
-              type="button"
-              className="cal-btn cal-btn--icon"
-              title="Новая задача в бэклог"
-              onClick={() =>
-                openDialog(
-                  { ...draftTask(anchor, 9 * 60, 60), status: 'open', start: null },
-                  true
-                )
-              }
-            >
-              ＋
-            </button>
-          </header>
-          <p className="cal-backlog-hint">
-            Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
-            Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
-            Ctrl + клик по блоку — добавить его в пачку или убрать
-          </p>
-          <div className="cal-backlog-list">
-            {openTasks.map((task) => (
-              <div
-                key={task.id}
-                className={`cal-backlog-card ${taskColorAnimationClass(task.colorAnimation)}${task.pinned ? ' pinned' : ''}`}
-                style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
-                draggable={!task.pinned}
-                onDragStart={(e) => {
-                  if (task.pinned) {
-                    e.preventDefault();
-                    return;
-                  }
-                  e.dataTransfer.setData('text/plain', task.id);
-                }}
-                onClick={(e) => openDialog(task, false, e)}
+            {backlogTab === 'tasks' && <button
+                type="button"
+                className="cal-btn cal-btn--icon"
+                title="Новая задача в бэклог"
+                onClick={() =>
+                  openDialog(
+                    { ...draftTask(anchor, 9 * 60, 60), status: 'open', start: null },
+                    true
+                  )
+                }
               >
-                <span className="cal-chip-emoji">{task.emoji}</span>
-                <span className="cal-chip-name">{task.name}</span>
-                <span className="cal-chip-time">{dur(task.plannedTime)}</span>
-                {task.pinned && <span className="cal-backlog-pin" title="Закреплено">📌</span>}
-              </div>
-            ))}
-            {openTasks.length === 0 && <p className="cal-backlog-empty">Пусто</p>}
+                ＋
+              </button>}
+          </header>
+          <div className="cal-backlog-tabs" role="tablist" aria-label="Разделы бэклога">
+            <button type="button" role="tab" aria-selected={backlogTab === 'tasks'} className={backlogTab === 'tasks' ? 'active' : ''} onClick={() => setBacklogTab('tasks')}>Задачи</button>
+            <button type="button" role="tab" aria-selected={backlogTab === 'templates'} className={backlogTab === 'templates' ? 'active' : ''} onClick={() => setBacklogTab('templates')}>Шаблоны</button>
           </div>
-        </aside>
+          {backlogTab === 'tasks' ? <>
+            <p className="cal-backlog-hint">
+              Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
+              Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
+              Ctrl + клик по блоку — добавить его в пачку или убрать
+            </p>
+            <div className="cal-backlog-list" role="tabpanel">
+              {openTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={`cal-backlog-card ${taskColorAnimationClass(task.colorAnimation)}${task.pinned ? ' pinned' : ''}`}
+                  style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
+                  draggable={!task.pinned}
+                  onDragStart={(e) => {
+                    if (task.pinned) {
+                      e.preventDefault();
+                      return;
+                    }
+                    e.dataTransfer.setData('text/plain', task.id);
+                  }}
+                  onClick={(e) => openDialog(task, false, e)}
+                >
+                  <span className="cal-chip-emoji">{task.emoji}</span>
+                  <span className="cal-chip-name">{task.name}</span>
+                  <span className="cal-chip-time">{dur(task.plannedTime)}</span>
+                  {task.pinned && <span className="cal-backlog-pin" title="Закреплено">📌</span>}
+                  <button
+                    type="button"
+                    className="cal-backlog-save-template"
+                    title="Сохранить как шаблон"
+                    aria-label={`Сохранить «${task.name}» как шаблон`}
+                    onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); startTemplate(task); }}
+                  >☆</button>
+                </div>
+              ))}
+              {openTasks.length === 0 && <p className="cal-backlog-empty">Пусто</p>}
+            </div>
+          </> : <div className="cal-template-page" role="tabpanel">
+            <p className="cal-backlog-hint">Шаблон хранит параметры задачи без даты и времени. Создай из него новую задачу в бэклоге, когда она понадобится.</p>
+            <label className="cal-template-day">День для новой задачи
+              <input type="date" value={templateDay} onChange={(e) => setTemplateDay(e.target.value)} />
+            </label>
+            {templateError && <p className="cal-template-error" role="alert">{templateError}</p>}
+            {templates === null && !templateError && <p className="cal-backlog-empty">Загрузка…</p>}
+            {templateDraft ? <form className="cal-template-form" onSubmit={(event) => void saveTemplate(event)}>
+              <h4>{templateDraft.id ? 'Изменить шаблон' : 'Новый шаблон'}</h4>
+              <label>Название<input autoFocus type="text" maxLength={120} required value={templateDraft.name} onChange={(e) => setTemplateDraft({ ...templateDraft, name: e.target.value })} placeholder="Например, Приём пищи" /></label>
+              <label>Длительность, мин<input type="number" min="1" step="1" required value={templateDraft.minutes} onChange={(e) => setTemplateDraft({ ...templateDraft, minutes: e.target.value })} /></label>
+              <label>Тип<select value={templateDraft.type} onChange={(e) => setTemplateDraft({ ...templateDraft, type: e.target.value as TaskType })}><option value="task">Задача</option><option value="rest">Отдых</option><option value="reminder">Напоминание</option></select></label>
+              <div className="cal-template-form-row">
+                <label>Иконка<input type="text" maxLength={8} value={templateDraft.emoji} onChange={(e) => setTemplateDraft({ ...templateDraft, emoji: e.target.value })} /></label>
+                <label>Цвет<input type="color" value={templateDraft.color} onChange={(e) => setTemplateDraft({ ...templateDraft, color: e.target.value })} /></label>
+              </div>
+              <div className="cal-template-actions">
+                <button type="submit" className="cal-btn cal-btn--primary" disabled={templateBusy}>Сохранить</button>
+                <button type="button" className="cal-btn" disabled={templateBusy} onClick={() => setTemplateDraft(null)}>Отмена</button>
+              </div>
+            </form> : <button type="button" className="cal-btn cal-template-add" disabled={templateBusy} onClick={() => startTemplate()}>＋ Новый шаблон</button>}
+            <div className="cal-template-list">
+              {(templates ?? []).map((template) => (
+                <article className="cal-template-card" key={template.id} style={{ borderLeftColor: template.color }}>
+                  <div className="cal-template-summary">
+                    <span className="cal-template-emoji">{template.emoji}</span>
+                    <div><strong>{template.name}</strong><small>{dur(template.plannedTime)} · {template.type === 'rest' ? 'Отдых' : template.type === 'reminder' ? 'Напоминание' : 'Задача'}</small></div>
+                  </div>
+                  <div className="cal-template-actions">
+                    <button type="button" className="cal-btn cal-btn--primary" disabled={!templateDay} onClick={() => { store.upsertTask(taskFromTemplate(template, templateDay)); setBacklogTab('tasks'); }}>＋ В бэклог</button>
+                    <button type="button" className="cal-btn cal-btn--icon" title="Изменить шаблон" disabled={templateBusy} onClick={() => editTemplate(template)}>✎</button>
+                    <button type="button" className="cal-btn cal-btn--icon cal-btn--danger" title="Удалить шаблон" disabled={templateBusy} onClick={() => void deleteTemplate(template.id)}>✕</button>
+                  </div>
+                </article>
+              ))}
+              {templates?.length === 0 && <p className="cal-backlog-empty">Пока нет шаблонов</p>}
+            </div>
+          </div>}
+        </aside>}
       </div>
 
       {renderHoverCard()}
