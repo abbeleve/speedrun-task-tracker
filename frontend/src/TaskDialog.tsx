@@ -17,6 +17,7 @@ import { DAY_MIN, isDone } from './schedule';
 import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
 import {
+  appearanceFromColorPreset,
   clearLegacyColorPresets,
   loadLegacyColorPresets,
   moveColorPreset,
@@ -29,6 +30,7 @@ import {
   taskColorAnimationClass,
   taskColorStyle,
 } from './taskAppearance';
+import './TaskPreset.css';
 
 export interface DialogAnchor {
   x: number; // client coordinates of the block the popover belongs to
@@ -105,6 +107,62 @@ function fromDatetimeInput(value: string, fallback: number): number {
   return Number.isFinite(ms) ? ms : fallback;
 }
 
+function EmojiPicker({ selected, onSelect }: { selected: string; onSelect: (emoji: string) => void }) {
+  const [search, setSearch] = useState('');
+  const groups = useMemo(() => groupedEmojis(search), [search]);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const scrollToCategory = (category: string) => {
+    const header = gridRef.current?.querySelector(`[data-category="${CSS.escape(category)}"]`);
+    header?.scrollIntoView({ block: 'start' });
+  };
+
+  return (
+    <div className="cal-emoji-pop">
+      <input
+        className="cal-emoji-search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Поиск иконки…"
+        aria-label="Поиск аватара"
+        autoFocus
+      />
+      {!search.trim() && (
+        <div className="cal-emoji-tabs">
+          {groups.map((group) => (
+            <button
+              key={group.category}
+              type="button"
+              className="cal-emoji-tab"
+              title={group.category}
+              onClick={() => scrollToCategory(group.category)}
+            >
+              {EMOJI_CATEGORY_ICONS[group.category]}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="cal-emoji-grid" ref={gridRef}>
+        {groups.map((group) => (
+          <div key={group.category} className="cal-emoji-group">
+            <div className="cal-emoji-cat" data-category={group.category}>{group.category}</div>
+            {group.emojis.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                className={`cal-emoji-cell${entry === selected ? ' active' : ''}`}
+                onClick={() => onSelect(entry)}
+                aria-label={entry}
+              >
+                {entry}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Editor for one calendar block: when it runs, how long, what it looks like and
 // whether it repeats. Used for both creating (a draft dropped on the grid) and
 // editing an existing block.
@@ -139,6 +197,8 @@ function TaskDialog({
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetColor, setNewPresetColor] = useState(task.color);
+  const [newPresetEmoji, setNewPresetEmoji] = useState(task.emoji);
+  const [newPresetUseGradient, setNewPresetUseGradient] = useState(true);
   const initialFlow = task.colorAnimation?.type === 'flow' ? task.colorAnimation : null;
   const [flowOn, setFlowOn] = useState(Boolean(initialFlow));
   const [flowColors, setFlowColors] = useState<string[]>(
@@ -163,8 +223,7 @@ function TaskDialog({
   const [finishedInput, setFinishedInput] = useState(() =>
     toDatetimeInput(task.finishedAt ?? Date.now())
   );
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [emojiSearch, setEmojiSearch] = useState('');
+  const [emojiPickerTarget, setEmojiPickerTarget] = useState<string | null>(null);
   const colorAnimation = useMemo<TaskColorAnimation | null>(
     () =>
       flowOn
@@ -220,12 +279,12 @@ function TaskDialog({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (emojiOpen) setEmojiOpen(false);
+      if (emojiPickerTarget) setEmojiPickerTarget(null);
       else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [emojiOpen, onClose]);
+  }, [emojiPickerTarget, onClose]);
 
   // Live draft: the grid redraws the block from the fields as they are typed.
   const previewRef = useRef(onPreview);
@@ -256,7 +315,7 @@ function TaskDialog({
     setPopHeight(formRef.current?.offsetHeight ?? 0);
   }, [
     anchor,
-    emojiOpen,
+    emojiPickerTarget,
     repeatOn,
     colorEditorOpen,
     colorPresets.length,
@@ -264,7 +323,6 @@ function TaskDialog({
     flowColors.length,
   ]);
 
-  const emojiGroups = useMemo(() => groupedEmojis(emojiSearch), [emojiSearch]);
   const commitColorPresets = (next: ColorPreset[]) => {
     const valid = normalizeColorPresets(next);
     colorPresetsRef.current = valid;
@@ -289,6 +347,20 @@ function TaskDialog({
       preset.id === id ? { ...preset, ...patch } : preset
     )));
   };
+  const applyColorPreset = (preset: ColorPreset) => {
+    const appearance = appearanceFromColorPreset(preset, { emoji, colorAnimation });
+    setColor(appearance.color);
+    setEmoji(appearance.emoji);
+    if (preset.colorAnimation !== undefined) {
+      const animation = appearance.colorAnimation;
+      setFlowOn(Boolean(animation));
+      if (animation) {
+        setFlowColors([...animation.colors]);
+        setFlowDirection(animation.direction);
+        setFlowDurationSec(animation.durationSec);
+      }
+    }
+  };
   const removeColorPreset = (id: string) => {
     commitColorPresets(colorPresetsRef.current.filter((preset) => preset.id !== id));
   };
@@ -310,16 +382,12 @@ function TaskDialog({
       id: newColorPresetId(),
       name,
       color: newPresetColor.toLowerCase(),
+      emoji: newPresetEmoji,
+      colorAnimation: newPresetUseGradient && flowOn ? colorAnimation : null,
     };
     commitColorPresets([...colorPresetsRef.current, preset]);
-    setColor(preset.color);
+    applyColorPreset(preset);
     setNewPresetName('');
-  };
-  const emojiGridRef = useRef<HTMLDivElement>(null);
-  const scrollToCategory = (category: string) => {
-    const grid = emojiGridRef.current;
-    const header = grid?.querySelector(`[data-category="${CSS.escape(category)}"]`);
-    header?.scrollIntoView({ block: 'start' });
   };
 
   const submit = (e: React.FormEvent) => {
@@ -380,7 +448,7 @@ function TaskDialog({
           <button
             type="button"
             className="cal-modal-emoji"
-            onClick={() => setEmojiOpen((v) => !v)}
+            onClick={() => setEmojiPickerTarget((target) => target === 'task' ? null : 'task')}
             title="Сменить иконку"
           >
             {emoji}
@@ -397,53 +465,11 @@ function TaskDialog({
           </button>
         </header>
 
-        {emojiOpen && (
-          <div className="cal-emoji-pop">
-            <input
-              className="cal-emoji-search"
-              value={emojiSearch}
-              onChange={(e) => setEmojiSearch(e.target.value)}
-              placeholder="Поиск иконки…"
-              autoFocus
-            />
-            {!emojiSearch.trim() && (
-              <div className="cal-emoji-tabs">
-                {emojiGroups.map((g) => (
-                  <button
-                    key={g.category}
-                    type="button"
-                    className="cal-emoji-tab"
-                    title={g.category}
-                    onClick={() => scrollToCategory(g.category)}
-                  >
-                    {EMOJI_CATEGORY_ICONS[g.category]}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="cal-emoji-grid" ref={emojiGridRef}>
-              {emojiGroups.map((g) => (
-                <div key={g.category} className="cal-emoji-group">
-                  <div className="cal-emoji-cat" data-category={g.category}>
-                    {g.category}
-                  </div>
-                  {g.emojis.map((e) => (
-                    <button
-                      key={e}
-                      type="button"
-                      className={`cal-emoji-cell${e === emoji ? ' active' : ''}`}
-                      onClick={() => {
-                        setEmoji(e);
-                        setEmojiOpen(false);
-                      }}
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
+        {emojiPickerTarget === 'task' && (
+          <EmojiPicker selected={emoji} onSelect={(chosen) => {
+            setEmoji(chosen);
+            setEmojiPickerTarget(null);
+          }} />
         )}
 
         <label className="cal-field cal-field--grow">
@@ -508,7 +534,7 @@ function TaskDialog({
 
         <div className="cal-modal-row">
           <div className="cal-field cal-field--grow">
-            <span>Цвет</span>
+            <span>Цвет и аватар</span>
             <div className="cal-color-preset-bar">
               <div className="cal-color-preset-chips">
                 {!colorPresetsReady && !colorPresetsError && (
@@ -518,17 +544,20 @@ function TaskDialog({
                   <button
                     key={preset.id}
                     type="button"
-                    className={`cal-color-preset-chip${preset.color === color ? ' active' : ''}`}
+                    className={`cal-color-preset-chip${preset.color === color && (!preset.emoji || preset.emoji === emoji) && (preset.colorAnimation === undefined || JSON.stringify(preset.colorAnimation) === JSON.stringify(colorAnimation)) ? ' active' : ''}`}
                     style={{ '--sw': preset.color } as React.CSSProperties}
-                    onClick={() => setColor(preset.color)}
-                    title={`${preset.name}: ${preset.color}`}
+                    onClick={() => applyColorPreset(preset)}
+                    title={`${preset.name}: ${preset.color}${preset.emoji ? ` ${preset.emoji}` : ''}`}
                   >
-                    <span className="cal-color-preset-dot" />
+                    <span
+                      className={`cal-color-preset-dot ${taskColorAnimationClass(preset.colorAnimation)}`}
+                      style={taskColorStyle(preset.color, preset.colorAnimation) as React.CSSProperties}
+                    >{preset.emoji}</span>
                     <span>{preset.name}</span>
                   </button>
                 ))}
                 {colorPresetsReady && colorPresets.length === 0 && (
-                  <span className="cal-color-preset-empty">Назовите цвета, чтобы быстро выбирать их по смыслу</span>
+                  <span className="cal-color-preset-empty">Создайте шаблон цвета и аватара для быстрого выбора</span>
                 )}
               </div>
               <button
@@ -536,7 +565,7 @@ function TaskDialog({
                 className={`cal-color-preset-edit${colorEditorOpen ? ' active' : ''}`}
                 onClick={() => setColorEditorOpen((open) => !open)}
                 disabled={!colorPresetsReady}
-                title={colorEditorOpen ? 'Закрыть редактор пресетов' : 'Создать или изменить цветовые пресеты'}
+                title={colorEditorOpen ? 'Закрыть редактор шаблонов' : 'Создать или изменить шаблоны цвета и аватара'}
                 aria-pressed={colorEditorOpen}
               >
                 ✎
@@ -546,8 +575,8 @@ function TaskDialog({
             {colorPresetsError && (
               <div className="cal-color-preset-error" role="alert">
                 {colorPresetsError === 'load'
-                  ? 'Не удалось загрузить цветовые пресеты.'
-                  : 'Цветовые пресеты не сохранены.'}
+                  ? 'Не удалось загрузить шаблоны.'
+                  : 'Шаблоны не сохранены.'}
                 <button type="button" onClick={retryColorPresets}>Повторить</button>
               </div>
             )}
@@ -567,6 +596,13 @@ function TaskDialog({
                         if (wasSelected) setColor(nextColor);
                       }}
                     />
+                    <button
+                      type="button"
+                      className="cal-color-preset-emoji"
+                      onClick={() => setEmojiPickerTarget((target) => target === preset.id ? null : preset.id)}
+                      title={`Выбрать аватар шаблона «${preset.name}»`}
+                      aria-label={`Выбрать аватар шаблона «${preset.name}»`}
+                    >{preset.emoji || '＋'}</button>
                     <input
                       type="text"
                       value={draftPresetNames[preset.id] ?? preset.name}
@@ -615,6 +651,27 @@ function TaskDialog({
                     >
                       ✕
                     </button>
+                    <div className="cal-color-preset-details">
+                      <span>{preset.colorAnimation?.type === 'flow' ? 'Поток градиента' : preset.colorAnimation === null ? 'Однотонный' : 'Градиент не задан'}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchColorPreset(preset.id, {
+                          color,
+                          emoji,
+                          colorAnimation,
+                        })}
+                        title="Сохранить в шаблон текущие цвет, аватар и градиент задачи"
+                      >Взять оформление задачи</button>
+                    </div>
+                    {emojiPickerTarget === preset.id && (
+                      <EmojiPicker selected={preset.emoji ?? ''} onSelect={(chosen) => {
+                        if (color === preset.color && (!preset.emoji || emoji === preset.emoji)) {
+                          setEmoji(chosen);
+                        }
+                        patchColorPreset(preset.id, { emoji: chosen });
+                        setEmojiPickerTarget(null);
+                      }} />
+                    )}
                   </div>
                 ))}
                 <div className="cal-color-preset-row cal-color-preset-row--new">
@@ -624,6 +681,13 @@ function TaskDialog({
                     aria-label="Цвет нового пресета"
                     onChange={(e) => setNewPresetColor(e.target.value)}
                   />
+                  <button
+                    type="button"
+                    className="cal-color-preset-emoji"
+                    onClick={() => setEmojiPickerTarget((target) => target === 'new' ? null : 'new')}
+                    title="Выбрать аватар нового шаблона"
+                    aria-label="Выбрать аватар нового шаблона"
+                  >{newPresetEmoji}</button>
                   <input
                     type="text"
                     value={newPresetName}
@@ -647,6 +711,22 @@ function TaskDialog({
                   >
                     ＋
                   </button>
+                  {flowOn && (
+                    <label className="cal-color-preset-gradient-choice">
+                      <input
+                        type="checkbox"
+                        checked={newPresetUseGradient}
+                        onChange={(event) => setNewPresetUseGradient(event.target.checked)}
+                      />
+                      Сохранить текущий поток градиента
+                    </label>
+                  )}
+                  {emojiPickerTarget === 'new' && (
+                    <EmojiPicker selected={newPresetEmoji} onSelect={(chosen) => {
+                      setNewPresetEmoji(chosen);
+                      setEmojiPickerTarget(null);
+                    }} />
+                  )}
                 </div>
               </div>
             )}

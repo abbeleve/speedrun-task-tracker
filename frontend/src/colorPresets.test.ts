@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLOR_PRESETS_STORAGE_KEY,
+  appearanceFromColorPreset,
   clearLegacyColorPresets,
   loadLegacyColorPresets,
   moveColorPreset,
@@ -18,6 +19,43 @@ describe('color presets', () => {
         null,
       ])
     ).toEqual([{ id: 'calls', name: 'Созвоны', color: '#e74c3c' }]);
+  });
+
+  it('keeps avatars and normalized gradients without changing old color-only presets', () => {
+    expect(normalizeColorPresets([
+      { id: 'legacy', name: 'Legacy', color: '#3498db' },
+      {
+        id: 'focus', name: 'Focus', color: '#ABCDEF', emoji: ' 🚀 ',
+        colorAnimation: {
+          type: 'flow', colors: ['#ABCDEF', '#123456'], direction: 450, durationSec: 30,
+        },
+      },
+      { id: 'solid', name: 'Solid', color: '#ffffff', emoji: '🎯', colorAnimation: null },
+    ])).toEqual([
+      { id: 'legacy', name: 'Legacy', color: '#3498db' },
+      {
+        id: 'focus', name: 'Focus', color: '#abcdef', emoji: '🚀',
+        colorAnimation: {
+          type: 'flow', colors: ['#abcdef', '#123456'], direction: 90, durationSec: 20,
+        },
+      },
+      { id: 'solid', name: 'Solid', color: '#ffffff', emoji: '🎯', colorAnimation: null },
+    ]);
+  });
+
+  it('applies the whole appearance while legacy presets keep the current avatar and gradient', () => {
+    const current = {
+      emoji: '📋',
+      colorAnimation: {
+        type: 'flow' as const, colors: ['#000000', '#ffffff'], direction: 0, durationSec: 6,
+      },
+    };
+    expect(appearanceFromColorPreset(
+      { id: 'old', name: 'Old', color: '#123456' }, current
+    )).toEqual({ color: '#123456', ...current });
+    expect(appearanceFromColorPreset(
+      { id: 'new', name: 'New', color: '#abcdef', emoji: '🚀', colorAnimation: null }, current
+    )).toEqual({ color: '#abcdef', emoji: '🚀', colorAnimation: null });
   });
 
   it('reads old browser presets for migration and clears them afterward', () => {

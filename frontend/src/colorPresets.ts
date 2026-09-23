@@ -1,7 +1,14 @@
+import type { Task, TaskColorAnimation } from './types';
+import { normalizeTaskColorAnimation } from './taskAppearance';
+
 export interface ColorPreset {
   id: string;
   name: string;
   color: string;
+  // Older presets have no avatar and keep the task's current one when applied.
+  emoji?: string;
+  // Absent on older color-only presets; null explicitly selects a solid color.
+  colorAnimation?: TaskColorAnimation | null;
 }
 
 export const COLOR_PRESETS_STORAGE_KEY = 'speedrun_color_presets_v1';
@@ -17,9 +24,18 @@ export function normalizeColorPresets(value: unknown): ColorPreset[] {
     const id = typeof raw.id === 'string' ? raw.id.trim() : '';
     const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, 40) : '';
     const color = typeof raw.color === 'string' ? raw.color.toLowerCase() : '';
+    const emoji = typeof raw.emoji === 'string' ? raw.emoji.trim().slice(0, 32) : '';
     if (!id || ids.has(id) || !name || !HEX_RE.test(color)) continue;
     ids.add(id);
-    result.push({ id, name, color });
+    const hasAnimation = Object.prototype.hasOwnProperty.call(raw, 'colorAnimation');
+    const colorAnimation = hasAnimation
+      ? normalizeTaskColorAnimation(raw.colorAnimation as TaskColorAnimation | null, color)
+      : undefined;
+    result.push({
+      id, name, color,
+      ...(emoji ? { emoji } : {}),
+      ...(hasAnimation ? { colorAnimation } : {}),
+    });
   }
   return result;
 }
@@ -48,6 +64,19 @@ export function moveColorPreset(presets: ColorPreset[], index: number, offset: -
   const next = [...presets];
   [next[index], next[target]] = [next[target], next[index]];
   return next;
+}
+
+export function appearanceFromColorPreset(
+  preset: ColorPreset,
+  current: Pick<Task, 'emoji' | 'colorAnimation'>
+): Pick<Task, 'color' | 'emoji' | 'colorAnimation'> {
+  return {
+    color: preset.color,
+    emoji: preset.emoji ?? current.emoji,
+    colorAnimation: preset.colorAnimation === undefined
+      ? current.colorAnimation
+      : preset.colorAnimation,
+  };
 }
 
 export function newColorPresetId(): string {

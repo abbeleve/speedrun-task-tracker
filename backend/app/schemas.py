@@ -161,6 +161,8 @@ class ColorPresetIn(BaseModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=40)
     color: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+    emoji: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    colorAnimation: Optional[TaskColorAnimation] = None
 
 
 # A habit definition. `format` is 'count' (quota of units/day, e.g. 10 отжиманий)

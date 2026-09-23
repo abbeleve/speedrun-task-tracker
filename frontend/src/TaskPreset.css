@@ -1,0 +1,71 @@
+.cal-modal .cal-color-preset-dot {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.cal-modal .cal-color-preset-dot.task-color-flow {
+  background-image: var(--task-gradient);
+}
+
+.cal-modal .cal-color-preset-row {
+  grid-template-columns: 28px 28px minmax(0, 1fr) 52px 28px;
+}
+
+.cal-modal .cal-color-preset-row--new {
+  grid-template-columns: 28px 28px minmax(0, 1fr) 28px;
+}
+
+.cal-modal .cal-color-preset-row--new .cal-color-preset-add {
+  grid-column: 4;
+}
+
+.cal-color-preset-emoji {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.cal-color-preset-emoji:hover {
+  border-color: var(--accent-blue);
+}
+
+.cal-modal .cal-color-preset-details,
+.cal-modal .cal-color-preset-gradient-choice,
+.cal-modal .cal-color-preset-row > .cal-emoji-pop {
+  grid-column: 1 / -1;
+}
+
+.cal-color-preset-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.cal-color-preset-details button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-blue);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cal-color-preset-gradient-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}

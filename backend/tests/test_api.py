@@ -145,6 +145,23 @@ def test_color_presets_persist_in_order_and_allow_intentional_empty_list(client,
     assert client.get(url, headers=auth_headers).json() == []
 
 
+def test_color_preset_avatar_and_gradient_round_trip(client, auth_headers):
+    preset = {
+        'id': 'focus', 'name': 'Focus', 'color': '#3498db', 'emoji': '🚀',
+        'colorAnimation': {
+            'type': 'flow', 'colors': ['#3498db', '#7c4dff'],
+            'direction': 135, 'durationSec': 8,
+        },
+    }
+    solid = {
+        'id': 'rest', 'name': 'Rest', 'color': '#2ecc71',
+        'emoji': '☕', 'colorAnimation': None,
+    }
+    url = '/api/color-presets'
+    assert client.put(url, headers=auth_headers, json=[preset, solid]).status_code == 200
+    assert client.get(url, headers=auth_headers).json() == [preset, solid]
+
+
 def test_color_presets_are_scoped_to_user(client):
     alice = register(client, username='alice', password='secret123')['token']
     bob = register(client, username='bob', password='secret123')['token']

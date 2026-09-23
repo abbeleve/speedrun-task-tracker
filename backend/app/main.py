@@ -504,7 +504,7 @@ def put_color_presets(
         INSERT INTO color_presets (user_id, data) VALUES (?, ?)
         ON CONFLICT(user_id) DO UPDATE SET data = excluded.data
         """,
-        (user['id'], json.dumps([preset.model_dump() for preset in body])),
+        (user['id'], json.dumps([preset.model_dump(exclude_unset=True) for preset in body])),
     )
     conn.commit()
     return {'ok': True}
