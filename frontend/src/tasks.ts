@@ -137,6 +137,7 @@ export function spawnNextOccurrence(
     color: task.color,
     colorAnimation: task.colorAnimation ?? null,
     type: task.type,
+    habitId: task.habitId,
     day: shiftDayKey(baseDay, interval),
     status: placed ? 'in-progress' : 'open',
     pinned: task.pinned ?? false,

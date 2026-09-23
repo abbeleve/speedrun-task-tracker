@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RepeatConfig, Task, TaskColorAnimation, TaskStatus } from './types';
+import type { Habit, RepeatConfig, Task, TaskColorAnimation, TaskStatus } from './types';
+import { habitAuto } from './habits';
 import {
   describeRepeat,
   getOpenTasks,
@@ -215,6 +216,29 @@ describe('recurrence', () => {
     expect(child!.repeatIndex).toBe(1);
     expect(child!.repeatOf).toBe('r');
     expect(child!.completedAt).toBeNull();
+  });
+
+  it('keeps the habit link through consecutive occurrences', () => {
+    const first = recurring({ mode: 'fixed', baseDays: 1 }, { habitId: 'habit-1', plannedTime: 3600 });
+    const second = spawnNextOccurrence(first, makeId, first.day)!;
+    const third = spawnNextOccurrence(second, makeId, second.day)!;
+    const completedSecond = { ...second, status: 'done' as const, finishedAt: Date.now() };
+    const habit: Habit = {
+      id: 'habit-1',
+      name: 'Practice',
+      emoji: '📋',
+      color: '#3498db',
+      format: 'count',
+      target: 1,
+      unit: 'times',
+      order: 0,
+    };
+
+    expect(third.habitId).toBe('habit-1');
+    expect(habitAuto(habit, second.day, [completedSecond])).toBe(1);
+    expect(
+      habitAuto({ ...habit, format: 'time', unit: 'min' }, second.day, [completedSecond])
+    ).toBe(60);
   });
 
   it('stops spawning once an increasing series is exhausted', () => {
