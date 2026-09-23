@@ -4,6 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
+import type { ColorPreset } from './colorPresets';
 import type { SleepData } from './sleep';
 import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
@@ -29,7 +30,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
   const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
 
   let res: Response;
   try {
@@ -39,7 +40,8 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   }
 
   if (res.status === 401) {
-    setToken(null);
+    // A delayed request from a previous login must not sign out a new user.
+    if (headers.get('Authorization') === `Bearer ${getToken()}`) setToken(null);
     throw new AuthError();
   }
 
@@ -205,6 +207,39 @@ export async function saveTaskTemplate(tpl: TaskTemplate): Promise<void> {
 
 export async function deleteTaskTemplate(id: string): Promise<void> {
   await apiFetch(`/task-templates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+// ── Task color presets (ordered, per account) ──────────────────────
+
+// Kept across dialog mounts so reopening while a save is in flight cannot
+// fetch an older list, and later writes cannot finish ahead of earlier ones.
+const colorPresetWrites = new Map<string, Promise<void>>();
+
+// Null means this account has not stored presets yet (legacy migration).
+export async function loadColorPresets(): Promise<ColorPreset[] | null> {
+  const token = getToken();
+  const pending = token ? colorPresetWrites.get(token) : null;
+  if (pending) {
+    await pending.catch(() => undefined);
+  }
+  return apiFetch('/color-presets', token
+    ? { headers: { Authorization: `Bearer ${token}` } }
+    : undefined);
+}
+
+export function saveColorPresets(presets: ColorPreset[]): Promise<void> {
+  const token = getToken();
+  if (!token) return Promise.reject(new AuthError());
+  const prior = colorPresetWrites.get(token) ?? Promise.resolve();
+  const promise = prior
+    .catch(() => undefined)
+    .then(() => apiFetch<void>('/color-presets', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(presets),
+    }));
+  colorPresetWrites.set(token, promise);
+  return promise;
 }
 
 // ── Habits (home-page tracker) ─────────────────────────────────────

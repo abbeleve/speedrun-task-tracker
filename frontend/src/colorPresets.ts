@@ -24,7 +24,8 @@ export function normalizeColorPresets(value: unknown): ColorPreset[] {
   return result;
 }
 
-export function loadColorPresets(storage: Pick<Storage, 'getItem'> = localStorage): ColorPreset[] {
+// The old browser-only list is read once during migration to the account DB.
+export function loadLegacyColorPresets(storage: Pick<Storage, 'getItem'> = localStorage): ColorPreset[] {
   try {
     const raw = storage.getItem(COLOR_PRESETS_STORAGE_KEY);
     return raw ? normalizeColorPresets(JSON.parse(raw)) : [];
@@ -33,15 +34,20 @@ export function loadColorPresets(storage: Pick<Storage, 'getItem'> = localStorag
   }
 }
 
-export function saveColorPresets(
-  presets: ColorPreset[],
-  storage: Pick<Storage, 'setItem'> = localStorage
-): void {
+export function clearLegacyColorPresets(storage: Pick<Storage, 'removeItem'> = localStorage): void {
   try {
-    storage.setItem(COLOR_PRESETS_STORAGE_KEY, JSON.stringify(normalizeColorPresets(presets)));
+    storage.removeItem(COLOR_PRESETS_STORAGE_KEY);
   } catch {
-    // A blocked/full localStorage should not prevent editing the task itself.
+    // Browser storage may be disabled; the server remains authoritative.
   }
+}
+
+export function moveColorPreset(presets: ColorPreset[], index: number, offset: -1 | 1): ColorPreset[] {
+  const target = index + offset;
+  if (index < 0 || index >= presets.length || target < 0 || target >= presets.length) return presets;
+  const next = [...presets];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
 }
 
 export function newColorPresetId(): string {

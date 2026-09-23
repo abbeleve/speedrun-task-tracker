@@ -82,6 +82,13 @@ CREATE TABLE IF NOT EXISTS task_templates (
     PRIMARY KEY (user_id, id)
 );
 
+-- A single ordered list per user. Keeping the order in the JSON array makes
+-- reordering atomic and avoids relying on SQLite's unspecified row order.
+CREATE TABLE IF NOT EXISTS color_presets (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL
+);
+
 -- Habit tracker. A habit's definition (name, format, target...) is stored as a
 -- JSON blob keyed by client-generated id, mirroring the templates tables.
 CREATE TABLE IF NOT EXISTS habits (
@@ -116,7 +123,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 def init_db() -> None:

@@ -17,6 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from . import db, security
 from .deps import bearer_scheme, get_current_user, get_db
 from .schemas import (
+    ColorPresetIn,
     DayStateIn,
     DayStatsIn,
     HabitEntryIn,
@@ -470,6 +471,40 @@ def delete_task_template(
 ):
     conn.execute(
         'DELETE FROM task_templates WHERE user_id = ? AND id = ?', (user['id'], tpl_id)
+    )
+    conn.commit()
+    return {'ok': True}
+
+
+# ── Task color presets ───────────────────────────────────────────────
+
+@app.get('/api/color-presets')
+def get_color_presets(
+    user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)
+):
+    row = conn.execute(
+        'SELECT data FROM color_presets WHERE user_id = ?', (user['id'],)
+    ).fetchone()
+    # Null distinguishes a pre-migration account from an intentionally empty
+    # list, so old localStorage data cannot reappear after the user deletes it.
+    return json.loads(row['data']) if row else None
+
+
+@app.put('/api/color-presets')
+def put_color_presets(
+    body: list[ColorPresetIn],
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    ids = [preset.id for preset in body]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, 'Duplicate color preset id')
+    conn.execute(
+        """
+        INSERT INTO color_presets (user_id, data) VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET data = excluded.data
+        """,
+        (user['id'], json.dumps([preset.model_dump() for preset in body])),
     )
     conn.commit()
     return {'ok': True}

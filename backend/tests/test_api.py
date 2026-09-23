@@ -122,6 +122,40 @@ def test_task_templates_crud(client, auth_headers):
     assert client.get('/api/task-templates', headers=auth_headers).json() == []
 
 
+def test_color_presets_persist_in_order_and_allow_intentional_empty_list(client, auth_headers):
+    from app import db
+
+    url = '/api/color-presets'
+    assert client.get(url, headers=auth_headers).json() is None
+    presets = [
+        {'id': 'call', 'name': 'Созвон', 'color': '#2ecc71'},
+        {'id': 'math', 'name': 'Матан', 'color': '#e74c3c'},
+    ]
+    assert client.put(url, headers=auth_headers, json=presets).status_code == 200
+    db.init_db()  # Re-running startup migration must keep stored presets.
+    assert client.get(url, headers=auth_headers).json() == presets
+
+    reordered = [presets[1], presets[0]]
+    assert client.put(url, headers=auth_headers, json=reordered).status_code == 200
+    assert client.get(url, headers=auth_headers).json() == reordered
+
+    assert client.put(url, headers=auth_headers, json=[]).status_code == 200
+    assert client.get(url, headers=auth_headers).json() == []
+    assert client.put(url, headers=auth_headers, json=[presets[0], presets[0]]).status_code == 422
+    assert client.get(url, headers=auth_headers).json() == []
+
+
+def test_color_presets_are_scoped_to_user(client):
+    alice = register(client, username='alice', password='secret123')['token']
+    bob = register(client, username='bob', password='secret123')['token']
+    alice_h = {'Authorization': f'Bearer {alice}'}
+    bob_h = {'Authorization': f'Bearer {bob}'}
+    presets = [{'id': 'math', 'name': 'Матан', 'color': '#e74c3c'}]
+    assert client.put('/api/color-presets', headers=alice_h, json=presets).status_code == 200
+    assert client.get('/api/color-presets', headers=bob_h).json() is None
+    assert client.get('/api/color-presets', headers=alice_h).json() == presets
+
+
 def test_user_isolation(client):
     alice = register(client, username='alice', password='secret123')['token']
     bob = register(client, username='bob', password='secret123')['token']

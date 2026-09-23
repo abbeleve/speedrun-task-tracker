@@ -1533,6 +1533,28 @@
   background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
 }
 
+.cal-color-preset-edit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cal-color-preset-error {
+  margin-top: 5px;
+  color: var(--accent-red);
+  font-size: 0.72rem;
+}
+
+.cal-color-preset-error button {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .cal-color-preset-editor {
   display: flex;
   flex-direction: column;
@@ -1545,7 +1567,7 @@
 
 .cal-color-preset-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  grid-template-columns: 28px minmax(0, 1fr) 52px 28px;
   gap: 7px;
   align-items: center;
 }
@@ -1589,6 +1611,32 @@
   cursor: pointer;
 }
 
+.cal-color-preset-order {
+  display: flex;
+  gap: 2px;
+}
+
+.cal-color-preset-order button {
+  width: 25px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cal-color-preset-order button:hover:not(:disabled) {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+}
+
+.cal-color-preset-order button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .cal-color-preset-remove:hover {
   color: var(--accent-red);
   background: color-mix(in srgb, var(--accent-red) 12%, transparent);
@@ -1597,6 +1645,10 @@
 .cal-color-preset-row--new {
   padding-top: 6px;
   border-top: 1px dashed var(--border);
+}
+
+.cal-color-preset-row--new .cal-color-preset-add {
+  grid-column: 4;
 }
 
 .cal-color-preset-add {

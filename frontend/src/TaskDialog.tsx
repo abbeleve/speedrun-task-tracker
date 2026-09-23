@@ -14,11 +14,14 @@ import {
 } from './types';
 import { INCREASING_SERIES } from './tasks';
 import { DAY_MIN, isDone } from './schedule';
+import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
 import {
-  loadColorPresets,
+  clearLegacyColorPresets,
+  loadLegacyColorPresets,
+  moveColorPreset,
   newColorPresetId,
-  saveColorPresets,
+  normalizeColorPresets,
 } from './colorPresets';
 import {
   DEFAULT_FLOW_COLORS,
@@ -125,7 +128,14 @@ function TaskDialog({
   const [minutes, setMinutes] = useState(String(Math.max(1, Math.round(task.plannedTime / 60))));
   const [emoji, setEmoji] = useState(task.emoji);
   const [color, setColor] = useState(task.color);
-  const [colorPresets, setColorPresets] = useState<ColorPreset[]>(() => loadColorPresets());
+  const [colorPresets, setColorPresets] = useState<ColorPreset[]>([]);
+  const colorPresetsRef = useRef<ColorPreset[]>([]);
+  const [colorPresetsReady, setColorPresetsReady] = useState(false);
+  const [colorPresetsError, setColorPresetsError] = useState<'load' | 'save' | null>(null);
+  const [colorPresetsLoadAttempt, setColorPresetsLoadAttempt] = useState(0);
+  const [draftPresetNames, setDraftPresetNames] = useState<Record<string, string>>({});
+  const colorPresetSaveRevision = useRef(0);
+  const colorPresetMounted = useRef(true);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetColor, setNewPresetColor] = useState(task.color);
@@ -170,6 +180,38 @@ function TaskDialog({
 
   const nameRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    colorPresetMounted.current = true;
+    return () => { colorPresetMounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const saved = await loadSavedColorPresets();
+        if (!active) return;
+        if (saved === null) {
+          const legacy = loadLegacyColorPresets();
+          await saveSavedColorPresets(legacy);
+          if (!active) return;
+          colorPresetsRef.current = legacy;
+          setColorPresets(legacy);
+        } else {
+          const valid = normalizeColorPresets(saved);
+          colorPresetsRef.current = valid;
+          setColorPresets(valid);
+        }
+        clearLegacyColorPresets();
+        setColorPresetsReady(true);
+        setColorPresetsError(null);
+      } catch {
+        if (active) setColorPresetsError('load');
+      }
+    })();
+    return () => { active = false; };
+  }, [colorPresetsLoadAttempt]);
+
   useEffect(() => {
     nameRef.current?.focus();
     nameRef.current?.select();
@@ -224,14 +266,42 @@ function TaskDialog({
 
   const emojiGroups = useMemo(() => groupedEmojis(emojiSearch), [emojiSearch]);
   const commitColorPresets = (next: ColorPreset[]) => {
-    setColorPresets(next);
-    saveColorPresets(next);
+    const valid = normalizeColorPresets(next);
+    colorPresetsRef.current = valid;
+    setColorPresets(valid);
+    setColorPresetsError(null);
+    const revision = ++colorPresetSaveRevision.current;
+    void saveSavedColorPresets(valid).then(
+      () => {
+        if (colorPresetMounted.current && revision === colorPresetSaveRevision.current) {
+          setColorPresetsError(null);
+        }
+      },
+      () => {
+        if (colorPresetMounted.current && revision === colorPresetSaveRevision.current) {
+          setColorPresetsError('save');
+        }
+      }
+    );
   };
   const patchColorPreset = (id: string, patch: Partial<ColorPreset>) => {
-    commitColorPresets(colorPresets.map((preset) => (preset.id === id ? { ...preset, ...patch } : preset)));
+    commitColorPresets(colorPresetsRef.current.map((preset) => (
+      preset.id === id ? { ...preset, ...patch } : preset
+    )));
   };
   const removeColorPreset = (id: string) => {
-    commitColorPresets(colorPresets.filter((preset) => preset.id !== id));
+    commitColorPresets(colorPresetsRef.current.filter((preset) => preset.id !== id));
+  };
+  const reorderColorPreset = (index: number, offset: -1 | 1) => {
+    commitColorPresets(moveColorPreset(colorPresetsRef.current, index, offset));
+  };
+  const retryColorPresets = () => {
+    if (!colorPresetsReady) {
+      setColorPresetsError(null);
+      setColorPresetsLoadAttempt((attempt) => attempt + 1);
+    } else {
+      commitColorPresets(colorPresetsRef.current);
+    }
   };
   const addColorPreset = () => {
     const name = newPresetName.trim();
@@ -241,7 +311,7 @@ function TaskDialog({
       name,
       color: newPresetColor.toLowerCase(),
     };
-    commitColorPresets([...colorPresets, preset]);
+    commitColorPresets([...colorPresetsRef.current, preset]);
     setColor(preset.color);
     setNewPresetName('');
   };
@@ -441,6 +511,9 @@ function TaskDialog({
             <span>Цвет</span>
             <div className="cal-color-preset-bar">
               <div className="cal-color-preset-chips">
+                {!colorPresetsReady && !colorPresetsError && (
+                  <span className="cal-color-preset-empty">Загрузка пресетов…</span>
+                )}
                 {colorPresets.map((preset) => (
                   <button
                     key={preset.id}
@@ -454,7 +527,7 @@ function TaskDialog({
                     <span>{preset.name}</span>
                   </button>
                 ))}
-                {colorPresets.length === 0 && (
+                {colorPresetsReady && colorPresets.length === 0 && (
                   <span className="cal-color-preset-empty">Назовите цвета, чтобы быстро выбирать их по смыслу</span>
                 )}
               </div>
@@ -462,6 +535,7 @@ function TaskDialog({
                 type="button"
                 className={`cal-color-preset-edit${colorEditorOpen ? ' active' : ''}`}
                 onClick={() => setColorEditorOpen((open) => !open)}
+                disabled={!colorPresetsReady}
                 title={colorEditorOpen ? 'Закрыть редактор пресетов' : 'Создать или изменить цветовые пресеты'}
                 aria-pressed={colorEditorOpen}
               >
@@ -469,9 +543,18 @@ function TaskDialog({
               </button>
             </div>
 
+            {colorPresetsError && (
+              <div className="cal-color-preset-error" role="alert">
+                {colorPresetsError === 'load'
+                  ? 'Не удалось загрузить цветовые пресеты.'
+                  : 'Цветовые пресеты не сохранены.'}
+                <button type="button" onClick={retryColorPresets}>Повторить</button>
+              </div>
+            )}
+
             {colorEditorOpen && (
               <div className="cal-color-preset-editor">
-                {colorPresets.map((preset) => (
+                {colorPresets.map((preset, index) => (
                   <div className="cal-color-preset-row" key={preset.id}>
                     <input
                       type="color"
@@ -486,11 +569,44 @@ function TaskDialog({
                     />
                     <input
                       type="text"
-                      value={preset.name}
+                      value={draftPresetNames[preset.id] ?? preset.name}
                       maxLength={40}
                       aria-label="Название цветового пресета"
-                      onChange={(e) => patchColorPreset(preset.id, { name: e.target.value })}
+                      onChange={(e) => setDraftPresetNames((names) => ({
+                        ...names, [preset.id]: e.target.value,
+                      }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const name = e.target.value.trim();
+                        if (name && name !== preset.name) patchColorPreset(preset.id, { name });
+                        setDraftPresetNames((names) => {
+                          const next = { ...names };
+                          delete next[preset.id];
+                          return next;
+                        });
+                      }}
                     />
+                    <div className="cal-color-preset-order">
+                      <button
+                        type="button"
+                        onClick={() => reorderColorPreset(index, -1)}
+                        disabled={index === 0}
+                        title={`Поднять пресет «${preset.name}»`}
+                        aria-label={`Поднять пресет «${preset.name}»`}
+                      >↑</button>
+                      <button
+                        type="button"
+                        onClick={() => reorderColorPreset(index, 1)}
+                        disabled={index === colorPresets.length - 1}
+                        title={`Опустить пресет «${preset.name}»`}
+                        aria-label={`Опустить пресет «${preset.name}»`}
+                      >↓</button>
+                    </div>
                     <button
                       type="button"
                       className="cal-color-preset-remove"

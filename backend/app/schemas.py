@@ -157,6 +157,12 @@ class TaskTemplateIn(BaseModel):
     type: str = 'task'
 
 
+class ColorPresetIn(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=40)
+    color: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+
+
 # A habit definition. `format` is 'count' (quota of units/day, e.g. 10 отжиманий)
 # or 'time' (quota of minutes/day, e.g. 300 ≈ 5 часов). `target` is in those
 # same units; `unit` is the human-readable label ('раз', 'мин', ...). `order`

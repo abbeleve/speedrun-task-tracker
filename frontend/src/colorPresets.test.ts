@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLOR_PRESETS_STORAGE_KEY,
-  loadColorPresets,
+  clearLegacyColorPresets,
+  loadLegacyColorPresets,
+  moveColorPreset,
   normalizeColorPresets,
-  saveColorPresets,
 } from './colorPresets';
 
 describe('color presets', () => {
@@ -19,20 +20,31 @@ describe('color presets', () => {
     ).toEqual([{ id: 'calls', name: 'Созвоны', color: '#e74c3c' }]);
   });
 
-  it('round-trips presets through storage', () => {
+  it('reads old browser presets for migration and clears them afterward', () => {
     const data = new Map<string, string>();
     const storage = {
       getItem: (key: string) => data.get(key) ?? null,
-      setItem: (key: string, value: string) => data.set(key, value),
+      removeItem: (key: string) => data.delete(key),
     };
     const presets = [{ id: 'walk', name: 'Прогулка', color: '#2ecc71' }];
 
-    saveColorPresets(presets, storage);
-    expect(data.has(COLOR_PRESETS_STORAGE_KEY)).toBe(true);
-    expect(loadColorPresets(storage)).toEqual(presets);
+    data.set(COLOR_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    expect(loadLegacyColorPresets(storage)).toEqual(presets);
+    clearLegacyColorPresets(storage);
+    expect(data.has(COLOR_PRESETS_STORAGE_KEY)).toBe(false);
   });
 
   it('returns an empty list for broken saved JSON', () => {
-    expect(loadColorPresets({ getItem: () => '{broken' })).toEqual([]);
+    expect(loadLegacyColorPresets({ getItem: () => '{broken' })).toEqual([]);
+  });
+
+  it('moves a preset one position without mutating the previous order', () => {
+    const presets = [
+      { id: 'call', name: 'Созвон', color: '#2ecc71' },
+      { id: 'math', name: 'Матан', color: '#e74c3c' },
+    ];
+    expect(moveColorPreset(presets, 1, -1).map((preset) => preset.id)).toEqual(['math', 'call']);
+    expect(presets.map((preset) => preset.id)).toEqual(['call', 'math']);
+    expect(moveColorPreset(presets, 0, -1)).toBe(presets);
   });
 });
