@@ -1,7 +1,8 @@
 // 'task' = regular, 'rest' = service break (no congrats), 'reminder' = service
 // overlay (a wall-clock window, e.g. "17:00–22:00 pick your projects"): never
-// marked done, excluded from the overtake engine, sequences and productivity
-// stats — see schedule.ts's isEngineTask.
+// marked done by hand — it completes itself once its window has passed (see
+// tasks.ts's closeExpiredReminders) — and excluded from the overtake engine,
+// sequences and productivity stats — see schedule.ts's isEngineTask.
 export type TaskType = 'task' | 'rest' | 'reminder';
 
 // Kanban column of a task: 'open' = planned backlog, 'in-progress' = sits on a

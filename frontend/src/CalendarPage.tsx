@@ -2121,7 +2121,8 @@ function CalendarPage({
               .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
             const endOfDay = dayStartMs(day) + DAY_MIN * MIN_MS;
             const dayCredit = computeCredit(buildGroups(dayTasks), endOfDay);
-            const closed = dayTasks.some(isDone);
+            // An expired reminder is completed too, but closes no real work.
+            const closed = sorted.some(isDone);
             return (
               <div
                 key={day}

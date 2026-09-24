@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Habit, RepeatConfig, Task, TaskColorAnimation, TaskStatus } from './types';
 import { habitAuto } from './habits';
+import { taskEndMs } from './schedule';
 import {
+  closeExpiredReminders,
   describeRepeat,
   getOpenTasks,
   getTimelineTasks,
@@ -10,6 +12,7 @@ import {
   normalizeTask,
   normalizeTasks,
   preservePinnedPlacement,
+  rearmEditedReminder,
   reindexTasks,
   scheduledDayFor,
   spawnNextOccurrence,
@@ -260,5 +263,153 @@ describe('recurrence', () => {
   it('describes a repeat rule', () => {
     expect(describeRepeat({ mode: 'fixed', baseDays: 7 })).toBe('каждые 7 дн.');
     expect(describeRepeat({ mode: 'increasing', baseDays: 1 })).toBe('1 → 3 → 7 → 16 → 35 дн.');
+  });
+});
+
+describe('reminders close themselves', () => {
+  let n = 0;
+  const makeId = () => `next-${n++}`;
+  const MIN = 60_000;
+
+  // A 17:00–18:00 reminder on 2026-09-10.
+  const reminder = (partial: Partial<Task> = {}): Task => ({
+    id: 'rem',
+    name: 'Pick projects',
+    ...base,
+    type: 'reminder',
+    plannedTime: 3600,
+    start: 17 * 60,
+    completedAt: null,
+    order: 0,
+    day: '2026-09-10',
+    status: 'in-progress',
+    repeat: null,
+    repeatIndex: 0,
+    ...partial,
+  });
+
+  it('leaves a reminder alone while its window is still open', () => {
+    const r = reminder({ repeat: { mode: 'fixed', baseDays: 1 } });
+    expect(closeExpiredReminders([r], taskEndMs(r) - MIN, makeId)).toBeNull();
+  });
+
+  it('completes a reminder at the end of its window', () => {
+    const r = reminder();
+    const closed = closeExpiredReminders([r], taskEndMs(r) + 5 * MIN, makeId)!;
+    expect(closed.patches).toEqual([
+      { id: 'rem', patch: { status: 'done', finishedAt: taskEndMs(r) } },
+    ]);
+    expect(closed.spawned).toEqual([]);
+  });
+
+  it('schedules the next occurrence of a recurring reminder once it has passed', () => {
+    const r = reminder({ repeat: { mode: 'fixed', baseDays: 2 } });
+    const closed = closeExpiredReminders([r], taskEndMs(r), makeId)!;
+    expect(closed.spawned).toHaveLength(1);
+    const next = closed.spawned[0];
+    expect(next.type).toBe('reminder');
+    expect(next.day).toBe('2026-09-12');
+    expect(next.start).toBe(17 * 60);
+    expect(next.status).toBe('in-progress');
+    expect(next.finishedAt).toBeNull();
+    expect(next.repeatOf).toBe('rem');
+    expect(next.repeatIndex).toBe(1);
+  });
+
+  it('fires once: a completed reminder schedules nothing more', () => {
+    const r = reminder({ repeat: { mode: 'fixed', baseDays: 1 } });
+    const now = taskEndMs(r) + MIN;
+    const closed = closeExpiredReminders([r], now, makeId)!;
+    const after = [{ ...r, ...closed.patches[0].patch }, ...closed.spawned];
+    expect(closeExpiredReminders(after, now, makeId)).toBeNull();
+    // Deleting the scheduled occurrence does not bring it back.
+    expect(closeExpiredReminders([after[0]], now, makeId)).toBeNull();
+  });
+
+  it('does not duplicate an occurrence that is already scheduled', () => {
+    const r = reminder({ repeat: { mode: 'fixed', baseDays: 1 } });
+    const next = { ...reminder(), id: 'already', day: '2026-09-11', repeatOf: 'rem' };
+    const closed = closeExpiredReminders([r, next], taskEndMs(r) + MIN, makeId)!;
+    expect(closed.patches.map((p) => p.id)).toEqual(['rem']);
+    expect(closed.spawned).toEqual([]);
+  });
+
+  it('catches up on the occurrences missed while the app was closed', () => {
+    const r = reminder({ repeat: { mode: 'fixed', baseDays: 1 } });
+    // 2026-09-13 17:30: the 11th and 12th are over, the 13th is still open.
+    const now = taskEndMs({ ...r, day: '2026-09-13' }) - 30 * MIN;
+    const { spawned } = closeExpiredReminders([r], now, makeId)!;
+    expect(spawned.map((t) => [t.day, t.status])).toEqual([
+      ['2026-09-11', 'done'],
+      ['2026-09-12', 'done'],
+      ['2026-09-13', 'in-progress'],
+    ]);
+    expect(spawned[0].finishedAt).toBe(taskEndMs(spawned[0]));
+    expect(spawned[2].finishedAt).toBeNull();
+    expect(spawned[1].repeatOf).toBe(spawned[0].id);
+    expect(spawned[2].repeatOf).toBe(spawned[1].id);
+  });
+
+  it('stops catching up when an increasing series runs out', () => {
+    const r = reminder({ repeat: { mode: 'increasing', baseDays: 1 } });
+    const { spawned } = closeExpiredReminders([r], taskEndMs(r) + 365 * 24 * 60 * MIN, makeId)!;
+    expect(spawned.map((t) => t.day)).toEqual([
+      '2026-09-11',
+      '2026-09-14',
+      '2026-09-21',
+      '2026-10-07',
+      '2026-11-11',
+    ]);
+    expect(spawned.every((t) => t.status === 'done')).toBe(true);
+  });
+
+  it('ignores ordinary tasks and reminders left in the backlog', () => {
+    const task = reminder({ id: 'task', type: 'task', repeat: { mode: 'fixed', baseDays: 1 } });
+    const backlog = reminder({ id: 'backlog', status: 'open', start: null });
+    expect(closeExpiredReminders([task, backlog], taskEndMs(task) + MIN, makeId)).toBeNull();
+  });
+
+  describe('editing', () => {
+    const fired = reminder({
+      repeat: { mode: 'fixed', baseDays: 1 },
+      status: 'done',
+      finishedAt: taskEndMs(reminder()),
+    });
+
+    it('keeps a passed reminder completed through an ordinary edit', () => {
+      const saved = rearmEditedReminder(fired, { ...fired, name: 'Renamed', status: 'in-progress', finishedAt: null });
+      expect(saved.status).toBe('done');
+      expect(saved.finishedAt).toBe(fired.finishedAt);
+      expect(saved.name).toBe('Renamed');
+    });
+
+    it('re-arms a passed reminder when repetition is turned on', () => {
+      const oneOff = { ...fired, repeat: null };
+      const saved = rearmEditedReminder(oneOff, { ...oneOff, repeat: { mode: 'fixed', baseDays: 1 } });
+      expect(saved.status).toBe('in-progress');
+      expect(saved.finishedAt).toBeNull();
+      // …so the next pass completes it again, this time scheduling the next one.
+      const closed = closeExpiredReminders([saved], taskEndMs(saved) + MIN, makeId)!;
+      expect(closed.spawned[0].day).toBe('2026-09-11');
+    });
+
+    it('re-arms a reminder whose window or repeat rule changes', () => {
+      expect(rearmEditedReminder(fired, { ...fired, start: 18 * 60 }).status).toBe('in-progress');
+      expect(rearmEditedReminder(fired, { ...fired, day: '2026-09-11' }).status).toBe('in-progress');
+      expect(rearmEditedReminder(fired, { ...fired, plannedTime: 7200 }).status).toBe('in-progress');
+      expect(
+        rearmEditedReminder(fired, { ...fired, repeat: { mode: 'fixed', baseDays: 3 } }).status
+      ).toBe('in-progress');
+    });
+
+    it('never saves a reminder that has not passed yet as completed', () => {
+      const pending = reminder();
+      expect(rearmEditedReminder(pending, { ...pending, status: 'done', finishedAt: 1 }).finishedAt).toBeNull();
+    });
+
+    it('leaves ordinary tasks to their own ✓', () => {
+      const task = { ...fired, type: 'task' as const };
+      expect(rearmEditedReminder(task, { ...task, start: 9 * 60 })).toEqual({ ...task, start: 9 * 60 });
+    });
   });
 });

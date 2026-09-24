@@ -28,7 +28,7 @@ import { computeCredit } from './credit';
 import { useOvertakeHistorySync } from './overtakeHistory';
 import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
-import { newTaskId, spawnNextOccurrence } from './tasks';
+import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
 import './App.css';
@@ -134,6 +134,20 @@ function App() {
   useEffect(() => {
     primeMotivationImages();
   }, []);
+
+  // A reminder is never closed by hand: once its window has passed it closes
+  // itself, which is also what schedules a recurring one's next occurrence.
+  // Held off while the kanban board (which writes to the backend directly) is
+  // open and until the plan has been re-read after it, so a stale copy of a
+  // day is never saved over the board's edits.
+  const { loading: planLoading, tasks: planTasks, patchTasks, upsertTask } = store;
+  useEffect(() => {
+    if (planLoading || page === 'home') return;
+    const closed = closeExpiredReminders(planTasks, now, newTaskId);
+    if (!closed) return;
+    patchTasks(closed.patches);
+    for (const task of closed.spawned) upsertTask(task);
+  }, [planLoading, page, planTasks, now, patchTasks, upsertTask]);
 
   // ── the plan, its groups, its sequences and the overtake ─────────
 

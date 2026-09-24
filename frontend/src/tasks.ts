@@ -4,6 +4,7 @@
 import type { RepeatConfig, Task, TaskStatus } from './types';
 import { shiftDayKey, todayKey } from './history';
 import { normalizeTaskColorAnimation } from './taskAppearance';
+import { isDone, isScheduled, taskEndMs } from './schedule';
 
 export const TASK_STATUSES: TaskStatus[] = ['open', 'in-progress', 'done'];
 
@@ -144,6 +145,82 @@ export function spawnNextOccurrence(
     repeat: task.repeat,
     repeatIndex: index + 1,
     repeatOf: task.id,
+  };
+}
+
+// ── Reminders close themselves ─────────────────────────────────────
+// A reminder has no ✓: it counts as completed the moment its window has
+// passed, and that is also what schedules a recurring one's next occurrence —
+// exactly what pressing ✓ does for an ordinary task. The completion is stored
+// (status 'done', finishedAt = the window's end), so it fires once: deleting
+// the next occurrence afterwards does not bring it back.
+
+// Occurrences caught up in one pass. A series left alone for longer resumes on
+// the next pass from the last occurrence created.
+const MAX_REMINDER_CATCH_UP = 400;
+
+function isPlacedReminder(task: Task): boolean {
+  return task.type === 'reminder' && isScheduled(task);
+}
+
+// The reminders whose window closed by `now` but that are not completed yet,
+// completed, plus the occurrences their completion schedules. An occurrence
+// whose own window is already over (the app was not open for a while) is
+// completed on the spot and schedules the next one, until one lies ahead.
+// Null when there is nothing to do.
+export function closeExpiredReminders(
+  tasks: Task[],
+  now: number,
+  makeId: () => string
+): { patches: { id: string; patch: Partial<Task> }[]; spawned: Task[] } | null {
+  const due = tasks.filter(
+    (task) => isPlacedReminder(task) && !isDone(task) && taskEndMs(task) <= now
+  );
+  if (due.length === 0) return null;
+  const hasNext = new Set(tasks.map((t) => t.repeatOf).filter((id) => id !== undefined));
+  const patches: { id: string; patch: Partial<Task> }[] = [];
+  const spawned: Task[] = [];
+  for (const task of due) {
+    patches.push({ id: task.id, patch: { status: 'done', finishedAt: taskEndMs(task) } });
+    // An occurrence scheduled earlier is never duplicated.
+    if (hasNext.has(task.id)) continue;
+    let next = spawnNextOccurrence(task, makeId, task.day);
+    for (let i = 0; next; i++) {
+      if (i >= MAX_REMINDER_CATCH_UP || taskEndMs(next) > now) {
+        spawned.push(next);
+        break;
+      }
+      const closed: Task = { ...next, status: 'done', finishedAt: taskEndMs(next) };
+      spawned.push(closed);
+      next = spawnNextOccurrence(closed, makeId, closed.day);
+    }
+  }
+  return { patches, spawned };
+}
+
+// A reminder edited in the dialog keeps its completion, unless the edit
+// changes its window or its repeat rule: then it is re-armed (not completed),
+// so the caller drops the occurrence it had scheduled and it closes again —
+// right away if the new window is already over — scheduling the next one from
+// the new settings. This is how turning repetition on for a reminder whose
+// window has passed takes effect.
+export function rearmEditedReminder(before: Task, after: Task): Task {
+  if (after.type !== 'reminder') return after;
+  const repeatKey = (t: Task) => (t.repeat ? `${t.repeat.mode}:${t.repeat.baseDays}` : '');
+  const changed =
+    before.type !== 'reminder' ||
+    before.day !== after.day ||
+    before.start !== after.start ||
+    before.plannedTime !== after.plannedTime ||
+    repeatKey(before) !== repeatKey(after);
+  if (!changed && isDone(before)) {
+    return { ...after, status: 'done', finishedAt: before.finishedAt ?? taskEndMs(before) };
+  }
+  return {
+    ...after,
+    status: after.status === 'open' ? 'open' : 'in-progress',
+    finishedAt: null,
+    completedAt: null,
   };
 }
 

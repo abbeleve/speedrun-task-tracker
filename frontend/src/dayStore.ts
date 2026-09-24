@@ -20,6 +20,8 @@ export interface DayStore {
   days: DaysByDate;
   tasks: Task[]; // every task of every day, flattened
   ready: boolean;
+  // A (re)load from the backend is in flight: the plan held here may be stale.
+  loading: boolean;
   error: string | null;
   reload: () => Promise<void>;
   // Replace the tasks of one day.
@@ -39,6 +41,8 @@ export interface DayStore {
 export function useDayStore(): DayStore {
   const [days, setDays] = useState<DaysByDate>({});
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const loadsInFlightRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
 
   const daysRef = useRef<DaysByDate>(days);
@@ -76,6 +80,8 @@ export function useDayStore(): DayStore {
   );
 
   const reload = useCallback(async () => {
+    loadsInFlightRef.current++;
+    setLoading(true);
     try {
       const raw = await api.loadDays();
       const next: DaysByDate = {};
@@ -98,6 +104,9 @@ export function useDayStore(): DayStore {
       console.error('Failed to load days', e);
       setError('Не удалось загрузить план');
       setReady(true);
+    } finally {
+      loadsInFlightRef.current--;
+      setLoading(loadsInFlightRef.current > 0);
     }
   }, [markDirty]);
 
@@ -245,6 +254,7 @@ export function useDayStore(): DayStore {
     days,
     tasks,
     ready,
+    loading,
     error,
     reload,
     mutateDay,

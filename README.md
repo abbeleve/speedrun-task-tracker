@@ -30,7 +30,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
 - **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the sequence has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
 - **Kanban board** — plan tasks ahead across days in three columns (Open → In-Progress → Done); dragging an Open task into In-Progress puts it on that day's calendar, after everything already planned there
-- **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); closing it schedules the next occurrence at the same time of day
+- **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); closing it schedules the next occurrence at the same time of day. A reminder has no ✓: it closes itself once its window has passed, and a recurring one schedules its next occurrence then (occurrences missed while the app was closed are caught up)
 - **Wall-clock only** — no session to start, pause or reset: the day runs on the real clock, and ✓ records the moment a task was actually closed
 - **Statistics** — the heatmap and the sleep tracker are derived from the plan itself: work/rest seconds come from the blocks that were really closed
 - **Dark & light themes** — every view, including the spiral, adapts to the active theme

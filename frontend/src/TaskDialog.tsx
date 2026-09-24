@@ -12,7 +12,7 @@ import {
   groupedEmojis,
   resolveTaskEmoji,
 } from './types';
-import { INCREASING_SERIES } from './tasks';
+import { INCREASING_SERIES, rearmEditedReminder } from './tasks';
 import { DAY_MIN, isDone } from './schedule';
 import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
@@ -396,10 +396,11 @@ function TaskDialog({
     const trimmed = name.trim() || 'Новая задача';
     const plannedTime = minutesToSec(minutes);
     const isReminder = type === 'reminder';
-    // A reminder is never "performed" as a task — no matter what the checkbox
-    // (hidden for this type) last held, it can never come out of this save done.
+    // A reminder is never closed by hand — whatever the checkbox (hidden for
+    // this type) last held, its completion follows its window instead (see
+    // rearmEditedReminder).
     const canTrackDone = task.status !== 'open' && !isReminder;
-    onSave({
+    const saved: Task = {
       ...task,
       name: trimmed,
       description: description.trim() || null,
@@ -415,14 +416,13 @@ function TaskDialog({
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
         : null,
-      ...(isReminder
-        ? { status: task.status === 'open' ? 'open' : 'in-progress', finishedAt: null, completedAt: null }
-        : canTrackDone && done
-          ? { status: 'done', finishedAt: fromDatetimeInput(finishedInput, task.finishedAt ?? Date.now()) }
-          : canTrackDone
-            ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
-            : null),
-    });
+      ...(canTrackDone && done
+        ? { status: 'done', finishedAt: fromDatetimeInput(finishedInput, task.finishedAt ?? Date.now()) }
+        : canTrackDone
+          ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
+          : null),
+    };
+    onSave(rearmEditedReminder(task, saved));
   };
 
   const base = Math.max(1, parseFloat(repeatBase) || 1);
@@ -933,7 +933,8 @@ function TaskDialog({
             Служебное напоминание: не выполняется как задача и не считается —
             не входит в обгон, продуктивность и секвенции. На сетке рисуется
             тонкой полоской у правого края колонки и гаснет пунктиром, когда
-            окно закрывается.
+            окно закрывается. Закрытие окна считается выполнением: повторяющееся
+            напоминание тогда же создаёт следующую копию.
           </p>
         )}
 
