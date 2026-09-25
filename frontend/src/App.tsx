@@ -24,7 +24,7 @@ import {
   shiftPatches,
   taskEndMs,
 } from './schedule';
-import { computeCredit } from './credit';
+import { computeCredit, creditGroups } from './credit';
 import { useOvertakeHistorySync } from './overtakeHistory';
 import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
@@ -156,11 +156,14 @@ function App() {
   // What was worked in one go, which is not the same question as what is glued
   // into a sequence — the history timeline lists stretches, not sessions.
   const runChains = useMemo(() => buildRunChains(groups), [groups]);
-  const credit = useMemo(() => computeCredit(groups, now), [groups, now]);
+  // The overtake reads work only — rest blocks stay in the sequences above but
+  // never win or lose lead (see credit.ts, rule 7).
+  const leadGroups = useMemo(() => creditGroups(store.tasks), [store.tasks]);
+  const credit = useMemo(() => computeCredit(leadGroups, now), [leadGroups, now]);
 
   // Save each day's final lead to history once it closes — see overtakeHistory.ts.
   const todayKey = useMemo(() => dayKeyOf(now), [now]);
-  const overtakeByDay = useOvertakeHistorySync(groups, todayKey);
+  const overtakeByDay = useOvertakeHistorySync(leadGroups, todayKey);
   const weekOvertakeSec = useMemo(
     () => sumWeekOvertakeSec(overtakeByDay, todayKey, credit.lead),
     [overtakeByDay, todayKey, credit.lead]

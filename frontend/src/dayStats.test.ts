@@ -37,6 +37,14 @@ describe('dayStatsFromTasks', () => {
     expect(stats.restSec).toBe(0);
   });
 
+  it('counts a closed break as rest time, never as work', () => {
+    const work = task({ start: 9 * 60, plannedTime: 3600 });
+    const rest = task({ type: 'rest', start: 10 * 60, plannedTime: 900 });
+    const stats = dayStatsFromTasks(DAY, [work, rest]);
+    expect(stats.workSec).toBe(3600);
+    expect(stats.restSec).toBe(900);
+  });
+
   it('counts a stretch worked back to back once, though nothing glued it', () => {
     // Sequences are explicit now (see schedule.ts's buildChains), but the day's
     // session count is about the clock, not about what is connected: an evening

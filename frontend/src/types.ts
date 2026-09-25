@@ -1,5 +1,7 @@
-// 'task' = regular, 'rest' = service break (no congrats), 'reminder' = service
-// overlay (a wall-clock window, e.g. "17:00–22:00 pick your projects"): never
+// 'task' = regular, 'rest' = service break (no congrats, not work: counted as
+// rest time rather than work, and left out of the overtake — see credit.ts's
+// creditGroups), 'reminder' = service overlay (a wall-clock window, e.g.
+// "17:00–22:00 pick your projects"): never
 // marked done by hand — it completes itself once its window has passed (see
 // tasks.ts's closeExpiredReminders) — and excluded from the overtake engine,
 // sequences and productivity stats — see schedule.ts's isEngineTask.

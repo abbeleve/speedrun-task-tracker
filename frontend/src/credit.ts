@@ -24,6 +24,10 @@
 //     itself) the day is over: whatever comes next starts the new day's plan
 //     fresh, at zero — even if the chain that carried yesterday's lead across
 //     the seam happens to finish well into today.
+//  7. Rest (☕ Отдых) is not work, so the engine never sees it (creditGroups):
+//     a break is a gap like any other — the lead is frozen through it (rule 3)
+//     — so cutting it short or skipping it wins nothing, and overrunning it
+//     or leaving it open costs nothing. Only the work around it counts.
 //
 // Everything here is derived from the plan + the current time, so nothing has
 // to be stored to keep the live number right: reload the page mid-day and the
@@ -32,8 +36,9 @@
 // purely so the caller can persist that number as history (see api.ts); it is
 // still recomputed from the plan every time, never read back.
 
+import type { Task } from './types';
 import type { TaskGroup } from './schedule';
-import { dayKeyOf, isContinuous } from './schedule';
+import { buildGroups, dayKeyOf, isContinuous } from './schedule';
 
 export interface CreditSnapshot {
   // Seconds of lead carried out of the last closed group (negative = behind).
@@ -71,7 +76,15 @@ const EMPTY: CreditSnapshot = {
   closedDays: [],
 };
 
-// `groups` must be chronological (buildGroups returns them that way).
+// The groups the engine reads: the plan's work blocks only (rule 7). Grouped
+// after rest is dropped, so a break overlapping a work block neither holds that
+// block's group open nor glues it to the next one.
+export function creditGroups(tasks: Task[]): TaskGroup[] {
+  return buildGroups(tasks.filter((task) => task.type !== 'rest'));
+}
+
+// `groups` must be chronological (buildGroups returns them that way), and
+// should come from creditGroups so rest stays out of the lead.
 export function computeCredit(groups: TaskGroup[], nowMs: number): CreditSnapshot {
   if (groups.length === 0) return { ...EMPTY, closedDays: [] };
 

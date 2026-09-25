@@ -7,7 +7,6 @@ import type { Chain, ScheduleGap } from './schedule';
 import {
   DAY_MIN,
   MIN_MS,
-  buildGroups,
   chainOfTask,
   clampStartMin,
   dayKeyOf,
@@ -36,7 +35,7 @@ import {
   toggled,
 } from './selection';
 import type { CreditSnapshot } from './credit';
-import { computeCredit, projectedFinishMs } from './credit';
+import { computeCredit, creditGroups, projectedFinishMs } from './credit';
 import { clockTime, compactDur, signedDur } from './format';
 import { focusMotivation } from './focusMotivation';
 import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
@@ -2156,9 +2155,10 @@ function CalendarPage({
               .filter((t) => !isReminder(t))
               .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
             const endOfDay = dayStartMs(day) + DAY_MIN * MIN_MS;
-            const dayCredit = computeCredit(buildGroups(dayTasks), endOfDay);
-            // An expired reminder is completed too, but closes no real work.
-            const closed = sorted.some(isDone);
+            const dayCredit = computeCredit(creditGroups(dayTasks), endOfDay);
+            // An expired reminder is completed too, and a break can be closed,
+            // but neither is work — the overtake never saw them.
+            const closed = sorted.some((t) => isDone(t) && t.type !== 'rest');
             return (
               <div
                 key={day}

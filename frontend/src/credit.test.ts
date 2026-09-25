@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Task, TaskType } from './types';
-import { buildGroups, dayStartMs } from './schedule';
-import { computeCredit, projectedFinishMs } from './credit';
+import { dayStartMs } from './schedule';
+import { computeCredit, creditGroups, projectedFinishMs } from './credit';
 
 const DAY = '2026-03-10';
 const NEXT = '2026-03-11';
@@ -37,7 +37,7 @@ function task(opts: {
   };
 }
 
-const credit = (tasks: Task[], nowMs: number) => computeCredit(buildGroups(tasks), nowMs);
+const credit = (tasks: Task[], nowMs: number) => computeCredit(creditGroups(tasks), nowMs);
 const min = (sec: number) => sec / 60;
 
 describe('overtake (обгон)', () => {
@@ -240,5 +240,50 @@ describe('overtake (обгон)', () => {
   it('has nothing to say about an empty plan', () => {
     const snap = credit([], at(DAY, hm(10)));
     expect(snap).toMatchObject({ banked: 0, lead: 0, frozen: true, active: null });
+  });
+});
+
+describe('overtake ignores rest (☕ Отдых)', () => {
+  it('wins nothing for a break closed before its slot even begins', () => {
+    const rest = task({ start: hm(14), minutes: 60, type: 'rest', done: at(DAY, hm(12)) });
+    const snap = credit([rest], at(DAY, hm(12, 5)));
+    expect(snap.banked).toBe(0);
+    expect(snap.epochStartMs).toBeNull(); // the plan has no work in it at all
+  });
+
+  it('keeps the lead won before a break, however early the break is closed', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const rest = task({ start: hm(11), minutes: 30, type: 'rest', done: at(DAY, hm(11, 5)) });
+    const snap = credit([a, rest], at(DAY, hm(11, 10)));
+    expect(min(snap.banked)).toBe(15);
+  });
+
+  it('holds the lead frozen through a running break instead of decaying it', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const rest = task({ start: hm(11), minutes: 30, type: 'rest' });
+    const b = task({ start: hm(11, 30), minutes: 60 });
+    // 11:10: resting. B's shifted slot opens at 11:15 — until then nothing is
+    // running and the lead just waits.
+    const snap = credit([a, rest, b], at(DAY, hm(11, 10)));
+    expect(snap.active).toBeNull();
+    expect(snap.frozen).toBe(true);
+    expect(min(snap.lead)).toBe(15);
+    expect(snap.remaining.map((g) => g.tasks[0].id)).toEqual([b.id]);
+  });
+
+  it('loses nothing to a break left open long after its slot', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const rest = task({ start: hm(11), minutes: 30, type: 'rest' });
+    const snap = credit([a, rest], at(DAY, hm(15)));
+    expect(min(snap.lead)).toBe(15);
+    expect(snap.frozen).toBe(true);
+  });
+
+  it('does not let an open break hold a work block it overlaps open', () => {
+    const a = task({ start: hm(10), minutes: 60, done: at(DAY, hm(10, 45)) });
+    const rest = task({ start: hm(10, 30), minutes: 60, type: 'rest' });
+    const withRest = credit([a, rest], at(DAY, hm(10, 50)));
+    expect(withRest).toEqual(credit([a], at(DAY, hm(10, 50))));
+    expect(min(withRest.banked)).toBe(15);
   });
 });
