@@ -13,7 +13,7 @@ import {
   resolveTaskEmoji,
 } from './types';
 import { INCREASING_SERIES, rearmEditedReminder } from './tasks';
-import { DAY_MIN, isDone } from './schedule';
+import { DAY_MIN, isDone, taskEndMs } from './schedule';
 import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
 import {
@@ -424,6 +424,16 @@ function TaskDialog({
     };
     onSave(rearmEditedReminder(task, saved));
   };
+
+  // The block's planned end as currently typed in the dialog (not the saved
+  // task), so a slot moved or resized in this same edit is backdated correctly.
+  const plannedEndMs = () =>
+    taskEndMs({
+      ...task,
+      day,
+      start: fromTimeInput(time, task.start ?? 0),
+      plannedTime: minutesToSec(minutes),
+    });
 
   const base = Math.max(1, parseFloat(repeatBase) || 1);
 
@@ -961,15 +971,25 @@ function TaskDialog({
               <span>✓ Выполнено</span>
             </label>
             {done && (
-              <label className="cal-field cal-field--grow">
-                <span>Когда закрыта</span>
-                <input
-                  type="datetime-local"
-                  step={1}
-                  value={finishedInput}
-                  onChange={(e) => setFinishedInput(e.target.value)}
-                />
-              </label>
+              <>
+                <label className="cal-field cal-field--grow">
+                  <span>Когда закрыта</span>
+                  <input
+                    type="datetime-local"
+                    step={1}
+                    value={finishedInput}
+                    onChange={(e) => setFinishedInput(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="cal-btn"
+                  title="Закрыта ровно в плановый конец блока"
+                  onClick={() => setFinishedInput(toDatetimeInput(plannedEndMs()))}
+                >
+                  ⏹ В конец задачи
+                </button>
+              </>
             )}
           </div>
         )}
