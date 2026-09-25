@@ -152,16 +152,28 @@ export interface RunRecord {
 // (e.g. 10 отжиманий); 'time' = quota of minutes per day (e.g. 300 ≈ 5 часов).
 export type HabitFormat = 'count' | 'time';
 
-// A habit a user wants to keep doing every day. `target` and the derived daily
-// value are in the same units: count units for 'count', minutes for 'time'.
-// `order` is the habit's position in the home-page grid (drag to reorder).
+// One version of a habit's daily quota: `target` applies from `since` until the
+// next version starts. The first version's `since` is '' — "from the very
+// beginning" — so every day has a quota to be judged against.
+export interface HabitTarget {
+  since: string; // 'YYYY-MM-DD' (local), or '' for the first version
+  target: number;
+}
+
+// A habit a user wants to keep doing every day. The quota and the derived
+// daily value are in the same units: count units for 'count', minutes for
+// 'time'. The quota is versioned — raise 10 отжиманий to 15 and the days done
+// at 10 stay done — so a given day's quota is habitTargetOn(habit, date);
+// `target` only mirrors the latest version. `order` is the habit's position in
+// the home-page grid (drag to reorder).
 export interface Habit {
   id: string;
   name: string;
   emoji: string;
   color: string;
   format: HabitFormat;
-  target: number; // quota per day
+  target: number; // latest quota per day — the last of `targets`
+  targets: HabitTarget[]; // quota history, oldest first
   unit: string; // human label: 'раз', 'мин', …
   order: number;
 }

@@ -165,10 +165,20 @@ class ColorPresetIn(BaseModel):
     colorAnimation: Optional[TaskColorAnimation] = None
 
 
+# One version of a habit's daily quota: `target` applies from `since` (a local
+# 'YYYY-MM-DD') until the next version starts. An empty `since` means "from
+# the very beginning", which is what the first version always uses.
+class HabitTargetIn(BaseModel):
+    since: str = Field(default='', pattern=r'^(\d{4}-\d{2}-\d{2})?$')
+    target: float
+
+
 # A habit definition. `format` is 'count' (quota of units/day, e.g. 10 отжиманий)
-# or 'time' (quota of minutes/day, e.g. 300 ≈ 5 часов). `target` is in those
-# same units; `unit` is the human-readable label ('раз', 'мин', ...). `order`
-# is the habit's position in the home-page grid.
+# or 'time' (quota of minutes/day, e.g. 300 ≈ 5 часов). `targets` is the quota's
+# history, so raising 10 отжиманий to 15 leaves the days done at 10 as done;
+# `target` mirrors its latest version. Both are in those same units; `unit` is
+# the human-readable label ('раз', 'мин', ...). `order` is the habit's position
+# in the home-page grid.
 class HabitIn(BaseModel):
     id: str
     name: str
@@ -176,6 +186,7 @@ class HabitIn(BaseModel):
     color: str = ''
     format: str = 'count'
     target: float = 1
+    targets: List[HabitTargetIn] = []
     unit: str = ''
     order: int = 0
 

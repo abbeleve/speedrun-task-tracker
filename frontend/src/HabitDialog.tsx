@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Habit, HabitFormat } from './types';
+import type { Habit, HabitFormat, HabitTarget } from './types';
 import {
   EMOJI_CATEGORY_ICONS,
   TASK_COLORS,
   groupedEmojis,
   resolveTaskEmoji,
 } from './types';
-import { defaultUnit, newHabitId } from './habits';
+import { defaultUnit, habitTargets, newHabitId, setHabitTarget } from './habits';
+import { todayKey } from './history';
 
 interface HabitDialogProps {
   // The habit being edited, or null to create a new one.
@@ -19,15 +20,26 @@ interface HabitDialogProps {
 }
 
 // Editor for one habit: what it is, how it is counted and how much counts as a
-// done day. Creating and editing share the same form.
+// done day. Creating and editing share the same form. The quota is versioned:
+// a changed quota starts from a chosen day (today unless told otherwise), and
+// the days before it keep the quota they were done against.
 function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitDialogProps) {
+  const today = todayKey();
+  const history = habit ? habitTargets(habit) : [];
+  const latest = history.at(-1);
   const [name, setName] = useState(habit?.name ?? '');
   const [emoji, setEmoji] = useState(habit?.emoji ?? '🎯');
   const [color, setColor] = useState(habit?.color ?? TASK_COLORS[0]);
   const [format, setFormat] = useState<HabitFormat>(habit?.format ?? 'count');
   const [target, setTarget] = useState(
-    habit ? String(habit.target) : format === 'time' ? '300' : '10'
+    latest ? String(latest.target) : format === 'time' ? '300' : '10'
   );
+  // The day a changed quota starts. An already planned future quota is edited
+  // in place, so the default is that plan's own day rather than today.
+  const [since, setSince] = useState(
+    latest && latest.since > today ? latest.since : today
+  );
+  const [wholeHistory, setWholeHistory] = useState(false);
   const [unit, setUnit] = useState(habit?.unit ?? defaultUnit(habit?.format ?? 'count'));
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [emojiSearch, setEmojiSearch] = useState('');
@@ -62,18 +74,30 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
     header?.scrollIntoView({ block: 'start' });
   };
 
+  const parsed = parseFloat(target.replace(',', '.'));
+  const typedTarget = isFinite(parsed) && parsed > 0 ? parsed : null;
+  const targetChanged = !!latest && typedTarget !== null && typedTarget !== latest.target;
+  // The quota history this save would write — also shown as a preview, so the
+  // user sees which days the change reaches before committing to it.
+  const nextTargets: HabitTarget[] = !latest
+    ? [{ since: '', target: typedTarget ?? 1 }]
+    : targetChanged
+      ? setHabitTarget(history, typedTarget, wholeHistory ? '' : since || today)
+      : history;
+  const unitLabel = unit.trim() || defaultUnit(format);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    const parsedTarget = parseFloat(target.replace(',', '.'));
     onSave({
       id: habit?.id ?? newHabitId(),
       name: trimmed,
       emoji: resolveTaskEmoji(emoji),
       color,
       format,
-      target: isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 1,
+      target: nextTargets[nextTargets.length - 1].target,
+      targets: nextTargets,
       unit: unit.trim(),
       order: habit?.order ?? nextOrder,
     });
@@ -200,6 +224,71 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
           </label>
         </div>
 
+        {targetChanged && (
+          <div className="cal-modal-row">
+            <div className="cal-field cal-field--grow">
+              <span>Новая цель действует</span>
+              <div className="hab-since">
+                <div className="cal-seg">
+                  <button
+                    type="button"
+                    className={wholeHistory ? '' : 'active'}
+                    onClick={() => setWholeHistory(false)}
+                  >
+                    📅 С даты
+                  </button>
+                  <button
+                    type="button"
+                    className={wholeHistory ? 'active' : ''}
+                    onClick={() => setWholeHistory(true)}
+                  >
+                    ♾ Всю историю
+                  </button>
+                </div>
+                {wholeHistory ? (
+                  <span className="cal-repeat-hint">Прошлые дни пересчитаются по новой цели</span>
+                ) : (
+                  <input
+                    type="date"
+                    value={since}
+                    onChange={(e) => setSince(e.target.value)}
+                    aria-label="Дата, с которой действует новая цель"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {nextTargets.length > 1 && (
+          <div className="cal-field">
+            <span>История цели</span>
+            <ol className="hab-targets">
+              {nextTargets.map((v, i) => {
+                const next = nextTargets[i + 1];
+                const planned = v.since > today;
+                const current = !planned && (!next || next.since > today);
+                return (
+                  <li
+                    key={v.since}
+                    className={`hab-target${current ? ' current' : ''}${planned ? ' planned' : ''}`}
+                  >
+                    <span className="hab-target-since">
+                      {i === 0 ? 'с начала' : `с ${formatSince(v.since, today)}`}
+                    </span>
+                    <span className="hab-target-value">
+                      {v.target}
+                      {unitLabel && ` ${unitLabel}`}
+                    </span>
+                    {current && <em>сейчас</em>}
+                    {planned && <em>запланировано</em>}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+
         <div className="cal-modal-row">
           <div className="cal-field cal-field--grow">
             <span>Цвет</span>
@@ -239,6 +328,17 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
       </form>
     </div>
   );
+}
+
+// '2026-09-25' → '25 сентября', with the year only when it is not this one.
+function formatSince(day: string, today: string): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const sameYear = day.slice(0, 4) === today.slice(0, 4);
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }
 
 export default HabitDialog;

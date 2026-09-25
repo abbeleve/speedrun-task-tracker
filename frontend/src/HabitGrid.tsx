@@ -5,6 +5,7 @@ import { shiftDayKey } from './history';
 import {
   defaultStep,
   defaultUnit,
+  habitTargetOn,
   habitTotal,
   isHabitComplete,
   isHabitDoneOn,
@@ -202,7 +203,8 @@ function HabitCard({
   const [stepDraft, setStepDraft] = useState('');
 
   const today = habitTotal(habit, date, tasks, entries);
-  const complete = isHabitComplete(today, habit.target);
+  const target = habitTargetOn(habit, date);
+  const complete = isHabitComplete(today, target);
   const unit = habit.unit || defaultUnit(habit.format);
   const typedStep = parseHabitAmount(stepDraft);
   const step = typedStep ?? defaultStep(habit.format);
@@ -233,14 +235,17 @@ function HabitCard({
     ok: isHabitDoneOn(habit, d.date, tasks, entries),
   }));
   const doneCount = dayStatuses.filter((d) => d.ok).length;
-  const progress = habit.target > 0
-    ? Math.max(0, Math.min(1, today / habit.target))
+  const progress = target > 0
+    ? Math.max(0, Math.min(1, today / target))
     : 0;
-  const pct = habit.target > 0 ? Math.round(Math.max(0, today / habit.target) * 100) : 0;
+  const pct = target > 0 ? Math.round(Math.max(0, today / target) * 100) : 0;
 
+  // Yesterday is measured against yesterday's own quota, so the day a quota is
+  // raised does not retroactively shrink the day before it.
   const yesterday = shiftDayKey(date, -1);
   const yesterdayTotal = habitTotal(habit, yesterday, tasks, entries);
-  const yesterdayPct = habit.target > 0 ? Math.round(Math.max(0, yesterdayTotal / habit.target) * 100) : 0;
+  const yesterdayTarget = habitTargetOn(habit, yesterday);
+  const yesterdayPct = yesterdayTarget > 0 ? Math.round(Math.max(0, yesterdayTotal / yesterdayTarget) * 100) : 0;
 
   return (
     <li
@@ -260,7 +265,7 @@ function HabitCard({
       }}
       onDragEnd={onDragEnd}
       style={{ '--habit-color': habit.color } as React.CSSProperties}
-      aria-label={`${habit.name}: ${formatNumber(today)} из ${formatNumber(habit.target)}${unit ? ' ' + unit : ''} сегодня`}
+      aria-label={`${habit.name}: ${formatNumber(today)} из ${formatNumber(target)}${unit ? ' ' + unit : ''} сегодня`}
     >
       <button
         type="button"
@@ -306,7 +311,7 @@ function HabitCard({
               <span className="habit-card-dial-percent-sign">%</span>
             </div>
             <div className="habit-card-dial-unit">
-              {formatNumber(today)} / {formatNumber(habit.target)}
+              {formatNumber(today)} / {formatNumber(target)}
               {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
             </div>
           </div>

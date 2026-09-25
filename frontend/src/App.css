@@ -4769,3 +4769,59 @@
   width: 460px;
   max-width: calc(100vw - 32px);
 }
+
+.hab-since {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The quota's versions, oldest first: the one in force today is marked with
+   the habit's colour, planned ones are dimmed. */
+.hab-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hab-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.hab-target.current {
+  border-left-color: var(--task-color);
+  background: color-mix(in srgb, var(--task-color) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.hab-target.planned {
+  border-left-style: dashed;
+  color: var(--text-dim);
+}
+
+.hab-target-since {
+  min-width: 128px;
+}
+
+.hab-target-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hab-target em {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-style: normal;
+  color: var(--text-dim);
+}

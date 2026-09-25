@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, ReactNode } from 'react';
 import type { DayStats, Habit, HabitEntry, Task } from './types';
 import { dateKey, heatLevel, shiftDayKey, startOfWeek, todayKey } from './history';
-import { habitHeatLevel, habitTotal } from './habits';
+import { habitHeatLevel, habitTargetOn, habitTotal } from './habits';
 import {
   entryWithRange,
   extendToHour,
@@ -167,7 +167,7 @@ function habitCellTitle(c: HeatCellInfo, habit: Habit): string {
   if (c.future) return '';
   const value = c.habitValue ?? 0;
   const u = habit.unit ? ` ${habit.unit}` : '';
-  return `${fmtShortDate(c.key)}\n${habit.emoji} ${habit.name}: ${value} / ${habit.target}${u}`;
+  return `${fmtShortDate(c.key)}\n${habit.emoji} ${habit.name}: ${value} / ${habitTargetOn(habit, c.key)}${u}`;
 }
 
 // ── Custom hover tooltip ─────────────────────────────────────────────
@@ -976,24 +976,27 @@ interface BarInfo {
   ratio: number; // 0..1, clamped bar height
   future: boolean;
   over: boolean; // value exceeds a positive target — shown as a small marker
+  target: number | null; // that day's habit quota; null without a habit
   label: string;
 }
 
 // Bars are scaled against the habit's own target when one is selected (so
-// the chart reads as progress towards a goal); without a habit there is no
-// target, so they scale against the largest value in view instead — same
-// idea as heatLevel's fixed buckets, but continuous for a handful of bars.
+// the chart reads as progress towards a goal) — each day against the quota it
+// had then, since quotas are versioned. Without a habit there is no target,
+// so they scale against the largest value in view instead — same idea as
+// heatLevel's fixed buckets, but continuous for a handful of bars.
 function computeBars(
   days: { key: string; date: Date }[],
   today: Date,
   valueFn: (key: string) => number,
-  target: number | null,
+  targetFn: ((key: string) => number) | null,
   labelFn: (date: Date) => string
 ): BarInfo[] {
   const rawValues = days.map((d) => valueFn(d.key));
   const dynMax = Math.max(1, ...rawValues);
   return days.map((d, i) => {
     const value = rawValues[i];
+    const target = targetFn ? targetFn(d.key) : null;
     const future = d.date.getTime() > today.getTime();
     let ratio: number;
     let over = false;
@@ -1006,7 +1009,7 @@ function computeBars(
     } else {
       ratio = value / dynMax;
     }
-    return { key: d.key, date: d.date, value, ratio, future, over, label: labelFn(d.date) };
+    return { key: d.key, date: d.date, value, ratio, future, over, target, label: labelFn(d.date) };
   });
 }
 
@@ -1015,7 +1018,7 @@ function barTooltipLines(b: BarInfo, habit: Habit | null): string {
   const date = fmtShortDate(b.key);
   if (habit) {
     const u = habit.unit ? ` ${habit.unit}` : '';
-    return `${date}\n${habit.emoji} ${habit.name}: ${b.value} / ${habit.target}${u}`;
+    return `${date}\n${habit.emoji} ${habit.name}: ${b.value} / ${b.target}${u}`;
   }
   return `${date}\nРабота: ${fmtSec(b.value)}`;
 }
@@ -1080,7 +1083,10 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
     (key: string) => (selectedHabit ? habitTotal(selectedHabit, key, tasks, entries) : (history[key]?.workSec ?? 0)),
     [selectedHabit, tasks, entries, history]
   );
-  const barTarget = selectedHabit ? selectedHabit.target : null;
+  const barTarget = useMemo(
+    () => (selectedHabit ? (key: string) => habitTargetOn(selectedHabit, key) : null),
+    [selectedHabit]
+  );
   const barColor = selectedHabit ? selectedHabit.color : 'var(--heat-4)';
 
   const habitHeatData = useMemo(() => {
@@ -1088,7 +1094,7 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
     return buildHeatGrid(today, selYear, (key) => {
       const value = habitTotal(selectedHabit, key, tasks, entries);
       return {
-        level: habitHeatLevel(value, selectedHabit.target),
+        level: habitHeatLevel(value, habitTargetOn(selectedHabit, key)),
         stats: undefined,
         sleep: undefined,
         habitValue: value,

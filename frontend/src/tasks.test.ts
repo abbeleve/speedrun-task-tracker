@@ -233,6 +233,7 @@ describe('recurrence', () => {
       color: '#3498db',
       format: 'count',
       target: 1,
+      targets: [{ since: '', target: 1 }],
       unit: 'times',
       order: 0,
     };

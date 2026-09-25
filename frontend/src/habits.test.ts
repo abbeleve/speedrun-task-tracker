@@ -9,23 +9,28 @@ import {
   habitHistory,
   habitManual,
   habitProgress,
+  habitTargetOn,
+  habitTargets,
   habitTotal,
   isHabitComplete,
   isHabitDoneOn,
   formatHabit,
   parseHabitAmount,
+  setHabitTarget,
 } from './habits';
 
 const DAY = '2026-03-10';
 
 function habit(patch: Partial<Habit> = {}): Habit {
+  const target = patch.target ?? 10;
   return {
     id: 'h1',
     name: 'Подтягивания',
     emoji: '💪',
     color: '#2ecc71',
     format: 'count',
-    target: 10,
+    target,
+    targets: [{ since: '', target }],
     unit: 'раз',
     order: 0,
     ...patch,
@@ -271,5 +276,100 @@ describe('parseHabitAmount', () => {
   it('rejects zero, which would make both buttons no-ops', () => {
     expect(parseHabitAmount('0')).toBeNull();
     expect(parseHabitAmount('0,00')).toBeNull();
+  });
+});
+
+describe('versioned targets', () => {
+  // 10 from the start, 15 from Mar 10, 20 planned from Mar 20.
+  const versioned = habit({
+    target: 20,
+    targets: [
+      { since: '', target: 10 },
+      { since: '2026-03-10', target: 15 },
+      { since: '2026-03-20', target: 20 },
+    ],
+  });
+
+  it('habitTargetOn picks the version in force on that day', () => {
+    expect(habitTargetOn(versioned, '2025-01-01')).toBe(10);
+    expect(habitTargetOn(versioned, '2026-03-09')).toBe(10);
+    expect(habitTargetOn(versioned, '2026-03-10')).toBe(15);
+    expect(habitTargetOn(versioned, '2026-03-19')).toBe(15);
+    expect(habitTargetOn(versioned, '2026-03-20')).toBe(20);
+    expect(habitTargetOn(versioned, '2027-01-01')).toBe(20);
+  });
+
+  it('a day before a dated first version falls back to that first quota', () => {
+    const h = habit({ targets: [{ since: '2026-03-10', target: 12 }] });
+    expect(habitTargetOn(h, '2026-03-01')).toBe(12);
+  });
+
+  it('a habit without a history reads its plain target from the beginning', () => {
+    const h = habit({ target: 7, targets: [] });
+    expect(habitTargets(h)).toEqual([{ since: '', target: 7 }]);
+    expect(habitTargetOn(h, DAY)).toBe(7);
+  });
+
+  it('raising the quota keeps the days done at the old one done', () => {
+    const raised = habit({
+      target: 15,
+      targets: setHabitTarget([{ since: '', target: 10 }], 15, '2026-03-11'),
+    });
+    const tenOnBothDays = [
+      { habitId: 'h1', date: DAY, manual: 10 },
+      { habitId: 'h1', date: '2026-03-11', manual: 10 },
+    ];
+    expect(isHabitDoneOn(raised, DAY, [], tenOnBothDays)).toBe(true);
+    expect(isHabitDoneOn(raised, '2026-03-11', [], tenOnBothDays)).toBe(false);
+  });
+
+  it('dayCompletion judges each habit against that day\'s quota', () => {
+    expect(dayCompletion([versioned], '2026-03-09', [], [{ habitId: 'h1', date: '2026-03-09', manual: 10 }]).done).toBe(1);
+    expect(dayCompletion([versioned], '2026-03-12', [], [{ habitId: 'h1', date: '2026-03-12', manual: 10 }]).done).toBe(0);
+  });
+});
+
+describe('setHabitTarget', () => {
+  const base = [{ since: '', target: 10 }];
+
+  it('starts a new version from the given day', () => {
+    expect(setHabitTarget(base, 15, '2026-03-10')).toEqual([
+      { since: '', target: 10 },
+      { since: '2026-03-10', target: 15 },
+    ]);
+  });
+
+  it('replaces a version that starts on the same day instead of piling up', () => {
+    const once = setHabitTarget(base, 150, '2026-03-10'); // a typo…
+    expect(setHabitTarget(once, 15, '2026-03-10')).toEqual([
+      { since: '', target: 10 },
+      { since: '2026-03-10', target: 15 },
+    ]);
+  });
+
+  it('drops the versions the new quota now covers', () => {
+    const history = [
+      { since: '', target: 10 },
+      { since: '2026-03-10', target: 15 },
+      { since: '2026-03-20', target: 20 },
+    ];
+    expect(setHabitTarget(history, 12, '2026-03-05')).toEqual([
+      { since: '', target: 10 },
+      { since: '2026-03-05', target: 12 },
+    ]);
+  });
+
+  it('an empty since rewrites the whole history', () => {
+    const history = [
+      { since: '', target: 10 },
+      { since: '2026-03-10', target: 15 },
+    ];
+    expect(setHabitTarget(history, 25, '')).toEqual([{ since: '', target: 25 }]);
+  });
+
+  it('typing the old quota back folds the change away', () => {
+    const raised = setHabitTarget(base, 15, '2026-03-10');
+    expect(setHabitTarget(raised, 10, '2026-03-10')).toEqual(base);
+    expect(setHabitTarget(raised, 15, '2026-03-12')).toEqual(raised);
   });
 });

@@ -512,12 +512,28 @@ def put_color_presets(
 
 # ── Habits (home-page tracker) ──────────────────────────────────────
 
+def _habit_targets(data: dict) -> list[dict]:
+    """A habit's quota history, oldest first.
+
+    Habits saved before quotas were versioned carry only ``target``; it reads
+    back as a single version that has applied from the beginning.
+    """
+    targets = data.get('targets')
+    if targets:
+        return targets
+    return [{'since': '', 'target': data.get('target', 1)}]
+
+
 @app.get('/api/habits')
 def get_habits(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
     rows = conn.execute(
         'SELECT data FROM habits WHERE user_id = ?', (user['id'],)
     ).fetchall()
-    return [json.loads(r['data']) for r in rows]
+    habits = []
+    for r in rows:
+        data = json.loads(r['data'])
+        habits.append({**data, 'targets': _habit_targets(data)})
+    return habits
 
 
 @app.put('/api/habits/{habit_id}')
@@ -527,12 +543,32 @@ def put_habit(
     user=Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    data = body.model_dump()
+    if 'targets' in body.model_fields_set:
+        sinces = [t['since'] for t in data['targets']]
+        if len(sinces) != len(set(sinces)):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, 'Duplicate habit target date'
+            )
+        targets = sorted(data['targets'], key=lambda t: t['since'])
+    else:
+        # A client from before quotas were versioned sends `target` alone, and
+        # also re-sends every habit on a reorder. An unchanged quota keeps the
+        # stored history; a changed one replaces it outright, which is all an
+        # edit ever meant to such a client.
+        row = conn.execute(
+            'SELECT data FROM habits WHERE user_id = ? AND id = ?', (user['id'], habit_id)
+        ).fetchone()
+        stored = _habit_targets(json.loads(row['data'])) if row else []
+        targets = stored if stored and stored[-1]['target'] == body.target else []
+    data['targets'] = targets or [{'since': '', 'target': body.target}]
+    data['target'] = data['targets'][-1]['target']
     conn.execute(
         """
         INSERT INTO habits (user_id, id, data) VALUES (?, ?, ?)
         ON CONFLICT(user_id, id) DO UPDATE SET data = excluded.data
         """,
-        (user['id'], habit_id, body.model_dump_json()),
+        (user['id'], habit_id, json.dumps(data)),
     )
     conn.commit()
     return {'ok': True}
