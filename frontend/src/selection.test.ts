@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import type { Task } from './types';
 import { buildChains, buildGroups, dayStartMs } from './schedule';
-import { chainOfSelection, normalizeBand, splitPatches, tasksInBand } from './selection';
+import {
+  HOLD_SLOP_PX,
+  chainOfSelection,
+  normalizeBand,
+  onTheSpot,
+  splitPatches,
+  sweep,
+  tasksInBand,
+  toggled,
+} from './selection';
 
 const DAY = '2026-03-10';
 const NEXT = '2026-03-11';
@@ -100,6 +109,54 @@ describe('tasksInBand', () => {
     expect(tasksInBand(all, days, { fromDayIdx: 0, toDayIdx: 0, fromMin: 540, toMin: 540 })).toEqual(
       []
     );
+  });
+});
+
+describe('onTheSpot', () => {
+  it('forgives a few pixels of drift in either direction', () => {
+    expect(onTheSpot(100, 100, 100 + HOLD_SLOP_PX, 100 - HOLD_SLOP_PX)).toBe(true);
+  });
+
+  it('reads anything further as the pointer leaving the spot', () => {
+    expect(onTheSpot(100, 100, 100 + HOLD_SLOP_PX + 1, 100)).toBe(false);
+    expect(onTheSpot(100, 100, 100, 100 - HOLD_SLOP_PX - 1)).toBe(false);
+  });
+});
+
+describe('sweep', () => {
+  const a = task({ start: hm(9), plannedTime: 3600 }); // 09:00–10:00
+  const b = task({ start: hm(10), plannedTime: 1800 }); // 10:00–10:30
+  const late = task({ start: hm(20), plannedTime: 3600 });
+  const all = [a, b, late];
+  const days = [DAY];
+
+  it('adds what the rectangle touches to the batch it started from', () => {
+    const band = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(10, 10) };
+    expect([...sweep(all, days, band, [late.id])].sort()).toEqual([a.id, b.id, late.id].sort());
+  });
+
+  it('lets go of what it swept when the rectangle shrinks, but never of the base', () => {
+    const wide = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(10, 10) };
+    const narrow = { ...wide, toMin: hm(9, 45) };
+    expect(sweep(all, days, wide, [late.id]).has(b.id)).toBe(true);
+    expect([...sweep(all, days, narrow, [late.id])].sort()).toEqual([a.id, late.id].sort());
+  });
+
+  it('keeps the base as it is while the rectangle has no height yet', () => {
+    const band = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(9, 30) };
+    expect([...sweep(all, days, band, [late.id])]).toEqual([late.id]);
+  });
+});
+
+describe('toggled', () => {
+  it('adds a block that was not in the batch', () => {
+    expect([...toggled(new Set(['a']), 'b')].sort()).toEqual(['a', 'b']);
+  });
+
+  it('drops a block that was, leaving the original set untouched', () => {
+    const before = new Set(['a', 'b']);
+    expect([...toggled(before, 'a')]).toEqual(['b']);
+    expect([...before].sort()).toEqual(['a', 'b']);
   });
 });
 

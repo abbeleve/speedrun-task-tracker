@@ -29,10 +29,11 @@ import {
 import type { Band } from './selection';
 import {
   HOLD_MS,
-  HOLD_SLOP_PX,
   chainOfSelection,
+  onTheSpot,
   splitPatches,
-  tasksInBand,
+  sweep,
+  toggled,
 } from './selection';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, projectedFinishMs } from './credit';
@@ -138,8 +139,9 @@ type Gesture =
       anchorX: number; // where the press landed, for the "held still?" test
       anchorY: number;
       moved: boolean;
-      // Shift/Ctrl: the press builds on the batch already selected instead of
-      // starting a new one.
+      // Shift: the press builds on the batch already selected instead of
+      // starting a new one. (Ctrl skips this gesture and goes straight to the
+      // lasso.)
       additive: boolean;
     }
   | {
@@ -168,9 +170,20 @@ type Gesture =
   // Right-drag on the canvas: a vertical time band, ignoring which day/column
   // it started or wandered over — only the minute-of-day matters.
   | { kind: 'zoom'; anchorMin: number; startMin: number; endMin: number }
-  // Armed by holding the button still on the canvas: a rectangle swept over
-  // the grid that picks up every block it touches (see selection.ts).
-  | { kind: 'lasso'; anchorDayIdx: number; anchorMin: number; band: Band; baseIds: string[] }
+  // Armed by holding the button still on the canvas, or at once by a press
+  // with Ctrl: a rectangle swept over the grid that picks up every block it
+  // touches (see selection.ts).
+  | {
+      kind: 'lasso';
+      anchorDayIdx: number;
+      anchorMin: number;
+      band: Band;
+      baseIds: string[];
+      // Ctrl-pressed on a block and not yet dragged off the spot: let go here
+      // it is a Ctrl+click that toggles that block; only a drag makes it a
+      // sweep.
+      pending: { taskId: string; x: number; y: number } | null;
+    }
   // Dragging a selection by one of its blocks: all of them move by the same
   // delta, so the shape of the batch is kept.
   | { kind: 'multi'; tasks: Task[]; anchorMs: number; deltaMs: number; moved: boolean };
@@ -831,10 +844,7 @@ function CalendarPage({
         // Still within a few pixels of where it landed: the press is holding,
         // not drawing — leave the draft at its default size and let the hold
         // timer turn it into a lasso.
-        const still =
-          Math.abs(e.clientX - g.anchorX) <= HOLD_SLOP_PX &&
-          Math.abs(e.clientY - g.anchorY) <= HOLD_SLOP_PX;
-        if (still && !g.moved) return;
+        if (!g.moved && onTheSpot(g.anchorX, g.anchorY, e.clientX, e.clientY)) return;
         cancelHold();
         const slot = slotAt(e.clientX, e.clientY);
         if (!slot) return;
@@ -865,6 +875,11 @@ function CalendarPage({
           return;
         }
       }
+      // A Ctrl press on a block stays a click until the pointer leaves the
+      // spot, so a hand that twitches while clicking still just toggles it.
+      if (g.kind === 'lasso' && g.pending && onTheSpot(g.pending.x, g.pending.y, e.clientX, e.clientY)) {
+        return;
+      }
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
       if (g.kind === 'move') {
@@ -891,9 +906,8 @@ function CalendarPage({
           fromMin: g.anchorMin,
           toMin: slot.min,
         };
-        setGestureState({ ...g, band });
-        const picked = tasksInBand(store.tasks, visibleDays, band);
-        setSelection(new Set([...g.baseIds, ...picked.map((t) => t.id)]));
+        setGestureState({ ...g, band, pending: null });
+        setSelection(sweep(store.tasks, visibleDays, band, g.baseIds));
       } else if (g.kind === 'multi') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
@@ -921,8 +935,8 @@ function CalendarPage({
       if (g.kind === 'create') {
         // A plain click on the canvas while a batch is selected drops the
         // selection rather than dropping a new block on top of it. Held with
-        // Shift/Ctrl the click is part of composing that batch, so it keeps it
-        // — and never drops a new block either way.
+        // Shift the click is part of composing that batch, so it keeps it —
+        // and never drops a new block either way.
         if (!g.moved && (g.additive || selectedRef.current.size > 0)) {
           if (!g.additive) setSelection(new Set());
           return;
@@ -952,6 +966,10 @@ function CalendarPage({
         } else {
           setZoomRange(null);
         }
+      } else if (g.kind === 'lasso') {
+        // Ctrl+clicked a block without dragging: it joins the batch, or drops
+        // back out of it. A swept lasso has already committed as it moved.
+        if (g.pending) setSelection(toggled(selectedRef.current, g.pending.taskId));
       } else if (g.kind === 'multi') {
         // Clicked rather than dragged: the batch opens its own menu.
         if (!g.moved) setGroupMenu({ x: e.clientX, y: e.clientY });
@@ -992,17 +1010,45 @@ function CalendarPage({
     openSession,
   ]);
 
+  // The lasso, anchored at a point of the grid and building on `baseIds`.
+  const armLasso = useCallback(
+    (
+      slot: { dayIdx: number; min: number },
+      baseIds: string[],
+      pending: { taskId: string; x: number; y: number } | null = null
+    ) => {
+      const { dayIdx, min } = slot;
+      setGestureState({
+        kind: 'lasso',
+        anchorDayIdx: dayIdx,
+        anchorMin: min,
+        band: { fromDayIdx: dayIdx, toDayIdx: dayIdx, fromMin: min, toMin: min },
+        baseIds,
+        pending,
+      });
+    },
+    [setGestureState]
+  );
+
   // A press on the canvas starts as a block being drawn. Held on the spot for
   // a second instead — the ring under the cursor fills to say so — it turns
   // into a lasso over the grid, and dragging from there picks up blocks rather
-  // than drawing a new one. Shift adds to what is already selected.
+  // than drawing a new one. Shift adds to what is already selected. With Ctrl
+  // (⌘) there is no second to wait: the press is a lasso straight away, adding
+  // to the batch.
   const startCreate = useCallback(
     (e: React.PointerEvent, day: string) => {
       if (e.button !== 0) return;
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
-      const anchorMin = snap(slot.min);
       e.preventDefault();
+      cancelHold();
+      if (e.ctrlKey || e.metaKey) {
+        armLasso(slot, [...selectedRef.current]);
+        return;
+      }
+      const anchorMin = snap(slot.min);
+      const additive = e.shiftKey;
       setGestureState({
         kind: 'create',
         day,
@@ -1012,27 +1058,18 @@ function CalendarPage({
         anchorX: e.clientX,
         anchorY: e.clientY,
         moved: false,
-        additive: e.shiftKey || e.ctrlKey || e.metaKey,
+        additive,
       });
-      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
-      const { dayIdx, min } = slot;
-      cancelHold();
       holdTimer.current = window.setTimeout(() => {
         holdTimer.current = null;
         const held = gestureRef.current;
         if (!held || held.kind !== 'create' || held.moved) return;
         const baseIds = additive ? [...selectedRef.current] : [];
         setSelection(new Set(baseIds));
-        setGestureState({
-          kind: 'lasso',
-          anchorDayIdx: dayIdx,
-          anchorMin: min,
-          band: { fromDayIdx: dayIdx, toDayIdx: dayIdx, fromMin: min, toMin: min },
-          baseIds,
-        });
+        armLasso(slot, baseIds);
       }, HOLD_MS);
     },
-    [slotAt, setGestureState, setSelection, cancelHold]
+    [slotAt, setGestureState, setSelection, cancelHold, armLasso]
   );
 
   const startMove = useCallback(
@@ -1042,14 +1079,13 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
-      // Ctrl (⌘) + click picks blocks one by one, whether or not a batch is
-      // already standing: it adds the block, or drops it back out if it was
-      // already in. Nothing is dragged and no editor opens — the modifier
-      // means "compose the batch", so the gesture ends right here.
+      // Ctrl (⌘) means "compose the batch": nothing is dragged and no editor
+      // opens. Let go on the spot, it picks this one block — adds it, or drops
+      // it back out if it was already in; dragged off, it sweeps a lasso from
+      // here that adds every block it touches, without the hold the bare canvas
+      // needs.
       if (e.ctrlKey || e.metaKey) {
-        const next = new Set(selectedRef.current);
-        if (!next.delete(task.id)) next.add(task.id);
-        setSelection(next);
+        armLasso(slot, [...selectedRef.current], { taskId: task.id, x: e.clientX, y: e.clientY });
         return;
       }
       // Grabbing any block of a selected batch drags the whole batch; grabbing
@@ -1075,7 +1111,7 @@ function CalendarPage({
         toBacklog: false,
       });
     },
-    [slotAt, setGestureState, setSelection, store]
+    [slotAt, setGestureState, setSelection, store, armLasso]
   );
 
   const startChainDrag = useCallback(
@@ -1294,7 +1330,7 @@ function CalendarPage({
             style={{ left: GUTTER_PX }}
           >
             {visibleDays.map((day) => renderColumn(day))}
-            {g?.kind === 'lasso' && renderMarquee(g.band)}
+            {g?.kind === 'lasso' && !g.pending && renderMarquee(g.band)}
           </div>
           {g?.kind === 'zoom' && (
             <div
@@ -2353,6 +2389,7 @@ function CalendarPage({
             <p className="cal-backlog-hint">
               Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
               Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
+              С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
               Ctrl + клик по блоку — добавить его в пачку или убрать
             </p>
             <div className="cal-backlog-list" role="tabpanel">

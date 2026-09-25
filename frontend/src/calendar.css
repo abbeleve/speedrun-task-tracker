@@ -2341,8 +2341,9 @@
 }
 
 /* ── batch selection (lasso) ─────────────────────────────────────
-   A press held still on empty canvas arms a rectangle over the grid; every
-   block it touches takes the ring below, and the batch then drags as one. */
+   A press held still on empty canvas — or any press with Ctrl — arms a
+   rectangle over the grid; every block it touches takes the ring below, and
+   the batch then drags as one. */
 
 .cal-marquee {
   position: absolute;

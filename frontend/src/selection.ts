@@ -3,9 +3,11 @@
 // A press on empty canvas is ambiguous: drawn away from where it started it
 // creates a block, held still on the spot for HOLD_MS it arms a *marquee*
 // instead — a rectangle swept over the grid that picks up every block it
-// touches, across day columns. What it picks then moves as one batch, and can
-// be declared a session of its own — or pulled out of the sequence it sits in
-// into a sequence of its own.
+// touches, across day columns. With Ctrl (⌘) down there is nothing to wait
+// for: the press is a marquee from the start, on empty canvas or on a block,
+// and adds to the batch already standing. What it picks then moves as one
+// batch, and can be declared a session of its own — or pulled out of the
+// sequence it sits in into a sequence of its own.
 
 import type { Task } from './types';
 import type { Chain } from './schedule';
@@ -18,6 +20,11 @@ export const HOLD_MS = 1000;
 // the spot": a hand resting on a mouse is never perfectly still, and a couple
 // of pixels of drift must not be read as the start of a drawn block.
 export const HOLD_SLOP_PX = 6;
+
+// Whether the pointer is still where the press landed, give or take that slop.
+export function onTheSpot(fromX: number, fromY: number, x: number, y: number): boolean {
+  return Math.abs(x - fromX) <= HOLD_SLOP_PX && Math.abs(y - fromY) <= HOLD_SLOP_PX;
+}
 
 // The swept rectangle, in grid coordinates: whole day columns across, minutes
 // of the day down. Anchor and cursor are kept as they came in — the rectangle
@@ -68,6 +75,20 @@ export function tasksInBand(tasks: Task[], days: string[], band: Band): Task[] {
   return [...picked.values()].sort(
     (a, b) => taskStartMs(a) - taskStartMs(b) || a.id.localeCompare(b.id)
   );
+}
+
+// What the marquee holds once it covers `band`: the batch it started from plus
+// every block it touches. Rebuilt from `baseIds` on each move, so shrinking the
+// rectangle lets go of what it swept but never of what was picked before.
+export function sweep(tasks: Task[], days: string[], band: Band, baseIds: string[]): Set<string> {
+  return new Set([...baseIds, ...tasksInBand(tasks, days, band).map((t) => t.id)]);
+}
+
+// A Ctrl (⌘) click on a block: in the batch it goes out, otherwise it comes in.
+export function toggled(ids: Set<string>, id: string): Set<string> {
+  const next = new Set(ids);
+  if (!next.delete(id)) next.add(id);
+  return next;
 }
 
 // The one sequence every selected block belongs to, or null when the selection
