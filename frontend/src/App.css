@@ -2065,6 +2065,9 @@
 .spiral-edit-popup {
   width: 340px;
   max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 12px;
@@ -3739,6 +3742,9 @@
 .kanban-modal {
   width: 420px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;

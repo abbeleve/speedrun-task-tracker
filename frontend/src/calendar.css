@@ -1462,8 +1462,9 @@
 
 .cal-modal {
   width: min(520px, 100%);
-  max-height: 90vh;
+  max-height: min(90dvh, calc(100dvh - 32px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--task-color, #3498db) 20%, transparent), transparent 90px),
     var(--bg-secondary);
@@ -2160,7 +2161,7 @@
 
 .cal-modal--pop {
   position: fixed;
-  max-height: none;
+  max-height: calc(100dvh - 24px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
