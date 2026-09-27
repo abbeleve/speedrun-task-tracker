@@ -1479,6 +1479,10 @@
   animation: cal-modal-in 0.16s ease-out both;
 }
 
+.cal-modal > * {
+  flex-shrink: 0;
+}
+
 .cal-modal-head {
   display: flex;
   align-items: center;
@@ -2161,7 +2165,9 @@
 
 .cal-modal--pop {
   position: fixed;
-  max-height: calc(100dvh - 24px);
+  /* Leave 48px above and below the popup, then scroll its contents. */
+  max-height: min(720px, calc(100dvh - 96px));
+  overflow-y: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 

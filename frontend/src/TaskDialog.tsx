@@ -60,6 +60,7 @@ interface TaskDialogProps {
 
 const POP_WIDTH = 380;
 const POP_MARGIN = 12;
+const POP_VERTICAL_MARGIN = 48;
 
 // Keep the popover inside the window: it opens to the right of the block when
 // there is room, and flips to its left when there is not.
@@ -70,8 +71,8 @@ function popoverStyle(anchor: DialogAnchor, height: number): React.CSSProperties
     anchor.x + POP_MARGIN + POP_WIDTH <= vw - POP_MARGIN
       ? anchor.x + POP_MARGIN
       : Math.max(POP_MARGIN, anchor.x - POP_MARGIN - POP_WIDTH);
-  const top = Math.max(POP_MARGIN, Math.min(anchor.y - 40, vh - height - POP_MARGIN));
-  return { position: 'fixed', left, top, width: POP_WIDTH, maxHeight: vh - 2 * POP_MARGIN };
+  const top = Math.max(POP_VERTICAL_MARGIN, Math.min(anchor.y - 40, vh - height - POP_VERTICAL_MARGIN));
+  return { position: 'fixed', left, top, width: POP_WIDTH };
 }
 
 function toTimeInput(startMin: number | null): string {
