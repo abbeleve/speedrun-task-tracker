@@ -139,6 +139,10 @@ export function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
               autoFocus
             />
           </label>
@@ -149,6 +153,7 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              enterKeyHint="go"
             />
           </label>
 

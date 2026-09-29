@@ -8,8 +8,11 @@ import { AuthProvider, AuthGate } from './auth.tsx'
 // app render with the correct palette (defaults to dark, like the app itself).
 ;(() => {
   const saved = localStorage.getItem('speedrun_theme')
-  document.documentElement.dataset.theme =
-    saved === 'dark' || saved !== 'light' ? 'dark' : 'light'
+  const theme = saved === 'dark' || saved !== 'light' ? 'dark' : 'light'
+  document.documentElement.dataset.theme = theme
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', theme === 'dark' ? '#131314' : '#ffffff')
 })()
 
 createRoot(document.getElementById('root')!).render(

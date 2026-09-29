@@ -80,9 +80,15 @@
   --app-min-width: 1200px;
   --app-gutter: clamp(0px, calc((100% - var(--app-min-width)) / 2), 50px);
   width: 100%;
-  padding-inline: var(--app-gutter);
+  /* With viewport-fit=cover the page runs under a phone's notch and home
+     indicator; the shell pads itself back out of them. */
+  padding-inline: max(var(--app-gutter), env(safe-area-inset-left, 0px))
+    max(var(--app-gutter), env(safe-area-inset-right, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   margin: 0 auto;
   height: 100vh !important;
+  height: 100dvh !important;
   display: flex;
   flex-direction: column;
   font-family: var(--font-sans);
@@ -1008,6 +1014,9 @@
   padding: 0 2px;
   flex-shrink: 0;
   transition: color 0.15s;
+  /* The grip is only ever dragged: a finger on it reorders instead of
+     scrolling the timeline. */
+  touch-action: none;
 }
 
 .drag-handle:hover {
@@ -1132,7 +1141,9 @@
 .timer-value {
   display: block;
   font-family: var(--font-mono);
-  font-size: 2.8rem;
+  /* Scales down with the window below ~1100px so four timers still fit
+     side by side on a tablet. */
+  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 1px;
@@ -1147,7 +1158,7 @@
 }
 
 .timer-main {
-  font-size: 3.4rem;
+  font-size: clamp(1.6rem, 5vw, 3.4rem);
   color: var(--accent-gold) !important;
   text-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
 }
@@ -1163,13 +1174,13 @@
 .timer-clock-value {
   color: var(--accent-cyan, #00d4ff);
   text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
-  font-size: 2.8rem;
+  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
 }
 
 .timer-finish-value {
   color: var(--accent-purple);
   text-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
-  font-size: 2.8rem;
+  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
 }
 
 /* Yellow square "end run" button in the footer — ends the current run and lets
@@ -1270,14 +1281,6 @@
 
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
-  .header {
-    padding: 16px;
-  }
-
-  .header h1 {
-    font-size: 1.2rem;
-  }
-
   .block-left {
     gap: 4px;
   }
@@ -1289,18 +1292,6 @@
   .task-segment {
     min-width: 50px;
     font-size: 0.7rem;
-  }
-
-  .timer-value {
-    font-size: 1.2rem;
-  }
-
-  .timer-main {
-    font-size: 1.4rem;
-  }
-
-  .footer {
-    flex-direction: column;
   }
 }
 
@@ -2363,6 +2354,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 14px;
 }
 
@@ -2385,6 +2378,7 @@
 .sleep-controls-top {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -4141,6 +4135,22 @@
   opacity: 1;
 }
 
+/* Without a hover the actions would be invisible yet still tappable — a tap
+   on the right of a card could delete it unseen. Show them outright, sized
+   for a finger: ▶ / ✓ / ↩ are also how a card changes column on a touch
+   screen, where cards cannot be dragged. */
+@media (hover: none) {
+  .kanban-card-actions {
+    opacity: 1;
+  }
+
+  .kanban-card-actions .btn {
+    min-width: 32px;
+    min-height: 32px;
+    justify-content: center;
+  }
+}
+
 .kanban-card-actions .btn {
   padding: 2px 6px;
   font-size: 0.85rem;
@@ -4236,10 +4246,20 @@
 .home-week-overtake-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
   overflow-x: auto;
   padding: 6px 20px;
+}
+
+/* Centred by auto margins rather than justify-content: once the strip is
+   wider than the card (any phone), a centred flex row spills past the left
+   edge where it cannot be scrolled to; auto margins simply collapse. */
+.home-week-overtake-bar .ot-side-left {
+  margin-left: auto;
+}
+
+.home-week-overtake-bar .ot-side-right {
+  margin-right: auto;
 }
 
 .ot-side {
@@ -4830,4 +4850,285 @@
   font-size: 0.7rem;
   font-style: normal;
   color: var(--text-dim);
+}
+
+/* ===== Phones and tablets ===== */
+
+/* Tablets: the header keeps its navigation labels but gives the content more
+   room — the theme and logout buttons say what they are with their icon. */
+@media (max-width: 1024px) {
+  .header {
+    padding: 10px 16px;
+    gap: 10px;
+  }
+
+  .header h1 {
+    font-size: 1.25rem;
+  }
+
+  .theme-toggle-label,
+  .btn-logout-label {
+    display: none;
+  }
+}
+
+/* Phones: one compact header row — the icon, then icon-only navigation.
+   The tracker's view switch and sequence controls drop to a second row. */
+@media (max-width: 640px) {
+  .header {
+    padding: 8px 12px;
+    gap: 6px;
+    justify-content: flex-start;
+  }
+
+  .header h1 {
+    font-size: 1.1rem;
+    margin-right: auto;
+  }
+
+  .header .btn-stats-nav {
+    order: 1;
+    padding: 7px 10px;
+    font-size: 1rem;
+  }
+
+  .header .theme-toggle,
+  .header .btn-logout {
+    order: 2;
+    padding: 6px 8px;
+  }
+
+  .header .view-toggle {
+    order: 3;
+  }
+
+  .header .session-controls {
+    order: 4;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  .header .btn-stats-nav .view-toggle-label,
+  .btn-logout-label {
+    display: none;
+  }
+
+  .viewing-run-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+  }
+
+  .session-controls .btn {
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  /* The four tracker timers as a 2 × 2 block instead of a tall column, so
+     the thermometer / spiral / list keeps most of the screen. */
+  .footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 8px;
+  }
+
+  .timer-block {
+    padding: 8px 10px;
+  }
+
+  .timer-label {
+    font-size: 0.72rem;
+    margin-bottom: 2px;
+  }
+
+  .timer-value,
+  .timer-clock-value,
+  .timer-finish-value {
+    font-size: 1.45rem;
+    letter-spacing: 0;
+  }
+
+  .timer-main {
+    font-size: 1.6rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .header-title {
+    display: none;
+  }
+}
+
+/* The sequence views on a phone: a slimmer thermometer and rows that stack
+   their numbers under the name instead of squeezing them beside it. */
+@media (max-width: 640px) {
+  .timeline-thermo {
+    width: 72px;
+    margin: 0 6px;
+    border-radius: 30px;
+  }
+
+  .timeline-thermo::before {
+    left: 12px;
+    width: 6px;
+  }
+
+  .thermo-mark-label {
+    font-size: 0.6rem;
+    padding-left: 6px;
+  }
+
+  .task-block {
+    gap: 6px;
+    padding-right: 6px;
+  }
+
+  .block-left {
+    gap: 4px;
+    padding-left: 4px;
+  }
+
+  .task-emoji {
+    font-size: 1.05rem;
+    width: 22px;
+  }
+
+  .task-color-swatch {
+    display: none;
+  }
+
+  .block-info .task-name,
+  .block-info .task-name-input {
+    font-size: 0.95rem;
+  }
+
+  .block-info .task-delta,
+  .block-timers .task-planned-lg {
+    font-size: 0.95rem;
+  }
+
+  .block-right {
+    gap: 6px;
+  }
+
+  .task-segment {
+    min-width: 0;
+    font-size: 0.8rem;
+  }
+
+  .task-realtime {
+    min-width: 0;
+    font-size: 0.8rem;
+  }
+
+  .task-actions {
+    width: 28px;
+  }
+
+  /* List view: the spine keeps its 90px marker column (the tube animation
+     grows out of its axis), but the page padding goes. */
+  .liquid-list {
+    padding: 20px 12px 48px 0;
+  }
+
+  .liquid-row + .liquid-row::before {
+    left: 62px;
+  }
+
+  .liquid-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .liquid-name {
+    width: 100%;
+  }
+
+  .liquid-times {
+    gap: 10px;
+  }
+
+  .liquid-delta {
+    min-width: 0;
+  }
+
+  .liquid-thermo-wrap {
+    width: 90px;
+    margin-left: 0;
+  }
+
+  .liquid-thermo {
+    width: 90px;
+    height: 220px;
+  }
+
+  .liquid-active-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding-left: 12px;
+  }
+
+  .liquid-active-name {
+    font-size: 1rem;
+  }
+
+  .liquid-progress {
+    font-size: 0.9rem;
+  }
+
+  .liquid-progress strong {
+    font-size: 1.1rem;
+  }
+
+  .liquid-progress .liquid-delta {
+    margin-left: 8px;
+    font-size: 0.85rem;
+  }
+
+  .liquid-active-end {
+    font-size: 0.75rem;
+  }
+
+  .liquid-cat {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-page {
+    padding: 12px 10px 24px;
+    gap: 14px;
+  }
+}
+
+/* A phone on its side: the header and the tracker timers give the height
+   back to the views below them. */
+@media (max-height: 500px) {
+  .header {
+    padding-block: 4px;
+  }
+
+  .timer-block {
+    padding: 4px 12px;
+  }
+
+  .timer-label {
+    font-size: 0.72rem;
+    margin-bottom: 0;
+  }
+
+  .timer-planned {
+    display: none;
+  }
+
+  .footer {
+    margin-bottom: 6px;
+  }
 }

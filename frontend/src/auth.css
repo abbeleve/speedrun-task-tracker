@@ -2,10 +2,15 @@
    properties set on <html data-theme="..."> (see main.tsx). */
 
 .auth-page {
+  /* dvh: the card stays centred in what is left above a phone's keyboard;
+     overflow lets it scroll into reach on a short landscape screen. */
   min-height: 100vh;
   height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
   display: flex;
   align-items: center;
+  align-items: safe center;
   justify-content: center;
   padding: 16px;
   box-sizing: border-box;

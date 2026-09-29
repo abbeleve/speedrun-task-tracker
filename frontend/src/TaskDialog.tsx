@@ -7,13 +7,15 @@ import type {
   TaskType,
 } from './types';
 import {
+  DEFAULT_START_MIN,
   EMOJI_CATEGORY_ICONS,
   TASK_COLORS,
   groupedEmojis,
   resolveTaskEmoji,
 } from './types';
 import { INCREASING_SERIES, rearmEditedReminder } from './tasks';
-import { DAY_MIN, isDone, taskEndMs } from './schedule';
+import { DAY_MIN, clampStartMin, isDone, taskEndMs } from './schedule';
+import { isPhoneScreen } from './viewport';
 import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
 import {
@@ -170,7 +172,7 @@ function EmojiPicker({ selected, onSelect }: { selected: string; onSelect: (emoj
 function TaskDialog({
   task,
   isNew,
-  anchor,
+  anchor: openedAt,
   sessionName,
   onLeaveSession,
   habits,
@@ -180,10 +182,15 @@ function TaskDialog({
   onDuplicate,
   onClose,
 }: TaskDialogProps) {
+  // A phone has no room beside the block: there the editor is the plain
+  // centred modal, whatever it was opened from.
+  const anchor = openedAt && !isPhoneScreen() ? openedAt : null;
   const [name, setName] = useState(task.name);
   const [description, setDescription] = useState(task.description ?? '');
   const [day, setDay] = useState(task.day);
-  const [time, setTime] = useState(toTimeInput(task.start));
+  // A backlog task has no slot yet; offer the usual start of the day for when
+  // it is put on the calendar from here.
+  const [time, setTime] = useState(toTimeInput(task.start ?? DEFAULT_START_MIN));
   const [minutes, setMinutes] = useState(String(Math.max(1, Math.round(task.plannedTime / 60))));
   const [emoji, setEmoji] = useState(task.emoji);
   const [color, setColor] = useState(task.color);
@@ -391,8 +398,19 @@ function TaskDialog({
     setNewPresetName('');
   };
 
+  // «В календарь» submits the form like «Сохранить» does, then takes the
+  // backlog task out of the backlog into the slot typed above — what dropping
+  // its card on the grid does, for screens where cards cannot be dragged.
+  const placingRef = useRef(false);
+  const placeOnCalendar = () => {
+    placingRef.current = true;
+    formRef.current?.requestSubmit();
+    placingRef.current = false;
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    const placing = placingRef.current && task.status === 'open' && !pinned;
     // A block dragged out on the grid may be saved without typing a name yet.
     const trimmed = name.trim() || 'Новая задача';
     const plannedTime = minutesToSec(minutes);
@@ -422,6 +440,9 @@ function TaskDialog({
         : canTrackDone
           ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
           : null),
+      ...(placing
+        ? { status: 'in-progress', start: clampStartMin(fromTimeInput(time, DEFAULT_START_MIN), plannedTime) }
+        : null),
     };
     onSave(rearmEditedReminder(task, saved));
   };
@@ -1067,6 +1088,21 @@ function TaskDialog({
           <button type="button" className="cal-btn" onClick={onClose}>
             Отмена
           </button>
+          {task.status === 'open' && (
+            <button
+              type="button"
+              className="cal-btn"
+              disabled={pinned}
+              onClick={placeOnCalendar}
+              title={
+                pinned
+                  ? 'Закреплённую задачу нельзя перенести, пока флажок не снят'
+                  : 'Поставить задачу в календарь на выбранные дату и время'
+              }
+            >
+              📅 В календарь
+            </button>
+          )}
           <button type="submit" className="cal-btn cal-btn--primary">
             {isNew ? 'Создать' : 'Сохранить'}
           </button>

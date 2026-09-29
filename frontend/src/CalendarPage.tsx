@@ -46,6 +46,14 @@ import TaskDialog from './TaskDialog';
 import SessionPopover from './SessionPopover';
 import { sequenceGradientColors, sequenceGradientForTasks } from './sequenceGradients';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
+import {
+  TOUCH_HOLD_MS,
+  edgeScrollStep,
+  isTouchPointer,
+  landsOnFling,
+  touchWandered,
+} from './touchGesture';
+import { isPhoneScreen } from './viewport';
 
 export type CalView = 'day' | '3day' | 'week' | 'month';
 
@@ -118,14 +126,20 @@ const GAP_MENU_MARGIN = 12;
 function gapMenuStyle(anchor: DialogAnchor): React.CSSProperties {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const left = Math.min(anchor.x, vw - GAP_MENU_WIDTH - GAP_MENU_MARGIN);
+  const width = Math.min(GAP_MENU_WIDTH, vw - 2 * GAP_MENU_MARGIN);
+  const left = Math.min(anchor.x, vw - width - GAP_MENU_MARGIN);
   const top = Math.min(anchor.y, vh - GAP_MENU_MARGIN);
-  return { position: 'fixed', left: Math.max(GAP_MENU_MARGIN, left), top, width: GAP_MENU_WIDTH };
+  return { position: 'fixed', left: Math.max(GAP_MENU_MARGIN, left), top, width };
 }
 
 // ── drag gestures ──────────────────────────────────────────────────
 
-type Gesture =
+// A finger press that has not taken hold yet (see touchGesture.ts): where it
+// landed, which finger it is, and whether it has been held long enough to drag.
+// Mouse presses carry no `touch` at all.
+type TouchHold = { pointerId: number; x: number; y: number; armed: boolean };
+
+type Gesture = (
   // A press on empty canvas, still undecided: drawn away from where it started
   // it becomes a new block, held on the spot for HOLD_MS it becomes the lasso
   // below instead.
@@ -185,7 +199,8 @@ type Gesture =
     }
   // Dragging a selection by one of its blocks: all of them move by the same
   // delta, so the shape of the batch is kept.
-  | { kind: 'multi'; tasks: Task[]; anchorMs: number; deltaMs: number; moved: boolean };
+  | { kind: 'multi'; tasks: Task[]; anchorMs: number; deltaMs: number; moved: boolean }
+) & { touch?: TouchHold };
 
 function CalendarPage({
   store,
@@ -198,12 +213,16 @@ function CalendarPage({
 }: CalendarPageProps) {
   const [view, setView] = useState<CalView>(() => {
     const saved = localStorage.getItem('speedrun_cal_view');
-    return saved === 'day' || saved === '3day' || saved === 'month' ? saved : 'week';
+    if (saved === 'day' || saved === '3day' || saved === 'week' || saved === 'month') return saved;
+    // A phone starts on one day: seven columns there are too narrow to read.
+    return isPhoneScreen() ? 'day' : 'week';
   });
   const [anchor, setAnchor] = useState<string>(() => todayKey());
-  const [backlogVisible, setBacklogVisible] = useState(
-    () => localStorage.getItem('speedrun_backlog_visible') !== 'false'
-  );
+  const [backlogVisible, setBacklogVisible] = useState(() => {
+    const saved = localStorage.getItem('speedrun_backlog_visible');
+    // Folded away on a phone until asked for, so the grid keeps the screen.
+    return saved === null ? !isPhoneScreen() : saved !== 'false';
+  });
   const [backlogTab, setBacklogTab] = useState<'tasks' | 'templates'>('tasks');
   const [templates, setTemplates] = useState<TaskTemplate[] | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
@@ -323,6 +342,32 @@ function CalendarPage({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Touch: when the grid last scrolled (a finger landing on a gliding grid only
+  // stops it — see landsOnFling), and where the dragging pointer last was, so
+  // the edge auto-scroll can replay it after each step.
+  const lastScrollAt = useRef(-Infinity);
+  const lastPointer = useRef<{ x: number; y: number; id: number; type: string } | null>(null);
+
+  // A finger held on a block drags it, so from then on the grid must not
+  // scroll under it. The listener is non-passive and always there, which is
+  // what lets the browser hold every touch on the grid for it to cancel.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      lastScrollAt.current = performance.now();
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (gestureRef.current?.touch?.armed && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [view]);
 
   // Hover cards are anchored to snapshots of screen geometry — once the grid
   // scrolls those rectangles are stale, so just close both cards.
@@ -830,8 +875,47 @@ function CalendarPage({
 
   const setGestureState = useCallback((next: Gesture | null) => {
     gestureRef.current = next;
+    if (!next) lastPointer.current = null;
     setGesture(next);
   }, []);
+
+  // A finger press on the grid, not yet holding anything: it becomes a real
+  // drag once held still for TOUCH_HOLD_MS (see touchGesture.ts). Returns
+  // what the gesture should carry, or null for a finger that only landed to
+  // stop the grid gliding — that press is ignored altogether.
+  const holdTouch = useCallback(
+    (e: React.PointerEvent): TouchHold | null => {
+      cancelHold();
+      if (landsOnFling(lastScrollAt.current, performance.now())) return null;
+      // The drag redraws the block it holds elsewhere, which detaches the
+      // element the finger landed on — and the browser keeps sending that
+      // finger's touchmoves to it. So the no-scroll guard goes on the element
+      // itself as well as on the grid.
+      const target = e.target;
+      if (target instanceof Element) {
+        const onTouchMove = (ev: Event) => {
+          if (gestureRef.current?.touch?.armed && ev.cancelable) ev.preventDefault();
+        };
+        const release = () => {
+          target.removeEventListener('touchmove', onTouchMove);
+          target.removeEventListener('touchend', release);
+          target.removeEventListener('touchcancel', release);
+        };
+        target.addEventListener('touchmove', onTouchMove, { passive: false });
+        target.addEventListener('touchend', release);
+        target.addEventListener('touchcancel', release);
+      }
+      holdTimer.current = window.setTimeout(() => {
+        holdTimer.current = null;
+        const g = gestureRef.current;
+        if (!g?.touch || g.touch.armed) return;
+        navigator.vibrate?.(10);
+        setGestureState({ ...g, touch: { ...g.touch, armed: true } });
+      }, TOUCH_HOLD_MS);
+      return { pointerId: e.pointerId, x: e.clientX, y: e.clientY, armed: false };
+    },
+    [setGestureState, cancelHold]
+  );
 
   // One window-level pointer session drives create / move / resize, so the
   // gesture keeps working when the pointer leaves the block it started on.
@@ -839,6 +923,19 @@ function CalendarPage({
     const onMove = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
+      if (g.touch) {
+        // Another finger (a pinch) is not this press.
+        if (e.pointerId !== g.touch.pointerId) return;
+        if (!g.touch.armed) {
+          // Moving before the hold took: the finger is scrolling the grid.
+          if (touchWandered(g.touch.x, g.touch.y, e.clientX, e.clientY)) {
+            cancelHold();
+            setGestureState(null);
+          }
+          return;
+        }
+      }
+      lastPointer.current = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType };
       if (g.kind === 'create') {
         // Still within a few pixels of where it landed: the press is holding,
         // not drawing — leave the draft at its default size and let the hold
@@ -929,8 +1026,12 @@ function CalendarPage({
     const onUp = (e: PointerEvent) => {
       const g = gestureRef.current;
       if (!g) return;
+      if (g.touch && e.pointerId !== g.touch.pointerId) return;
       cancelHold();
       setGestureState(null);
+      // A finger let go before the hold took is a tap: it falls through to the
+      // same not-moved branches a click takes — open the block or the session,
+      // or draft a new block where it landed.
       if (g.kind === 'create') {
         // A plain click on the canvas while a batch is selected drops the
         // selection rather than dropping a new block on top of it. Held with
@@ -989,13 +1090,23 @@ function CalendarPage({
       }
     };
 
+    // The browser took the pointer over — a finger that started scrolling or
+    // pinching, or the system interrupting — so nothing is committed.
+    const onCancel = (e: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g) return;
+      if (g.touch && e.pointerId !== g.touch.pointerId) return;
+      cancelHold();
+      setGestureState(null);
+    };
+
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
   }, [
     slotAt,
@@ -1035,11 +1146,32 @@ function CalendarPage({
   // than drawing a new one. Shift adds to what is already selected. With Ctrl
   // (⌘) there is no second to wait: the press is a lasso straight away, adding
   // to the batch.
+  //
+  // A finger has no lasso: a tap drafts a block where it landed, and held
+  // still first it draws one — dragged up or down from there, like a mouse.
   const startCreate = useCallback(
     (e: React.PointerEvent, day: string) => {
       if (e.button !== 0) return;
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
+      if (isTouchPointer(e.pointerType)) {
+        const touch = holdTouch(e);
+        if (!touch) return;
+        const anchorMin = snap(slot.min);
+        setGestureState({
+          kind: 'create',
+          day,
+          anchorMin,
+          startMin: anchorMin,
+          endMin: anchorMin + DEFAULT_LENGTH_MIN,
+          anchorX: e.clientX,
+          anchorY: e.clientY,
+          moved: false,
+          additive: false,
+          touch,
+        });
+        return;
+      }
       e.preventDefault();
       cancelHold();
       if (e.ctrlKey || e.metaKey) {
@@ -1068,7 +1200,7 @@ function CalendarPage({
         armLasso(slot, baseIds);
       }, HOLD_MS);
     },
-    [slotAt, setGestureState, setSelection, cancelHold, armLasso]
+    [slotAt, setGestureState, setSelection, cancelHold, armLasso, holdTouch]
   );
 
   const startMove = useCallback(
@@ -1078,12 +1210,19 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
+      // A finger takes hold of the block only once held still — see holdTouch.
+      let touch: TouchHold | undefined;
+      if (isTouchPointer(e.pointerType)) {
+        const held = holdTouch(e);
+        if (!held) return;
+        touch = held;
+      }
       // Ctrl (⌘) means "compose the batch": nothing is dragged and no editor
       // opens. Let go on the spot, it picks this one block — adds it, or drops
       // it back out if it was already in; dragged off, it sweeps a lasso from
       // here that adds every block it touches, without the hold the bare canvas
       // needs.
-      if (e.ctrlKey || e.metaKey) {
+      if (!touch && (e.ctrlKey || e.metaKey)) {
         armLasso(slot, [...selectedRef.current], { taskId: task.id, x: e.clientX, y: e.clientY });
         return;
       }
@@ -1096,6 +1235,7 @@ function CalendarPage({
           anchorMs: dayStartMs(slot.day) + slot.min * MIN_MS,
           deltaMs: 0,
           moved: false,
+          touch,
         });
         return;
       }
@@ -1108,9 +1248,10 @@ function CalendarPage({
         startMin: task.start ?? 0,
         moved: false,
         toBacklog: false,
+        touch,
       });
     },
-    [slotAt, setGestureState, setSelection, store, armLasso]
+    [slotAt, setGestureState, setSelection, store, armLasso, holdTouch]
   );
 
   const startChainDrag = useCallback(
@@ -1120,15 +1261,22 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
+      let touch: TouchHold | undefined;
+      if (isTouchPointer(e.pointerType)) {
+        const held = holdTouch(e);
+        if (!held) return;
+        touch = held;
+      }
       setGestureState({
         kind: 'chain',
         chain,
         anchorMs: dayStartMs(slot.day) + slot.min * MIN_MS,
         deltaMs: 0,
         moved: false,
+        touch,
       });
     },
-    [slotAt, setGestureState]
+    [slotAt, setGestureState, holdTouch]
   );
 
   const startResize = useCallback(
@@ -1297,6 +1445,52 @@ function CalendarPage({
 
   // ── grid ─────────────────────────────────────────────────────────
 
+  // A finger that has not taken hold yet is still just a tap or a scroll, so
+  // the grid is drawn as if nothing were being dragged.
+  const liveGesture = gesture?.touch && !gesture.touch.armed ? null : gesture;
+
+  // Whether something is being carried across the grid right now — what the
+  // edge auto-scroll below waits for.
+  const carrying =
+    liveGesture !== null &&
+    (liveGesture.kind === 'resize' ||
+      liveGesture.kind === 'resize-start' ||
+      (liveGesture.kind === 'lasso' && !liveGesture.pending) ||
+      ((liveGesture.kind === 'create' ||
+        liveGesture.kind === 'move' ||
+        liveGesture.kind === 'chain' ||
+        liveGesture.kind === 'multi') &&
+        (liveGesture.moved || Boolean(liveGesture.touch))));
+
+  // Carried up to the top or bottom edge, the grid scrolls on by itself, so a
+  // block can be taken to an hour that is off screen — on a phone that is most
+  // of the day. After each step the pointer's last position is replayed, so
+  // what is carried follows the content that scrolled under it.
+  useEffect(() => {
+    if (!carrying) return;
+    let frame = requestAnimationFrame(function step() {
+      frame = requestAnimationFrame(step);
+      const el = scrollerRef.current;
+      const p = lastPointer.current;
+      if (!el || !p) return;
+      const rect = el.getBoundingClientRect();
+      const dy = edgeScrollStep(p.y, rect.top, rect.bottom);
+      if (dy === 0) return;
+      const before = el.scrollTop;
+      el.scrollTop += dy;
+      if (el.scrollTop === before) return;
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          clientX: p.x,
+          clientY: p.y,
+          pointerId: p.id,
+          pointerType: p.type,
+        })
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [carrying]);
+
   const renderGrid = () => {
     const g = gesture;
     return (
@@ -1429,7 +1623,7 @@ function CalendarPage({
     const dayFrom = dayStartMs(day);
     const dayTo = dayFrom + DAY_MIN * MIN_MS;
     const isToday = day === today;
-    const g = gesture;
+    const g = liveGesture;
     const dragChain = g?.kind === 'chain' ? g : null;
     const dragMulti = g?.kind === 'multi' ? g : null;
 
@@ -1549,8 +1743,12 @@ function CalendarPage({
         key={day}
         className={`cal-col${isToday ? ' today' : ''}`}
         data-day={day}
-        onMouseEnter={(e) => showDayReminders(day, e.currentTarget)}
-        onMouseLeave={() => hideDayReminders(day)}
+        // Hover cards are for a mouse: a tap fires enter events too, and would
+        // leave a card standing over the editor it opens.
+        onPointerEnter={(e) => {
+          if (e.pointerType === 'mouse') showDayReminders(day, e.currentTarget);
+        }}
+        onPointerLeave={() => hideDayReminders(day)}
         onPointerDown={(e) => {
           // Right-drag selects a time band to zoom into, regardless of what's
           // underneath — left-click still ignores existing blocks/chains.
@@ -1692,8 +1890,12 @@ function CalendarPage({
                 ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
-              onMouseEnter={(e) => setHoverCard({ task, rect: e.currentTarget.getBoundingClientRect() })}
-              onMouseLeave={() => setHoverCard((c) => (c?.task.id === task.id ? null : c))}
+              onPointerEnter={(e) => {
+                if (e.pointerType === 'mouse') {
+                  setHoverCard({ task, rect: e.currentTarget.getBoundingClientRect() });
+                }
+              }}
+              onPointerLeave={() => setHoverCard((c) => (c?.task.id === task.id ? null : c))}
             >
               <div className="cal-block-head">
                 <span className="cal-block-emoji">{task.emoji}</span>
@@ -1807,7 +2009,7 @@ function CalendarPage({
           </div>
         )}
 
-        {gapSlot && gapSlot.day === day && !gesture && (
+        {gapSlot && gapSlot.day === day && !liveGesture && (
           <button
             type="button"
             className="cal-block cal-gap-slot"
@@ -2286,9 +2488,12 @@ function CalendarPage({
           type="button"
           className="cal-btn cal-backlog-toggle"
           aria-pressed={backlogVisible}
+          aria-label={backlogVisible ? 'Скрыть бэклог' : 'Показать бэклог'}
           onClick={() => setBacklogVisible((visible) => !visible)}
         >
-          🗂 {backlogVisible ? 'Скрыть бэклог' : 'Показать бэклог'}
+          🗂<span className="cal-backlog-toggle-label">
+            {backlogVisible ? 'Скрыть бэклог' : 'Показать бэклог'}
+          </span>
         </button>
       </div>
 
@@ -2339,10 +2544,10 @@ function CalendarPage({
                     key={day}
                     type="button"
                     className={`cal-day-head${day === today ? ' today' : ''}`}
-                    onMouseEnter={(e) =>
-                      showDayReminders(day, e.currentTarget)
-                    }
-                    onMouseLeave={() => hideDayReminders(day)}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType === 'mouse') showDayReminders(day, e.currentTarget);
+                    }}
+                    onPointerLeave={() => hideDayReminders(day)}
                     onClick={() => {
                       setAnchor(day);
                       setView('day');
@@ -2386,11 +2591,15 @@ function CalendarPage({
             <button type="button" role="tab" aria-selected={backlogTab === 'templates'} className={backlogTab === 'templates' ? 'active' : ''} onClick={() => setBacklogTab('templates')}>Шаблоны</button>
           </div>
           {backlogTab === 'tasks' ? <>
-            <p className="cal-backlog-hint">
+            <p className="cal-backlog-hint cal-backlog-hint--mouse">
               Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
               Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
               С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
               Ctrl + клик по блоку — добавить его в пачку или убрать
+            </p>
+            <p className="cal-backlog-hint cal-backlog-hint--touch">
+              Нажми на карточку и выбери «В календарь», чтобы поставить время. Удерживай блок на
+              сетке, чтобы перетащить его — в том числе сюда, обратно в бэклог.
             </p>
             <div className="cal-backlog-list" role="tabpanel">
               {openTasks.map((task) => (
@@ -2520,7 +2729,7 @@ function CalendarPage({
 
       {/* The second held on the spot before the lasso arms, drawn under the
           cursor: the ring closes exactly when the selection takes over. */}
-      {gesture?.kind === 'create' && !gesture.moved && (
+      {gesture?.kind === 'create' && !gesture.moved && !gesture.touch && (
         <div
           className="cal-hold-cue"
           style={{ left: gesture.anchorX, top: gesture.anchorY }}

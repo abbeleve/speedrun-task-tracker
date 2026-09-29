@@ -129,6 +129,10 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
     localStorage.setItem('speedrun_theme', darkMode ? 'dark' : 'light');
+    // The phone's status bar takes the header's colour (--bg-secondary).
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', darkMode ? '#131314' : '#ffffff');
   }, [darkMode]);
 
   useEffect(() => {
@@ -454,13 +458,17 @@ function App() {
       }
     };
 
+    // The browser took the pointer over (a finger that turned into a scroll):
+    // whatever the drag had got to is dropped, not committed.
+    const onCancel = () => setGestureState(null);
+
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
   }, [taskLayout, runTasks, store, setGestureState]);
 
@@ -542,7 +550,8 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>
-          <span className="icon">⏱</span> SpeedRun Tasks
+          <span className="icon">⏱</span>
+          <span className="header-title">SpeedRun Tasks</span>
         </h1>
         <button
           className="theme-toggle"
@@ -556,8 +565,9 @@ function App() {
           className="btn btn-logout"
           onClick={() => void logout()}
           title={`Выйти (${user ?? ''})`}
+          aria-label="Выйти"
         >
-          🚪 Выйти
+          🚪<span className="btn-logout-label">Выйти</span>
         </button>
 
         {page === 'tracker' && (

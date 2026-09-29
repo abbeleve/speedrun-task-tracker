@@ -84,10 +84,12 @@ function SessionPopover({
   }, [gradient]);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  // Never wider than a small phone leaves room for.
+  const width = Math.min(POP_WIDTH, vw - 2 * POP_MARGIN);
   const left =
-    anchor.x + POP_MARGIN + POP_WIDTH <= vw - POP_MARGIN
+    anchor.x + POP_MARGIN + width <= vw - POP_MARGIN
       ? anchor.x + POP_MARGIN
-      : Math.max(POP_MARGIN, anchor.x - POP_MARGIN - POP_WIDTH);
+      : Math.max(POP_MARGIN, anchor.x - POP_MARGIN - width);
   const top = Math.max(POP_MARGIN, Math.min(anchor.y - 30, vh - 480));
 
   const plannedSec = chain.tasks.reduce((sum, t) => sum + Math.max(0, t.plannedTime), 0);
@@ -105,7 +107,7 @@ function SessionPopover({
         style={{
           left,
           top,
-          width: POP_WIDTH,
+          width,
           '--sequence-gradient': gradient,
           '--sequence-accent': sequenceAccent,
         } as React.CSSProperties}

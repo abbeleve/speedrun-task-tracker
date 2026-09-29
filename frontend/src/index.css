@@ -15,15 +15,50 @@
   color-scheme: light;
 }
 
+html {
+  /* Phones: no grey flash over every tapped control, no font inflation in
+     landscape, and no pull-to-refresh or page bounce behind the app's own
+     scroll areas (the calendar grid, the dashboard). Vertical only, so a
+     sideways swipe still goes back. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+/* The app is a fixed-height shell whose panes scroll on their own. 100vh is
+   kept as the fallback; 100dvh follows the phone's browser bars as they show
+   and hide, so nothing sits underneath them. */
 body {
   margin: 0;
   height: 100vh !important;
+  height: 100dvh !important;
   overflow: hidden !important;
   background: var(--bg-page, var(--bg-primary, #1a1a2e));
 }
 
 #root {
   height: 100vh !important;
+  height: 100dvh !important;
   overflow: hidden !important;
   background: var(--bg-page, var(--bg-primary, #1a1a2e));
+}
+
+/* iOS Safari zooms into any field whose text is under 16px and never zooms
+   back out. Touch screens get 16px fields instead of a zoomed page. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Controls are tapped, not read: a long press must not select their label,
+   and a tap must not wait to see whether it is a double-tap zoom. */
+button,
+[role='button'] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }

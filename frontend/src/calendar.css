@@ -49,10 +49,14 @@
   transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.12s;
 }
 
-.cal-btn:hover {
-  background: var(--bg-surface);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+/* Hover lifts only where there is a real hover: a tap would otherwise leave
+   the button lifted until the next tap somewhere else. */
+@media (hover: hover) and (pointer: fine) {
+  .cal-btn:hover {
+    background: var(--bg-surface);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  }
 }
 
 .cal-btn:active {
@@ -286,6 +290,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   position: relative;
 }
 
@@ -395,13 +400,17 @@
   cursor: grab;
   opacity: 0.75;
   transition: opacity 0.15s, width 0.15s;
-  touch-action: none;
+  /* A finger may scroll the grid across the spine; it only takes hold after
+     a long press (see touchGesture.ts). A mouse is not affected. */
+  touch-action: manipulation;
   z-index: 3;
 }
 
-.cal-chain:hover {
-  opacity: 1;
-  width: 8px;
+@media (hover: hover) and (pointer: fine) {
+  .cal-chain:hover {
+    opacity: 1;
+    width: 8px;
+  }
 }
 
 .cal-chain.locked,
@@ -491,15 +500,17 @@
   background: var(--task-color, #3498db);
   cursor: grab;
   opacity: 0.85;
-  touch-action: none;
+  touch-action: manipulation;
   user-select: none;
   z-index: 5;
   transition: opacity 0.15s, width 0.15s;
 }
 
-.cal-reminder:hover {
-  opacity: 1;
-  width: 13px;
+@media (hover: hover) and (pointer: fine) {
+  .cal-reminder:hover {
+    opacity: 1;
+    width: 13px;
+  }
 }
 
 .cal-reminder.dragging {
@@ -539,17 +550,22 @@
   overflow: hidden;
   cursor: grab;
   user-select: none;
-  touch-action: none;
+  /* A finger scrolls the grid across a block; held still it picks the block
+     up (see touchGesture.ts). A mouse is not affected. */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
   z-index: 2;
   transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
 }
 
 /* Nudges the block forward on hover — paired with the .cal-hover-card
    popup, which appears the instant the pointer lands. */
-.cal-block:hover {
-  transform: scale(1.035);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-  z-index: 3;
+@media (hover: hover) and (pointer: fine) {
+  .cal-block:hover {
+    transform: scale(1.035);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    z-index: 3;
+  }
 }
 
 .cal-block.active {
@@ -777,9 +793,11 @@
   transition: transform 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.cal-block-check:hover {
-  border-color: rgba(0, 0, 0, 0.65);
-  transform: scale(1.15);
+@media (hover: hover) and (pointer: fine) {
+  .cal-block-check:hover {
+    border-color: rgba(0, 0, 0, 0.65);
+    transform: scale(1.15);
+  }
 }
 
 .cal-block.done .cal-block-check {
@@ -2141,14 +2159,16 @@
   background: var(--bg-secondary);
 }
 
-@media (max-width: 860px) {
+/* Narrow and tall (a phone or tablet held upright): the backlog moves under
+   the grid. A phone on its side is too short for that and keeps it beside. */
+@media (max-width: 860px) and (min-height: 501px) {
   .cal-body {
     flex-direction: column;
   }
 
   .cal-backlog {
     width: auto;
-    max-height: 190px;
+    max-height: min(240px, 38dvh);
   }
 }
 
@@ -2441,4 +2461,206 @@
   border-radius: 4px;
   padding: 1px 4px;
   font-weight: 600;
+}
+
+/* ── phones and tablets ──────────────────────────────────────────── */
+
+/* The backlog explains itself in mouse terms; a touch screen gets its own
+   version (tap a card, hold a block). */
+.cal-backlog-hint--touch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .cal-backlog-hint--mouse {
+    display: none;
+  }
+
+  .cal-backlog-hint--touch {
+    display: block;
+  }
+}
+
+@media (pointer: coarse) {
+  /* A long press on the grid picks up a block or draws a new one — it must
+     not select text or pop the system callout instead. */
+  .cal-grid {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    /* Two quick taps are two taps (two drafts at most), never a zoom. */
+    touch-action: manipulation;
+  }
+
+  /* Edges this thin cannot be hit with a finger, only brushed while
+     scrolling; start and length are set in the editor instead. */
+  .cal-block-resize {
+    display: none;
+  }
+
+  /* The ✓ bullet stays small but answers a fingertip around it. */
+  .cal-block-check {
+    position: relative;
+    width: 16px;
+    height: 16px;
+  }
+
+  .cal-block-check::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+}
+
+/* Below the width of a laptop the page no longer has a gutter of its own;
+   keep the panels off the screen edge. */
+@media (max-width: 1024px) {
+  .cal-page {
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .cal-page {
+    gap: 8px;
+    padding-top: 8px;
+  }
+
+  /* Row one: today, ‹ ›, the date. Row two: the views and the backlog. */
+  .cal-toolbar {
+    gap: 8px;
+  }
+
+  .cal-nav {
+    flex: 1 1 100%;
+  }
+
+  .cal-title {
+    font-size: 0.95rem;
+  }
+
+  .cal-seg--views {
+    flex: 1;
+  }
+
+  .cal-seg--views button {
+    flex: 1;
+    padding: 7px 4px;
+  }
+
+  .cal-backlog-toggle-label {
+    display: none;
+  }
+
+  .cal-btn,
+  .cal-seg button {
+    min-height: 36px;
+  }
+
+  /* The overtake read-out as one short strip. */
+  .cal-hud {
+    gap: 10px;
+    padding: 6px 10px;
+  }
+
+  .cal-hud-label {
+    font-size: 0.6rem;
+  }
+
+  .cal-hud-value {
+    font-size: 1.25rem;
+  }
+
+  .cal-hud-week {
+    padding-left: 10px;
+  }
+
+  .cal-hud-week-value {
+    font-size: 0.95rem;
+  }
+
+  .cal-hud-lines {
+    flex: 1;
+  }
+
+  .cal-hud-state,
+  .cal-hud-sub {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cal-hud-state {
+    font-size: 0.8rem;
+  }
+
+  .cal-hud-sub {
+    font-size: 0.7rem;
+  }
+
+  /* The editor as a sheet that fits the phone instead of a floating card. */
+  .cal-modal-backdrop {
+    padding: 8px;
+  }
+
+  .cal-modal {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  /* The actions stay pinned to the bottom of a long form and share the row
+     between them instead of running off the right edge. */
+  .cal-modal-foot {
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: -12px;
+    margin: 0 -12px -12px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    z-index: 1;
+  }
+
+  .cal-modal-foot .cal-btn {
+    flex: 1 1 auto;
+  }
+
+  .cal-modal-spacer {
+    display: none;
+  }
+}
+
+/* A phone on its side: every row above the grid is squeezed to one line, and
+   should the grid still get too little, the page scrolls to give it room. */
+@media (max-height: 500px) {
+  .cal-page {
+    gap: 6px;
+    padding-top: 6px;
+    overflow-y: auto;
+  }
+
+  .cal-body {
+    min-height: 260px;
+  }
+
+  .cal-backlog {
+    width: 210px;
+  }
+
+  .cal-hud {
+    padding: 4px 10px;
+    gap: 12px;
+  }
+
+  .cal-hud-value {
+    font-size: 1.15rem;
+  }
+
+  .cal-hud-sub {
+    display: none;
+  }
+
+  .cal-day-head {
+    padding: 3px 4px;
+  }
 }
