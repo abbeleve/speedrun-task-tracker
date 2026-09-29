@@ -37,9 +37,6 @@
      ease-in-out for things travelling across the screen. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  /* Ink for text sitting on a full task colour — every palette colour is
-     mid-to-light, so dark ink reads on all of them in both themes. */
-  --ink-on-color: #121316;
   /* Segmented controls: a recessed track and the raised pill inside it. */
   --track-bg: rgba(255, 255, 255, 0.05);
   --surface-raised: #2b2d31;

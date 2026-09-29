@@ -542,32 +542,14 @@
 
 /* ── blocks ──────────────────────────────────────────────────── */
 
-/* A block is its task colour seen through a veil of the grid's own surface,
-   and how much colour shows says where the block stands in time: upcoming
-   blocks are a soft tint with a solid edge in their colour, the block being
-   worked on right now is the full colour, and closed blocks sink back almost
-   to the surface. The veil is a layer over the colour rather than a
-   colour-mix, so an animated gradient shows through it exactly like a flat
-   colour does. Registered so the step from one state to the next fades. */
-@property --block-veil {
-  syntax: '<percentage>';
-  inherits: false;
-  initial-value: 78%;
-}
-
 .cal-block {
-  --block-veil: 78%;
-  --veil: color-mix(in srgb, var(--bg-secondary) var(--block-veil), transparent);
-  --block-edge: inset 3px 0 0 var(--task-color, #3498db);
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: 6px;
-  background-color: var(--task-color, #3498db);
-  background-image: linear-gradient(var(--veil), var(--veil));
-  box-shadow: var(--block-edge);
+  border-radius: 5px;
+  background: var(--task-color, #3498db);
   color: var(--text-primary);
-  padding: 2px 5px 2px 8px;
+  padding: 2px 5px;
   overflow: hidden;
   cursor: grab;
   user-select: none;
@@ -576,39 +558,28 @@
   touch-action: manipulation;
   -webkit-touch-callout: none;
   z-index: 2;
-  transition: --block-veil 300ms ease, box-shadow 150ms ease, color 300ms ease;
+  transition: box-shadow 150ms ease;
 }
 
-[data-theme="light"] .cal-block {
-  --block-veil: 80%;
-}
-
-/* Hover answers with an outline and a little depth, never with scale: a
-   block is passed over dozens of times a day, and scaling it blurs its text
-   and pushes it out of its column. */
+/* Hover answers with a little depth, never with scale: a block is passed
+   over dozens of times a day, and scaling it blurs its text and pushes it
+   out of its column. */
 @media (hover: hover) and (pointer: fine) {
   .cal-block:hover {
-    box-shadow:
-      var(--block-edge),
-      0 0 0 1px color-mix(in srgb, var(--task-color, #3498db) 55%, transparent),
-      0 4px 12px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
     z-index: 3;
   }
 }
 
-/* The block the clock is in: full colour, dark ink, lifted off the grid. */
-.cal-block.active,
-[data-theme="light"] .cal-block.active {
-  --block-veil: 0%;
-  color: var(--ink-on-color);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--task-color, #3498db) 35%, transparent);
+.cal-block.active {
+  box-shadow: 0 0 0 2px var(--task-color, #3498db), var(--shadow);
   z-index: 4;
 }
 
-/* What of it is already behind the clock is shaded down to a red line at
-   the current minute. The shade sits under the text (z-index -1 inside the
-   block's own stacking context), so the grid's now line can stay beneath
-   the blocks instead of striking through their names. */
+/* What of the block the clock is in is already behind it is shaded down to
+   a red line at the current minute. The shade sits under the text (z-index
+   -1 inside the block's own stacking context), so the grid's now line can
+   stay beneath the blocks instead of striking through their names. */
 .cal-block.active::after {
   content: '';
   position: absolute;
@@ -623,17 +594,20 @@
   border-bottom: 2px solid var(--accent-red);
 }
 
-/* Closed: the colour all but gone, the text quiet, the bullet (below) now
-   the one solid mark of the task's colour. */
-.cal-block.done,
-[data-theme="light"] .cal-block.done {
-  --block-veil: 90%;
-  --block-edge: inset 3px 0 0 color-mix(in srgb, var(--task-color, #3498db) 55%, transparent);
-  color: var(--text-secondary);
+/* Faded via background + text alpha rather than the `opacity` property —
+   `opacity` on .cal-block would dim the bullet along with everything else,
+   and a dimmed bullet is exactly what got lost against a same-hue task
+   colour earlier. This keeps the bullet at full strength no matter how
+   translucent the rest of the card gets. */
+.cal-block.done {
+  background: color-mix(in srgb, var(--task-color, #3498db) 45%, var(--bg-secondary));
+  transition: background 0.3s ease;
 }
 
-.cal-block.done .cal-block-emoji {
-  opacity: 0.6;
+.cal-block.done .cal-block-emoji,
+.cal-block.done .cal-block-name,
+.cal-block.done .cal-block-meta {
+  opacity: 0.65;
 }
 
 /* The one-shot "just completed" flourish: the block grows in step with a
@@ -736,16 +710,14 @@
   to { height: 100%; }
 }
 
-/* Rest is hatched, drawn in the text colour so it shows in both themes. */
 .cal-block.rest {
-  --hatch: color-mix(in srgb, var(--text-primary) 9%, transparent);
-  background-image:
-    repeating-linear-gradient(45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 10px),
-    linear-gradient(var(--veil), var(--veil));
-}
-
-.cal-block.rest.active {
-  --hatch: rgba(0, 0, 0, 0.08);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.06) 5px,
+    rgba(255, 255, 255, 0.06) 10px
+  );
 }
 
 /* Picked up: the block rises off the grid rather than fading into it. */
@@ -754,7 +726,7 @@
   cursor: grabbing;
   pointer-events: none;
   z-index: 6;
-  box-shadow: var(--block-edge), 0 12px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
 }
 
 /* The block the editor is describing: it stays on the grid next to the popover
@@ -769,7 +741,6 @@
 .cal-block.draft {
   border: 1px dashed var(--accent-blue);
   background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-secondary));
-  box-shadow: none;
   pointer-events: none;
 }
 
@@ -833,27 +804,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  color: var(--bg-secondary);
 }
 
-/* The completion control: an empty ring in the task's colour that fills
-   with that colour, and a tick, once the task is closed. On the full-colour
-   active block the ring turns dark so it still reads. */
+/* The completion control: an empty bullet that fills solid black once the
+   task is done. Black (rather than one keyed to --task-color) is what keeps
+   it legible against every block colour in the palette — none of them are
+   dark, so a black dot always reads as a distinct mark rather than blending
+   into the background. */
 .cal-block-check {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   padding: 0;
   border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--task-color, #3498db) 70%, var(--text-primary));
-  background-color: transparent;
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.25);
   cursor: pointer;
-  transition: transform 150ms var(--ease-out), border-color 150ms ease, background-color 150ms ease;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, background 150ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .cal-block-check:hover {
-    background-color: color-mix(in srgb, var(--task-color, #3498db) 25%, transparent);
-    transform: scale(1.12);
+    border-color: rgba(0, 0, 0, 0.65);
+    transform: scale(1.15);
   }
 }
 
@@ -861,18 +835,11 @@
   transform: scale(0.9);
 }
 
-.cal-block.active .cal-block-check {
-  border-color: rgba(0, 0, 0, 0.5);
-  background-color: rgba(255, 255, 255, 0.3);
-}
-
 .cal-block.done .cal-block-check {
-  border-color: var(--task-color, #3498db);
-  background-color: var(--task-color, #3498db);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.8 6.3 5 8.4l4.2-4.8' fill='none' stroke='%23121316' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-position: center;
-  background-size: 10px;
-  background-repeat: no-repeat;
+  border-color: rgba(0, 0, 0, 0.55);
+  /* Completion keeps the task's identity: lighten its own colour enough that
+     the filled bullet still separates from the card behind it. */
+  background: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
 }
 
 .cal-block-pin {
@@ -887,16 +854,8 @@
   justify-content: space-between;
   gap: 6px;
   font-size: 0.68rem;
-  color: var(--text-secondary);
+  color: var(--bg-secondary);
   font-variant-numeric: tabular-nums;
-}
-
-.cal-block.active .cal-block-meta {
-  color: color-mix(in srgb, var(--ink-on-color) 75%, transparent);
-}
-
-.cal-block.done .cal-block-meta {
-  color: var(--text-dim);
 }
 
 .cal-block-meta > span {
@@ -1270,28 +1229,14 @@
   overflow: hidden;
 }
 
-/* Month chips and backlog cards are tinted like the grid's upcoming blocks:
-   the task colour under a veil of the surface, with a solid edge. */
-.cal-chip,
-.cal-backlog-card {
-  --veil: color-mix(in srgb, var(--bg-secondary) 78%, transparent);
-  background-color: var(--task-color, #3498db);
-  background-image: linear-gradient(var(--veil), var(--veil));
-}
-
-[data-theme="light"] .cal-chip,
-[data-theme="light"] .cal-backlog-card {
-  --veil: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
-}
-
 .cal-chip {
   display: flex;
   align-items: center;
   gap: 4px;
+  background: var(--task-color, #3498db);
   border: none;
-  border-radius: 4px;
-  box-shadow: inset 2px 0 0 var(--task-color, #3498db);
-  padding: 1px 4px 1px 6px;
+  border-radius: 3px;
+  padding: 1px 4px;
   font-size: 0.68rem;
   color: var(--text-primary);
   cursor: pointer;
@@ -1300,12 +1245,7 @@
 }
 
 .cal-chip.done {
-  --veil: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
   text-decoration: line-through;
-}
-
-.cal-chip.done .cal-chip-name {
-  color: var(--text-secondary);
 }
 
 .cal-chip-time {
@@ -1320,7 +1260,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--bg-secondary);
+}
+
+/* In the light theme the task names stay dark/readable over the colored blocks. */
+[data-theme="light"] .cal-block-name,
+[data-theme="light"] .cal-chip-name {
   color: var(--text-primary);
+}
+
+[data-theme="light"] .cal-block-meta {
+  color: var(--text-secondary);
 }
 
 .cal-cell-more {
@@ -1401,22 +1351,13 @@
 .cal-backlog-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 6px 6px 9px;
-  border-radius: 6px;
-  box-shadow: inset 3px 0 0 var(--task-color, #3498db);
+  gap: 5px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: var(--task-color, #3498db);
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   cursor: grab;
-  transition: box-shadow 150ms ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .cal-backlog-card:hover {
-    box-shadow:
-      inset 3px 0 0 var(--task-color, #3498db),
-      inset 0 0 0 1px color-mix(in srgb, var(--task-color, #3498db) 55%, transparent);
-  }
 }
 
 .cal-backlog-card:active {
@@ -1425,16 +1366,14 @@
 
 .cal-backlog-card.pinned {
   cursor: pointer;
-  box-shadow:
-    inset 3px 0 0 var(--task-color, #3498db),
-    inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 45%, transparent);
 }
 
 .cal-backlog-save-template {
   flex: none;
   border: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: inherit;
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
@@ -2093,15 +2032,9 @@
 
 /* calendar.css is loaded after App.css, so restore the animated background on
    calendar surfaces whose base rules use the `background` shorthand. */
-.cal-block.task-color-flow {
-  background-image: linear-gradient(var(--veil), var(--veil)), var(--task-gradient);
-}
-
+.cal-block.task-color-flow,
 .cal-backlog-card.task-color-flow,
-.cal-chip.task-color-flow {
-  background-image: linear-gradient(var(--veil), var(--veil)), var(--task-gradient);
-}
-
+.cal-chip.task-color-flow,
 .cal-reminder.task-color-flow,
 .cal-flow-preview.task-color-flow {
   background-image: var(--task-gradient);
@@ -2109,8 +2042,13 @@
 
 .cal-block.rest.task-color-flow {
   background-image:
-    repeating-linear-gradient(45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 10px),
-    linear-gradient(var(--veil), var(--veil)),
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 5px,
+      rgba(255, 255, 255, 0.08) 5px,
+      rgba(255, 255, 255, 0.08) 10px
+    ),
     var(--task-gradient);
 }
 
@@ -2499,7 +2437,6 @@
    gap first, then the selection colour. */
 .cal-block.selected {
   box-shadow:
-    var(--block-edge),
     0 0 0 2px var(--bg-secondary),
     0 0 0 4px var(--accent-cyan);
   z-index: 4;
