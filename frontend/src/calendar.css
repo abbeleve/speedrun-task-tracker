@@ -46,22 +46,20 @@
   font-family: var(--font-sans);
   font-size: 0.85rem;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.12s;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease,
+    transform 120ms var(--ease-out);
 }
 
-/* Hover lifts only where there is a real hover: a tap would otherwise leave
-   the button lifted until the next tap somewhere else. */
+/* Hover only where there is a real hover: a tap would otherwise leave the
+   button highlighted until the next tap somewhere else. */
 @media (hover: hover) and (pointer: fine) {
   .cal-btn:hover {
-    background: var(--bg-surface);
-    transform: translateY(-1px);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+    background: var(--control-hover);
   }
 }
 
-.cal-btn:active {
-  transform: translateY(0);
-  box-shadow: none;
+.cal-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .cal-btn--icon {
@@ -71,7 +69,7 @@
 }
 
 .cal-btn--primary {
-  background: linear-gradient(135deg, var(--accent-blue), color-mix(in srgb, var(--accent-blue) 65%, #7c4dff));
+  background: var(--accent-blue);
   border-color: var(--accent-blue);
   color: #fff;
   font-weight: 600;
@@ -93,76 +91,79 @@
   box-shadow: none;
 }
 
+/* Same recessed track and raised pill as the header navigation. */
 .cal-seg {
   display: inline-flex;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+  border-radius: 10px;
+  background: var(--track-bg);
 }
 
 .cal-seg button {
-  background: var(--bg-secondary);
+  background: transparent;
   color: var(--text-secondary);
   border: none;
-  padding: 6px 12px;
+  border-radius: 7px;
+  padding: 4px 12px;
   font-family: var(--font-sans);
   font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease,
+    transform 120ms var(--ease-out);
 }
 
-.cal-seg button:hover {
-  background: var(--bg-surface);
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .cal-seg button:not(.active):hover {
+    color: var(--text-primary);
+  }
 }
 
-.cal-seg button + button {
-  border-left: 1px solid var(--border);
+.cal-seg button:active {
+  transform: scale(0.97);
 }
 
 .cal-seg button.active {
-  background: var(--accent-blue);
-  color: #fff;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-pill);
 }
 
 /* ── HUD: the overtake read-out ──────────────────────────────── */
 
+/* The product's headline number. It is the largest type on the page and the
+   only thing in the strip with colour, and the colour itself is the verdict:
+   green ahead of the plan, red behind it. */
 .cal-hud {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 10px 14px;
+  gap: 20px;
+  padding: 10px 16px;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent-green);
   border-radius: var(--radius);
   background: var(--bg-secondary);
-}
-
-.cal-hud.behind {
-  border-left-color: var(--accent-red);
-}
-
-.cal-hud.frozen {
-  border-left-style: dashed;
 }
 
 .cal-hud-main {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
+  gap: 2px;
+  line-height: 1;
 }
 
 .cal-hud-label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .cal-hud-value {
   font-family: var(--font-mono);
-  font-size: 1.6rem;
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
   font-weight: 700;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--accent-green);
 }
@@ -174,15 +175,17 @@
 .cal-hud-week {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
-  padding-left: 18px;
+  gap: 4px;
+  line-height: 1;
+  padding-left: 20px;
   border-left: 1px solid var(--border);
 }
 
 .cal-hud-week-value {
   font-family: var(--font-mono);
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   color: var(--accent-green);
 }
@@ -539,14 +542,32 @@
 
 /* ── blocks ──────────────────────────────────────────────────── */
 
+/* A block is its task colour seen through a veil of the grid's own surface,
+   and how much colour shows says where the block stands in time: upcoming
+   blocks are a soft tint with a solid edge in their colour, the block being
+   worked on right now is the full colour, and closed blocks sink back almost
+   to the surface. The veil is a layer over the colour rather than a
+   colour-mix, so an animated gradient shows through it exactly like a flat
+   colour does. Registered so the step from one state to the next fades. */
+@property --block-veil {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 78%;
+}
+
 .cal-block {
+  --block-veil: 78%;
+  --veil: color-mix(in srgb, var(--bg-secondary) var(--block-veil), transparent);
+  --block-edge: inset 3px 0 0 var(--task-color, #3498db);
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: 5px;
-  background: var(--task-color, #3498db);
+  border-radius: 6px;
+  background-color: var(--task-color, #3498db);
+  background-image: linear-gradient(var(--veil), var(--veil));
+  box-shadow: var(--block-edge);
   color: var(--text-primary);
-  padding: 2px 5px;
+  padding: 2px 5px 2px 8px;
   overflow: hidden;
   cursor: grab;
   user-select: none;
@@ -555,38 +576,64 @@
   touch-action: manipulation;
   -webkit-touch-callout: none;
   z-index: 2;
-  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+  transition: --block-veil 300ms ease, box-shadow 150ms ease, color 300ms ease;
 }
 
-/* Nudges the block forward on hover — paired with the .cal-hover-card
-   popup, which appears the instant the pointer lands. */
+[data-theme="light"] .cal-block {
+  --block-veil: 80%;
+}
+
+/* Hover answers with an outline and a little depth, never with scale: a
+   block is passed over dozens of times a day, and scaling it blurs its text
+   and pushes it out of its column. */
 @media (hover: hover) and (pointer: fine) {
   .cal-block:hover {
-    transform: scale(1.035);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    box-shadow:
+      var(--block-edge),
+      0 0 0 1px color-mix(in srgb, var(--task-color, #3498db) 55%, transparent),
+      0 4px 12px rgba(0, 0, 0, 0.22);
     z-index: 3;
   }
 }
 
-.cal-block.active {
-  box-shadow: 0 0 0 2px var(--task-color, #3498db), var(--shadow);
+/* The block the clock is in: full colour, dark ink, lifted off the grid. */
+.cal-block.active,
+[data-theme="light"] .cal-block.active {
+  --block-veil: 0%;
+  color: var(--ink-on-color);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--task-color, #3498db) 35%, transparent);
   z-index: 4;
 }
 
-/* Faded via background + text alpha rather than the `opacity` property —
-   `opacity` on .cal-block would dim the bullet along with everything else,
-   and a dimmed bullet is exactly what got lost against a same-hue task
-   colour earlier. This keeps the bullet at full strength no matter how
-   translucent the rest of the card gets. */
-.cal-block.done {
-  background: color-mix(in srgb, var(--task-color, #3498db) 45%, var(--bg-secondary));
-  transition: background 0.3s ease;
+/* What of it is already behind the clock is shaded down to a red line at
+   the current minute. The shade sits under the text (z-index -1 inside the
+   block's own stacking context), so the grid's now line can stay beneath
+   the blocks instead of striking through their names. */
+.cal-block.active::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--elapsed, 0%);
+  background: rgba(0, 0, 0, 0.14);
+  z-index: -1;
+  pointer-events: none;
 }
 
-.cal-block.done .cal-block-emoji,
-.cal-block.done .cal-block-name,
-.cal-block.done .cal-block-meta {
-  opacity: 0.65;
+.cal-block.active.now-inside::after {
+  border-bottom: 2px solid var(--accent-red);
+}
+
+/* Closed: the colour all but gone, the text quiet, the bullet (below) now
+   the one solid mark of the task's colour. */
+.cal-block.done,
+[data-theme="light"] .cal-block.done {
+  --block-veil: 90%;
+  --block-edge: inset 3px 0 0 color-mix(in srgb, var(--task-color, #3498db) 55%, transparent);
+  color: var(--text-secondary);
+}
+
+.cal-block.done .cal-block-emoji {
+  opacity: 0.6;
 }
 
 /* The one-shot "just completed" flourish: the block grows in step with a
@@ -599,9 +646,17 @@
   z-index: 5;
 }
 
+/* The swell eases in with the sweep and springs back once it closes. The
+   total stays 1400ms: the sweep and CalendarPage's timer are tied to it. */
 @keyframes cal-block-pop {
-  0% { transform: scale(1); }
-  88% { transform: scale(1.07); }
+  0% {
+    transform: scale(1);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 1);
+  }
+  88% {
+    transform: scale(1.05);
+    animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
   100% { transform: scale(1); }
 }
 
@@ -681,21 +736,25 @@
   to { height: 100%; }
 }
 
+/* Rest is hatched, drawn in the text colour so it shows in both themes. */
 .cal-block.rest {
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 5px,
-    rgba(255, 255, 255, 0.06) 5px,
-    rgba(255, 255, 255, 0.06) 10px
-  );
+  --hatch: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  background-image:
+    repeating-linear-gradient(45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 10px),
+    linear-gradient(var(--veil), var(--veil));
 }
 
+.cal-block.rest.active {
+  --hatch: rgba(0, 0, 0, 0.08);
+}
+
+/* Picked up: the block rises off the grid rather than fading into it. */
 .cal-block.dragging {
-  opacity: 0.8;
+  opacity: 0.95;
   cursor: grabbing;
   pointer-events: none;
   z-index: 6;
+  box-shadow: var(--block-edge), 0 12px 28px rgba(0, 0, 0, 0.35);
 }
 
 /* The block the editor is describing: it stays on the grid next to the popover
@@ -710,6 +769,7 @@
 .cal-block.draft {
   border: 1px dashed var(--accent-blue);
   background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-secondary));
+  box-shadow: none;
   pointer-events: none;
 }
 
@@ -773,38 +833,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-  color: var(--bg-secondary);
 }
 
-/* The completion control: an empty bullet that fills solid black once the
-   task is done. Black (rather than one keyed to --task-color) is what keeps
-   it legible against every block colour in the palette — none of them are
-   dark, so a black dot always reads as a distinct mark rather than blending
-   into the background. */
+/* The completion control: an empty ring in the task's colour that fills
+   with that colour, and a tick, once the task is closed. On the full-colour
+   active block the ring turns dark so it still reads. */
 .cal-block-check {
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.4);
-  background: rgba(255, 255, 255, 0.25);
+  border: 1.5px solid color-mix(in srgb, var(--task-color, #3498db) 70%, var(--text-primary));
+  background-color: transparent;
   cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+  transition: transform 150ms var(--ease-out), border-color 150ms ease, background-color 150ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .cal-block-check:hover {
-    border-color: rgba(0, 0, 0, 0.65);
-    transform: scale(1.15);
+    background-color: color-mix(in srgb, var(--task-color, #3498db) 25%, transparent);
+    transform: scale(1.12);
   }
 }
 
+.cal-block-check:active {
+  transform: scale(0.9);
+}
+
+.cal-block.active .cal-block-check {
+  border-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
 .cal-block.done .cal-block-check {
-  border-color: rgba(0, 0, 0, 0.55);
-  /* Completion keeps the task's identity: lighten its own colour enough that
-     the filled bullet still separates from the card behind it. */
-  background: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
+  border-color: var(--task-color, #3498db);
+  background-color: var(--task-color, #3498db);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.8 6.3 5 8.4l4.2-4.8' fill='none' stroke='%23121316' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: center;
+  background-size: 10px;
+  background-repeat: no-repeat;
 }
 
 .cal-block-pin {
@@ -819,8 +887,16 @@
   justify-content: space-between;
   gap: 6px;
   font-size: 0.68rem;
-  color: var(--bg-secondary);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+.cal-block.active .cal-block-meta {
+  color: color-mix(in srgb, var(--ink-on-color) 75%, transparent);
+}
+
+.cal-block.done .cal-block-meta {
+  color: var(--text-dim);
 }
 
 .cal-block-meta > span {
@@ -832,7 +908,7 @@
 
 .cal-block-duration {
   flex: none;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1060,12 +1136,14 @@
 
 /* ── now line & lead band ────────────────────────────────────── */
 
+/* Under the blocks (they sit at z-index 2+): it runs across the free grid,
+   and the block the clock is in draws its own red line under its text. */
 .cal-now {
   position: absolute;
   left: 0;
   right: 0;
   border-top: 2px solid var(--accent-red);
-  z-index: 5;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -1192,14 +1270,28 @@
   overflow: hidden;
 }
 
+/* Month chips and backlog cards are tinted like the grid's upcoming blocks:
+   the task colour under a veil of the surface, with a solid edge. */
+.cal-chip,
+.cal-backlog-card {
+  --veil: color-mix(in srgb, var(--bg-secondary) 78%, transparent);
+  background-color: var(--task-color, #3498db);
+  background-image: linear-gradient(var(--veil), var(--veil));
+}
+
+[data-theme="light"] .cal-chip,
+[data-theme="light"] .cal-backlog-card {
+  --veil: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+}
+
 .cal-chip {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--task-color, #3498db);
   border: none;
-  border-radius: 3px;
-  padding: 1px 4px;
+  border-radius: 4px;
+  box-shadow: inset 2px 0 0 var(--task-color, #3498db);
+  padding: 1px 4px 1px 6px;
   font-size: 0.68rem;
   color: var(--text-primary);
   cursor: pointer;
@@ -1208,7 +1300,12 @@
 }
 
 .cal-chip.done {
+  --veil: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
   text-decoration: line-through;
+}
+
+.cal-chip.done .cal-chip-name {
+  color: var(--text-secondary);
 }
 
 .cal-chip-time {
@@ -1223,17 +1320,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--bg-secondary);
-}
-
-/* In the light theme the task names stay dark/readable over the colored blocks. */
-[data-theme="light"] .cal-block-name,
-[data-theme="light"] .cal-chip-name {
   color: var(--text-primary);
-}
-
-[data-theme="light"] .cal-block-meta {
-  color: var(--text-secondary);
 }
 
 .cal-cell-more {
@@ -1314,13 +1401,22 @@
 .cal-backlog-card {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 6px;
-  border-radius: 4px;
-  background: var(--task-color, #3498db);
+  gap: 6px;
+  padding: 6px 6px 6px 9px;
+  border-radius: 6px;
+  box-shadow: inset 3px 0 0 var(--task-color, #3498db);
   color: var(--text-primary);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   cursor: grab;
+  transition: box-shadow 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-backlog-card:hover {
+    box-shadow:
+      inset 3px 0 0 var(--task-color, #3498db),
+      inset 0 0 0 1px color-mix(in srgb, var(--task-color, #3498db) 55%, transparent);
+  }
 }
 
 .cal-backlog-card:active {
@@ -1329,14 +1425,16 @@
 
 .cal-backlog-card.pinned {
   cursor: pointer;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 45%, transparent);
+  box-shadow:
+    inset 3px 0 0 var(--task-color, #3498db),
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 30%, transparent);
 }
 
 .cal-backlog-save-template {
   flex: none;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--text-secondary);
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
@@ -1995,9 +2093,15 @@
 
 /* calendar.css is loaded after App.css, so restore the animated background on
    calendar surfaces whose base rules use the `background` shorthand. */
-.cal-block.task-color-flow,
+.cal-block.task-color-flow {
+  background-image: linear-gradient(var(--veil), var(--veil)), var(--task-gradient);
+}
+
 .cal-backlog-card.task-color-flow,
-.cal-chip.task-color-flow,
+.cal-chip.task-color-flow {
+  background-image: linear-gradient(var(--veil), var(--veil)), var(--task-gradient);
+}
+
 .cal-reminder.task-color-flow,
 .cal-flow-preview.task-color-flow {
   background-image: var(--task-gradient);
@@ -2005,13 +2109,8 @@
 
 .cal-block.rest.task-color-flow {
   background-image:
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 5px,
-      rgba(255, 255, 255, 0.08) 5px,
-      rgba(255, 255, 255, 0.08) 10px
-    ),
+    repeating-linear-gradient(45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 10px),
+    linear-gradient(var(--veil), var(--veil)),
     var(--task-gradient);
 }
 
@@ -2400,6 +2499,7 @@
    gap first, then the selection colour. */
 .cal-block.selected {
   box-shadow:
+    var(--block-edge),
     0 0 0 2px var(--bg-secondary),
     0 0 0 4px var(--accent-cyan);
   z-index: 4;
@@ -2552,9 +2652,12 @@
     display: none;
   }
 
-  .cal-btn,
-  .cal-seg button {
+  .cal-btn {
     min-height: 36px;
+  }
+
+  .cal-seg button {
+    min-height: 28px;
   }
 
   /* The overtake read-out as one short strip. */
@@ -2564,11 +2667,11 @@
   }
 
   .cal-hud-label {
-    font-size: 0.6rem;
+    font-size: 0.68rem;
   }
 
   .cal-hud-value {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
   }
 
   .cal-hud-week {
@@ -2653,7 +2756,7 @@
   }
 
   .cal-hud-value {
-    font-size: 1.15rem;
+    font-size: 1.3rem;
   }
 
   .cal-hud-sub {
@@ -2662,5 +2765,19 @@
 
   .cal-day-head {
     padding: 3px 4px;
+  }
+}
+
+/* Reduced motion: no swell on completion and no shrink on press; the block
+   still changes colour to show it closed. */
+@media (prefers-reduced-motion: reduce) {
+  .cal-block.completing {
+    animation: none;
+  }
+
+  .cal-btn:active:not(:disabled),
+  .cal-seg button:active,
+  .cal-block-check:active {
+    transform: none;
   }
 }

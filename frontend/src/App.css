@@ -33,12 +33,24 @@
   --font-mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Motion: a strong ease-out for anything entering or answering a press,
+     ease-in-out for things travelling across the screen. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Ink for text sitting on a full task colour — every palette colour is
+     mid-to-light, so dark ink reads on all of them in both themes. */
+  --ink-on-color: #121316;
+  /* Segmented controls: a recessed track and the raised pill inside it. */
+  --track-bg: rgba(255, 255, 255, 0.05);
+  --surface-raised: #2b2d31;
+  --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --control-hover: rgba(255, 255, 255, 0.06);
 }
 
 [data-theme="light"] {
   --bg-primary: #f0f2f5;
-  --bg-page: linear-gradient(180deg, #f3efe5 0%, #cecac3 100%);
-  --bg-footer: #f3efe5;
+  --bg-page: #eceef1;
+  --bg-footer: #eceef1;
   --bg-secondary: #ffffff;
   --bg-surface: #e4e6eb;
   --bg-row: transparent;
@@ -64,6 +76,10 @@
   --heat-2: #40c463;
   --heat-3: #30a14e;
   --heat-4: #216e39;
+  --track-bg: rgba(0, 0, 0, 0.05);
+  --surface-raised: #ffffff;
+  --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --control-hover: rgba(0, 0, 0, 0.05);
 }
 
 * {
@@ -97,34 +113,160 @@
 }
 
 /* ===== Header ===== */
+/* Three columns: the name on the left, where you are in the middle, the
+   theme and logout on the right. The side columns share the leftover width
+   equally so the navigation stays centred on the window. */
 .header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
+  gap: 8px 16px;
+  padding: 10px 20px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  gap: 16px;
-  flex-wrap: wrap;
 }
 
-.header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: var(--text-primary);
+.header-brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
 }
 
-.header .icon {
-  font-size: 1.3rem;
+.header-logo {
+  flex: none;
+}
+
+.header-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-nav {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--track-bg);
+  border: 1px solid var(--border);
+}
+
+/* Sits under the open section's button; moving between sections slides it
+   rather than swapping two backgrounds. */
+.header-nav-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--nav-count, 2));
+  transform: translateX(calc(var(--nav-index, 0) * 100%));
+  border-radius: 7px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+  transition: transform 260ms var(--ease-out);
+}
+
+.header-nav-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms ease, transform 120ms var(--ease-out);
+}
+
+.header-nav-btn.active {
+  color: var(--text-primary);
+}
+
+.header-nav-btn:active {
+  transform: scale(0.97);
+}
+
+.header-tools {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .header-nav-btn:not(.active):hover {
+    color: var(--text-primary);
+  }
+
+  .icon-btn:hover {
+    background: var(--control-hover);
+    color: var(--text-primary);
+  }
+
+  .icon-btn--danger:hover {
+    color: var(--accent-red);
+  }
+}
+
+.header-nav-btn:focus-visible,
+.icon-btn:focus-visible,
+.view-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* The tracker's own row under the navigation. */
+.header-context {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 2px -20px 0;
+  padding: 8px 20px 0;
+  border-top: 1px solid var(--border);
 }
 
 .session-controls {
   display: flex;
+  align-items: center;
   gap: 8px;
+  margin-left: auto;
+  min-width: 0;
 }
 
 /* ===== Buttons ===== */
@@ -136,10 +278,29 @@
   font-size: 0.85rem;
   padding: 8px 16px;
   border-radius: var(--radius);
-  transition: all 0.15s ease;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease,
+    box-shadow 150ms ease, transform 120ms var(--ease-out);
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* A neutral secondary button: bordered, no fill of its own. */
+.btn-quiet,
+.btn-stats-nav {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn-quiet:hover,
+.btn-stats-nav:hover {
+  background: var(--control-hover);
+  color: var(--text-primary);
 }
 
 .btn:disabled {
@@ -170,7 +331,6 @@
 }
 .btn-resume:hover {
   background: #2980b9;
-  box-shadow: 0 0 12px var(--accent-blue);
 }
 
 .btn-reset {
@@ -1133,20 +1293,25 @@
 
 .timer-label {
   display: block;
-  font-size: 1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
+/* The three reference numbers stay neutral and a step smaller; only the
+   overtake beside them carries colour, and colour always means ahead/behind. */
 .timer-value {
   display: block;
   font-family: var(--font-mono);
   /* Scales down with the window below ~1100px so four timers still fit
      side by side on a tablet. */
-  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
-  font-weight: 700;
+  font-size: clamp(1.3rem, 3.4vw, 2.2rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
   color: var(--text-primary);
-  letter-spacing: 1px;
+  letter-spacing: -0.02em;
 }
 
 .timer-value.ahead {
@@ -1159,8 +1324,15 @@
 
 .timer-main {
   font-size: clamp(1.6rem, 5vw, 3.4rem);
-  color: var(--accent-gold) !important;
-  text-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
+  font-weight: 700;
+}
+
+.timer-main.ahead {
+  color: var(--accent-green);
+}
+
+.timer-main.behind {
+  color: var(--accent-red);
 }
 
 .timer-planned {
@@ -1171,17 +1343,7 @@
   margin-top: 2px;
 }
 
-.timer-clock-value {
-  color: var(--accent-cyan, #00d4ff);
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
-  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
-}
 
-.timer-finish-value {
-  color: var(--accent-purple);
-  text-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
-  font-size: clamp(1.4rem, 4.2vw, 2.8rem);
-}
 
 /* Yellow square "end run" button in the footer — ends the current run and lets
    a new run start in the same day. */
@@ -1622,62 +1784,6 @@
   box-shadow: 0 0 0 2px rgba(26, 188, 232, 0.2);
 }
 
-/* ===== Theme Toggle ===== */
-.theme-toggle {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 1.1rem;
-  padding: 6px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  font-family: var(--font-sans);
-}
-
-.theme-toggle:hover {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
-  background: var(--bg-row-hover);
-}
-
-.theme-toggle-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-@media (max-width: 600px) {
-  .theme-toggle-label {
-    display: none;
-  }
-}
-
-.btn-logout {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 6px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s ease;
-  font-family: var(--font-sans);
-}
-
-.btn-logout:hover {
-  border-color: #e74c3c;
-  color: #e74c3c;
-  background: var(--bg-row-hover);
-}
-
 /* ===== Task-color edge glow flash =====
    Decorative fixed overlay that flashes only when switching to the next task.
    pointer-events: none so it never blocks clicks on the app. */
@@ -1711,7 +1817,8 @@
   font-weight: 600;
   padding: 6px 10px;
   font-family: var(--font-sans);
-  transition: all 0.15s ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .type-toggle:hover {
@@ -1841,49 +1948,52 @@
 }
 
 /* ===== View switcher (timeline / spiral / list) ===== */
+/* The same recessed track and raised pill as the header navigation. */
 .view-toggle {
   display: inline-flex;
-  background: var(--bg-surface);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--track-bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  padding: 0;
 }
 
 .view-toggle-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 7px 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s ease;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
   font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease,
+    transform 120ms var(--ease-out);
 }
 
-.view-toggle-btn:hover {
-  background: var(--bg-row-hover);
-  color: var(--text-primary);
+.view-toggle-btn:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .view-toggle-btn:not(.active):hover {
+    color: var(--text-primary);
+  }
 }
 
 .view-toggle-btn.active {
-  background: var(--bg-secondary);
-  color: var(--accent-purple);
-  box-shadow: inset 0 0 0 1px var(--accent-purple);
-}
-
-.view-toggle-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-pill);
 }
 
 @media (max-width: 720px) {
-  .view-toggle-btn span {
+  .view-toggle-label {
     display: none;
   }
 }
@@ -3203,9 +3313,9 @@
 
 /* Header chip shown while a saved session is open read-only in the tracker. */
 .viewing-run-label {
-  font-family: var(--font-mono);
   font-size: 0.82rem;
-  color: var(--accent-cyan, #00d4ff);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
@@ -4239,8 +4349,9 @@
 }
 
 .home-week-overtake-label {
-  font-size: 0.78rem;
-  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .home-week-overtake-bar {
@@ -4272,9 +4383,9 @@
   flex: 0 0 auto;
   padding: 0 16px;
   font-family: var(--font-display);
-  font-size: clamp(1.7rem, 6vw, 2.5rem);
+  font-size: clamp(2rem, 6vw, 3.25rem);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -4291,8 +4402,9 @@
   height: 58px;
   flex: 0 0 auto;
   border-radius: 2px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
+  /* Empty hours stay faint so the filled ones and the number carry the strip. */
+  background: var(--track-bg);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   overflow: hidden;
   transform: skewX(-30deg);
 }
@@ -4854,65 +4966,60 @@
 
 /* ===== Phones and tablets ===== */
 
-/* Tablets: the header keeps its navigation labels but gives the content more
-   room — the theme and logout buttons say what they are with their icon. */
+/* Tablets: the header keeps its navigation labels, with less padding. */
 @media (max-width: 1024px) {
   .header {
-    padding: 10px 16px;
-    gap: 10px;
+    padding: 8px 16px;
   }
 
-  .header h1 {
-    font-size: 1.25rem;
-  }
-
-  .theme-toggle-label,
-  .btn-logout-label {
-    display: none;
+  .header-context {
+    margin-inline: -16px;
+    padding-inline: 16px;
   }
 }
 
-/* Phones: one compact header row — the icon, then icon-only navigation.
-   The tracker's view switch and sequence controls drop to a second row. */
+/* Narrow tablets and phones: the navigation keeps its icons only. */
+@media (max-width: 720px) {
+  .header-nav-label {
+    display: none;
+  }
+
+  .header-nav-btn {
+    padding: 0 16px;
+  }
+}
+
+/* Phones: the logo, the navigation, then the two tools — one row. The
+   tracker's view switch and run controls stay on the row under it. */
 @media (max-width: 640px) {
   .header {
-    padding: 8px 12px;
-    gap: 6px;
-    justify-content: flex-start;
+    grid-template-columns: auto 1fr auto;
+    gap: 6px 8px;
+    padding: 6px 12px;
   }
 
-  .header h1 {
-    font-size: 1.1rem;
-    margin-right: auto;
-  }
-
-  .header .btn-stats-nav {
-    order: 1;
-    padding: 7px 10px;
-    font-size: 1rem;
-  }
-
-  .header .theme-toggle,
-  .header .btn-logout {
-    order: 2;
-    padding: 6px 8px;
-  }
-
-  .header .view-toggle {
-    order: 3;
-  }
-
-  .header .session-controls {
-    order: 4;
-    flex: 1 1 auto;
-    min-width: 0;
-    justify-content: flex-end;
-    align-items: center;
-  }
-
-  .header .btn-stats-nav .view-toggle-label,
-  .btn-logout-label {
+  .header-title {
     display: none;
+  }
+
+  .header-nav {
+    justify-self: center;
+  }
+
+  .header-nav-btn {
+    height: 32px;
+    padding: 0 14px;
+  }
+
+  .header-context {
+    margin-inline: -12px;
+    padding: 6px 12px 0;
+    flex-wrap: nowrap;
+  }
+
+  .session-controls {
+    flex: 1 1 auto;
+    justify-content: flex-end;
   }
 
   .viewing-run-label {
@@ -4945,21 +5052,12 @@
     margin-bottom: 2px;
   }
 
-  .timer-value,
-  .timer-clock-value,
-  .timer-finish-value {
-    font-size: 1.45rem;
-    letter-spacing: 0;
+  .timer-value {
+    font-size: 1.35rem;
   }
 
   .timer-main {
     font-size: 1.6rem;
-  }
-}
-
-@media (max-width: 400px) {
-  .header-title {
-    display: none;
   }
 }
 
@@ -5130,5 +5228,21 @@
 
   .footer {
     margin-bottom: 6px;
+  }
+}
+
+/* Reduced motion: the navigation pill jumps instead of sliding, and presses
+   no longer shrink. Colour and opacity changes stay — they still say what
+   changed without moving anything. */
+@media (prefers-reduced-motion: reduce) {
+  .header-nav-pill {
+    transition: none;
+  }
+
+  .btn:active:not(:disabled),
+  .header-nav-btn:active,
+  .icon-btn:active,
+  .view-toggle-btn:active {
+    transform: none;
   }
 }

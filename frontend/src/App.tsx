@@ -28,6 +28,20 @@ import { computeCredit, creditGroups } from './credit';
 import { useOvertakeHistorySync } from './overtakeHistory';
 import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
+import {
+  IconCalendar,
+  IconClose,
+  IconHome,
+  IconList,
+  IconLogOut,
+  IconMoon,
+  IconPlay,
+  IconRewind,
+  IconSpiral,
+  IconStopwatch,
+  IconSun,
+  IconThermometer,
+} from './icons';
 import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
@@ -543,120 +557,171 @@ function App() {
     [run]
   );
 
+  const navItems: {
+    page: typeof page;
+    label: string;
+    title: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+  }[] = [
+    {
+      page: 'calendar',
+      label: 'Календарь',
+      title: 'Календарь: план дня, недели и месяца',
+      icon: <IconCalendar />,
+      onClick: () => (page === 'home' ? leaveHome('calendar') : setPage('calendar')),
+    },
+    {
+      page: 'home',
+      label: 'Главная',
+      title: 'Главная: канбан, сессии и статистика',
+      icon: <IconHome />,
+      onClick: goHome,
+    },
+    ...(openChain
+      ? [
+          {
+            page: 'tracker' as const,
+            label: 'Секвенция',
+            title: 'Трекер: открытая секвенция',
+            icon: <IconStopwatch />,
+            onClick: () => (page === 'home' ? leaveHome('tracker') : setPage('tracker')),
+          },
+        ]
+      : []),
+  ];
+
   const leadLabel = credit.lead >= 0 ? 'обгон' : 'отставание';
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
   return (
     <div className="app">
       <header className="header">
-        <h1>
-          <span className="icon">⏱</span>
+        <div className="header-brand">
+          <IconStopwatch className="header-logo" size={22} />
           <span className="header-title">SpeedRun Tasks</span>
-        </h1>
-        <button
-          className="theme-toggle"
-          onClick={() => setDarkMode(!darkMode)}
-          title={darkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          {darkMode ? '☀️' : '🌙'}
-          <span className="theme-toggle-label">{darkMode ? 'Light' : 'Dark'}</span>
-        </button>
-        <button
-          className="btn btn-logout"
-          onClick={() => void logout()}
-          title={`Выйти (${user ?? ''})`}
-          aria-label="Выйти"
-        >
-          🚪<span className="btn-logout-label">Выйти</span>
-        </button>
+        </div>
 
-        {page === 'tracker' && (
-          <div className="view-toggle" role="group" aria-label="View mode">
+        {/* One control for the three places the app can be: the pill slides to
+            the open one, so the eye follows where it went. */}
+        <nav
+          className="header-nav"
+          aria-label="Разделы"
+          style={
+            {
+              '--nav-count': navItems.length,
+              '--nav-index': Math.max(0, navItems.findIndex((item) => item.page === page)),
+            } as React.CSSProperties
+          }
+        >
+          <span className="header-nav-pill" aria-hidden="true" />
+          {navItems.map((item) => (
             <button
+              key={item.page}
               type="button"
-              className={`view-toggle-btn ${view === 'timeline' ? 'active' : ''}`}
-              onClick={() => setView('timeline')}
-              title="Таймлайн в виде термометра"
+              className={`header-nav-btn ${page === item.page ? 'active' : ''}`}
+              aria-current={page === item.page ? 'page' : undefined}
+              onClick={item.onClick}
+              title={item.title}
             >
-              🌡️<span className="view-toggle-label">Timeline</span>
+              {item.icon}
+              <span className="header-nav-label">{item.label}</span>
             </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${view === 'spiral' ? 'active' : ''}`}
-              onClick={() => setView('spiral')}
-              title="Спиральная траектория в космосе"
-            >
-              🌀<span className="view-toggle-label">Spiral</span>
-            </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
-              onClick={() => setView('list')}
-              title="Список задач с разворачивающимся термометром"
-            >
-              📜<span className="view-toggle-label">List</span>
-            </button>
-          </div>
-        )}
+          ))}
+        </nav>
 
-        <button
-          className={`btn btn-stats-nav ${page === 'calendar' ? 'active' : ''}`}
-          onClick={() => (page === 'home' ? leaveHome('calendar') : setPage('calendar'))}
-          title="Календарь: план дня, недели и месяца"
-        >
-          📅<span className="view-toggle-label">Календарь</span>
-        </button>
-        <button
-          className={`btn btn-stats-nav ${page === 'home' ? 'active' : ''}`}
-          onClick={goHome}
-          title="Главная: канбан, сессии и статистика"
-        >
-          🏠<span className="view-toggle-label">Главная</span>
-        </button>
-        {openChain && (
+        <div className="header-tools">
           <button
-            className={`btn btn-stats-nav ${page === 'tracker' ? 'active' : ''}`}
-            onClick={() => (page === 'home' ? leaveHome('tracker') : setPage('tracker'))}
-            title="Трекер: открытая секвенция"
+            type="button"
+            className="icon-btn"
+            onClick={() => setDarkMode(!darkMode)}
+            title={darkMode ? 'Светлая тема' : 'Тёмная тема'}
+            aria-label={darkMode ? 'Светлая тема' : 'Тёмная тема'}
           >
-            ⏱<span className="view-toggle-label">Секвенция</span>
+            {darkMode ? <IconSun /> : <IconMoon />}
           </button>
-        )}
+          <button
+            type="button"
+            className="icon-btn icon-btn--danger"
+            onClick={() => void logout()}
+            title={`Выйти (${user ?? ''})`}
+            aria-label="Выйти"
+          >
+            <IconLogOut />
+          </button>
+        </div>
 
-        {page === 'tracker' && openChain && (
-          <div className="session-controls">
-            <span className="viewing-run-label">
-              ▶ {wallTime(openChain.startMs)}–{wallTime(openChain.endMs)} · {leadLabel}{' '}
-              {formatDelta(-credit.lead * 1000)}
-            </span>
-            {now < openChain.startMs && (
+        {/* The tracker's own row: which view, which run, and what to do with
+            it. It belongs to the sequence, not to the app, so it sits under
+            the navigation instead of wrapping into it. */}
+        {page === 'tracker' && (
+          <div className="header-context">
+            <div className="view-toggle" role="group" aria-label="Вид секвенции">
               <button
-                className="btn btn-resume"
-                onClick={startOpenChainNow}
-                title="Перенести всю секвенцию на текущее время и начать её сейчас"
+                type="button"
+                className={`view-toggle-btn ${view === 'timeline' ? 'active' : ''}`}
+                onClick={() => setView('timeline')}
+                title="Таймлайн в виде термометра"
               >
-                ▶ Начать сейчас
+                <IconThermometer size={16} />
+                <span className="view-toggle-label">Термометр</span>
               </button>
-            )}
-            {previewSec !== null && (
               <button
-                className="btn btn-resume"
-                onClick={() => setPreviewSec(null)}
-                title="Вернуться к текущему времени"
+                type="button"
+                className={`view-toggle-btn ${view === 'spiral' ? 'active' : ''}`}
+                onClick={() => setView('spiral')}
+                title="Спиральная траектория в космосе"
               >
-                ⟲ Сейчас
+                <IconSpiral size={16} />
+                <span className="view-toggle-label">Спираль</span>
               </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${view === 'list' ? 'active' : ''}`}
+                onClick={() => setView('list')}
+                title="Список задач с разворачивающимся термометром"
+              >
+                <IconList size={16} />
+                <span className="view-toggle-label">Список</span>
+              </button>
+            </div>
+
+            {openChain && (
+              <div className="session-controls">
+                <span className="viewing-run-label">
+                  {wallTime(openChain.startMs)}–{wallTime(openChain.endMs)} · {leadLabel}{' '}
+                  {formatDelta(-credit.lead * 1000)}
+                </span>
+                {now < openChain.startMs && (
+                  <button
+                    className="btn btn-resume"
+                    onClick={startOpenChainNow}
+                    title="Перенести всю секвенцию на текущее время и начать её сейчас"
+                  >
+                    <IconPlay size={15} /> Начать сейчас
+                  </button>
+                )}
+                {previewSec !== null && (
+                  <button
+                    className="btn btn-resume"
+                    onClick={() => setPreviewSec(null)}
+                    title="Вернуться к текущему времени"
+                  >
+                    <IconRewind size={15} /> Сейчас
+                  </button>
+                )}
+                <button
+                  className="btn btn-quiet"
+                  onClick={() => {
+                    setOpenTaskId(null);
+                    setPage('calendar');
+                  }}
+                  title="Закрыть секвенцию"
+                >
+                  <IconClose size={15} /> Закрыть
+                </button>
+              </div>
             )}
-            <button
-              className="btn btn-reset"
-              onClick={() => {
-                setOpenTaskId(null);
-                setPage('calendar');
-              }}
-              title="Закрыть секвенцию"
-            >
-              ✕ Закрыть
-            </button>
           </div>
         )}
       </header>
@@ -691,24 +756,26 @@ function App() {
         <>
           <footer className="footer">
             <div className="timer-block timer-next">
-              <span className="timer-label">⏳ Осталось по плану</span>
+              <span className="timer-label">Осталось по плану</span>
               <span className="timer-value">{formatTime(remainingSec * 1000, false)}</span>
             </div>
             <div className="timer-block timer-clock">
-              <span className="timer-label">🕐 Текущее время</span>
+              <span className="timer-label">Сейчас</span>
               <span className="timer-value timer-clock-value">{wallTime(now)}</span>
             </div>
             <div className="timer-block timer-finish">
-              <span className="timer-label">🎯 Вы закончите в</span>
+              <span className="timer-label">Финиш</span>
               <span className="timer-value timer-finish-value">
                 {openChain ? wallTime(openChain.endMs - credit.lead * 1000) : '—'}
               </span>
             </div>
             <div className="timer-block timer-session">
-              <span className="timer-label">🏁 {leadLabel}</span>
-              <span className="timer-value timer-main">{formatDelta(-credit.lead * 1000)}</span>
+              <span className="timer-label">{leadLabel === 'обгон' ? 'Обгон' : 'Отставание'}</span>
+              <span className={`timer-value timer-main ${credit.lead >= 0 ? 'ahead' : 'behind'}`}>
+                {formatDelta(-credit.lead * 1000)}
+              </span>
               <span className="timer-planned">
-                Planned: {formatTime(totalPlannedSec * 1000, false)}
+                по плану {formatTime(totalPlannedSec * 1000, false)}
               </span>
             </div>
           </footer>

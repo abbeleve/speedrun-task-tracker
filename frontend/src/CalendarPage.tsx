@@ -1860,7 +1860,17 @@ function CalendarPage({
           // Just clicked: the block plays its grow-and-sweep flourish while
           // the bullet itself already reflects the real (instant) done state.
           const justCompleted = completingIds.has(task.id);
-          const active = activeIds.has(task.id);
+          // A closed block reads as closed even while the rest of its
+          // parallel group is still being worked on.
+          const active = activeIds.has(task.id) && !done;
+          // How far the clock is through the block, for its elapsed shade.
+          const elapsed = !active
+            ? 0
+            : isToday
+              ? (nowMin - topMin) / Math.max(1, lengthMin)
+              : day < today
+                ? 1
+                : 0;
           const width = 100 / seg.cols;
 
           return (
@@ -1871,6 +1881,7 @@ function CalendarPage({
                 done ? 'done' : '',
                 justCompleted ? 'completing' : '',
                 active ? 'active' : '',
+                active && elapsed > 0 && elapsed < 1 ? 'now-inside' : '',
                 task.type === 'rest' ? 'rest' : '',
                 task.sessionId ? 'in-session' : '',
                 task.pinned ? 'pinned' : '',
@@ -1887,6 +1898,7 @@ function CalendarPage({
                 height,
                 left: `${seg.col * width}%`,
                 width: `${width}%`,
+                ...(active ? { '--elapsed': `${Math.min(1, Math.max(0, elapsed)) * 100}%` } : {}),
                 ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
@@ -2505,7 +2517,7 @@ function CalendarPage({
           <span className="cal-hud-value">{signedDur(credit.lead)}</span>
         </div>
         <div className={`cal-hud-week ${weekOvertakeSec >= 0 ? 'ahead' : 'behind'}`}>
-          <span className="cal-hud-label">за неделю</span>
+          <span className="cal-hud-label">За неделю</span>
           <span className="cal-hud-week-value">{signedDur(weekOvertakeSec)}</span>
         </div>
         <div className="cal-hud-lines">

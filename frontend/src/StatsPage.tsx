@@ -21,6 +21,7 @@ import {
 } from './sleep';
 import type { SleepData, SleepRange } from './sleep';
 import * as api from './api';
+import { scrollChildToTop } from './scrollWithin';
 
 const WEEKS_TO_SHOW = 53; // ~1 year
 const HOURS_PER_DAY = 24;
@@ -828,7 +829,8 @@ export function useStatsData(): StatsData {
     }
     if (pendingNavRef.current) {
       const { year, month } = pendingNavRef.current;
-      el.querySelector<HTMLElement>(`[data-month="${year}-${month}"]`)?.scrollIntoView({ block: 'start' });
+      const target = el.querySelector<HTMLElement>(`[data-month="${year}-${month}"]`);
+      if (target) scrollChildToTop(el, target);
       pendingNavRef.current = null;
     }
   }, [months]);
@@ -838,7 +840,8 @@ export function useStatsData(): StatsData {
   useEffect(() => {
     const el = scrollRef.current;
     const now = new Date();
-    el?.querySelector<HTMLElement>(`[data-month="${now.getFullYear()}-${now.getMonth()}"]`)?.scrollIntoView({ block: 'start' });
+    const target = el?.querySelector<HTMLElement>(`[data-month="${now.getFullYear()}-${now.getMonth()}"]`);
+    if (el && target) scrollChildToTop(el, target);
   }, []);
 
   const gotoMonth = (year: number, month: number) => {

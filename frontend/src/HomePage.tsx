@@ -81,9 +81,9 @@ function WeekOvertakeBar({ sec }: { sec: number }) {
   );
 }
 
-// The dashboard, top to bottom: this week's overtake, the activity heatmap,
-// the habit tracker, the yearly stats summary, the sleep tracker, the kanban
-// board and the worked-sequences timeline. The plan itself lives on the
+// The dashboard, top to bottom: this week's overtake, the habit tracker (the
+// two things acted on daily), the activity heatmap, the yearly stats summary,
+// the sleep tracker, the kanban board and the worked-sequences timeline. The plan itself lives on the
 // calendar.
 //
 // The board still reads and writes the backend directly, so the calendar's
@@ -100,10 +100,10 @@ function HomePage({
   return (
     <div className="home-page">
       <WeekOvertakeBar sec={weekOvertakeSec} />
+      <HabitGrid store={habits} tasks={tasks} date={todayKey()} />
       <section className="home-panel home-panel--activity">
         <ActivityHeatmap stats={stats} habits={habits.habits} entries={habits.entries} tasks={tasks} />
       </section>
-      <HabitGrid store={habits} tasks={tasks} date={todayKey()} />
       <section className="home-panel home-panel--stats-summary">
         <ActivityStatsSummary stats={stats} />
       </section>
