@@ -1937,18 +1937,6 @@ function CalendarPage({
                   <strong className="cal-block-duration">{dur(lengthMin * 60)}</strong>
                 </div>
               )}
-              {done && task.finishedAt !== null && task.finishedAt < taskEndMs(task) && (
-                <div
-                  className="cal-block-actual"
-                  style={{
-                    top: Math.max(
-                      0,
-                      lenToPx((task.finishedAt - taskStartMs(task)) / MIN_MS)
-                    ),
-                  }}
-                  title={`Закрыто в ${wallTime(task.finishedAt)}`}
-                />
-              )}
               {seg.startsHere && !task.pinned && (
                 <div
                   className="cal-block-resize cal-block-resize--top"

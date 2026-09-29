@@ -58,9 +58,8 @@ so reloading mid-day never changes the number
 | Midnight passes while the blocks keep coming | The lead carries over — a "day" is the working session, not the date |
 | The session is put down for 10 minutes and picked up after midnight | That is a new working day: the lead starts from zero. Inside one date even a long gap keeps it |
 
-The calendar shows the lead three ways: the HUD number (frozen or running), a
-green band between the now-line and where the plan effectively stands, and a
-per-block delta on every closed block.
+The calendar shows the lead two ways: the HUD number (frozen or running) and a
+green band between the now-line and where the plan effectively stands.
 
 ## Local development
 

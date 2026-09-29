@@ -875,16 +875,6 @@
   color: var(--accent-blue);
 }
 
-/* Where the block was actually closed, inside its planned slot. */
-.cal-block-actual {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 2px dashed var(--accent-green);
-  opacity: 0.9;
-  pointer-events: none;
-}
-
 .cal-block-resize {
   position: absolute;
   left: 0;
