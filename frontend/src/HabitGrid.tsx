@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import type { Habit, HabitEntry, Task } from './types';
+import type { Habit, HabitChart, HabitEntry, Task } from './types';
 import type { HabitStore } from './habitStore';
 import { shiftDayKey } from './history';
 import {
@@ -11,8 +11,13 @@ import {
   isHabitDoneOn,
   parseHabitAmount,
 } from './habits';
+import { gaugeStatus, HABIT_CHARTS, habitChartOf, habitPercent } from './habitChart';
 import HabitDialog from './HabitDialog';
 import HabitDial from './HabitDial';
+import HabitGauge from './HabitGauge';
+import ChartSwitch from './ChartSwitch';
+import type { ChartSwitchOption } from './ChartSwitch';
+import { IconChartDots, IconChartGauge } from './icons';
 
 interface HabitGridProps {
   store: HabitStore;
@@ -22,6 +27,15 @@ interface HabitGridProps {
 
 const STRIP_DAYS = 7;
 const DIAL_DOTS = 14; // the dial shows today's progress as a row of dots
+
+const CHART_ICONS: Record<HabitChart, React.ReactNode> = {
+  dots: <IconChartDots size={16} />,
+  gauge: <IconChartGauge size={16} />,
+};
+const CHART_OPTIONS: ChartSwitchOption<HabitChart>[] = HABIT_CHARTS.map((c) => ({
+  ...c,
+  icon: CHART_ICONS[c.value],
+}));
 
 interface StripDay {
   date: string;
@@ -127,6 +141,7 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
               onDragEnd={() => setDragId(null)}
               onDrop={() => dropOn(habit.id)}
               onAdjust={(amount) => adjust(habit, amount)}
+              onChartChange={(chart) => store.upsert({ ...habit, chart })}
             />
           ))}
         </ul>
@@ -169,13 +184,19 @@ interface HabitCardProps {
   onDragEnd: () => void;
   onDrop: () => void;
   onAdjust: (amount: number) => void;
+  // Saved with the habit, so the choice follows the account between sessions.
+  onChartChange: (chart: HabitChart) => void;
 }
 
 // One habit as a self-contained dial-card:
 //   • name (large, centred) — clicking it opens the edit dialog
 //   • a tiny arrow-toggle in the top-right corner that opens/closes history
-//   • the dial — TODAY only — in the habit's own colour with the big number
-//     and "value / target unit" in the gap the arc leaves
+//   • the chart — TODAY only — in the habit's own colour, drawn one of two
+//     ways, picked with the little switch on its right:
+//       dots  — a dotted arc with the percentage and "value / target unit" in
+//               the gap it leaves, and yesterday's percentage under it;
+//       gauge — a fan of capsules around today's value and a pill saying how
+//               much is left, over two bars: yesterday and the last 7 days
 //   • a 7-day strip of "did I hit it" cells, only when the toggle is open
 //   • − / + steppers at the bottom, with the step itself shown between them
 //     Click anywhere on the card and the number keys retype that step, so
@@ -196,11 +217,15 @@ function HabitCard({
   onDragEnd,
   onDrop,
   onAdjust,
+  onChartChange,
 }: HabitCardProps) {
   // Digits typed on the focused card, building up the step the − / + buttons
   // apply. Empty means "no custom step yet", so the habit's own default stands
   // in — the buttons therefore always do something, even mid-typing.
   const [stepDraft, setStepDraft] = useState('');
+  // Set once the chart has been switched on this card: only then does the new
+  // chart ease in, so loading the page does not animate every card at once.
+  const [chartSwitched, setChartSwitched] = useState(false);
 
   const today = habitTotal(habit, date, tasks, entries);
   const target = habitTargetOn(habit, date);
@@ -238,14 +263,16 @@ function HabitCard({
   const progress = target > 0
     ? Math.max(0, Math.min(1, today / target))
     : 0;
-  const pct = target > 0 ? Math.round(Math.max(0, today / target) * 100) : 0;
+  const pct = habitPercent(today, target);
+  const chart = habitChartOf(habit);
 
   // Yesterday is measured against yesterday's own quota, so the day a quota is
   // raised does not retroactively shrink the day before it.
   const yesterday = shiftDayKey(date, -1);
   const yesterdayTotal = habitTotal(habit, yesterday, tasks, entries);
   const yesterdayTarget = habitTargetOn(habit, yesterday);
-  const yesterdayPct = yesterdayTarget > 0 ? Math.round(Math.max(0, yesterdayTotal / yesterdayTarget) * 100) : 0;
+  const yesterdayPct = habitPercent(yesterdayTotal, yesterdayTarget);
+  const status = gaugeStatus(today, target, unit);
 
   return (
     <li
@@ -291,34 +318,87 @@ function HabitCard({
         <span className="habit-card-name-text">{habit.name}</span>
       </button>
 
-      <div className="habit-card-dial">
-        <div className="habit-card-dial-label" aria-hidden>
-          Сегодня
-        </div>
-        <div className="habit-card-dial-arc">
-          <HabitDial
-            color={habit.color}
-            progress={progress}
-            total={DIAL_DOTS}
-            size={260}
-            dot={14}
-            className="habit-card-dial-svg"
-            ariaLabel={`Сегодня: ${pct}% от цели`}
-          />
-          <div className="habit-card-dial-readout" aria-hidden>
-            <div className="habit-card-dial-number">
-              {pct}
-              <span className="habit-card-dial-percent-sign">%</span>
+      <div className="habit-card-stage">
+        {chart === 'gauge' ? (
+          <div key="gauge" className={`habit-card-dial${chartSwitched ? ' habit-card-chart-in' : ''}`}>
+            <div className="habit-card-dial-label" aria-hidden>
+              Сегодня
             </div>
-            <div className="habit-card-dial-unit">
-              {formatNumber(today)} / {formatNumber(target)}
-              {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
+            <div className="habit-card-dial-arc">
+              <HabitGauge
+                color={habit.color}
+                progress={progress}
+                size={260}
+                className="habit-card-dial-svg"
+                ariaLabel={`Сегодня: ${pct}% от цели`}
+              />
+              <div className="habit-gauge-readout" aria-hidden>
+                {status && (
+                  <span className={`habit-gauge-pill${status.done ? ' done' : ''}`}>{status.text}</span>
+                )}
+                <div className="habit-gauge-number">
+                  {formatNumber(today)}
+                  {unit && <span className="habit-gauge-unit">{unit}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="habit-gauge-bars">
+              <GaugeBar
+                label="Вчера"
+                value={`${yesterdayPct}%`}
+                fill={yesterdayPct / 100}
+                title={`Вчера: ${formatNumber(yesterdayTotal)} / ${formatNumber(yesterdayTarget)}${unit ? ' ' + unit : ''}`}
+              />
+              <GaugeBar
+                label={`${dayStatuses.length} дней`}
+                value={`${doneCount} / ${dayStatuses.length}`}
+                fill={dayStatuses.length > 0 ? doneCount / dayStatuses.length : 0}
+                muted
+                title={`Норма выполнена ${doneCount} из ${dayStatuses.length} последних дней`}
+              />
             </div>
           </div>
-        </div>
-        <div className="habit-card-dial-compare" aria-hidden>
-          <span className="habit-card-dial-compare-value">{yesterdayPct}%</span> вчера
-        </div>
+        ) : (
+          <div key="dots" className={`habit-card-dial${chartSwitched ? ' habit-card-chart-in' : ''}`}>
+            <div className="habit-card-dial-label" aria-hidden>
+              Сегодня
+            </div>
+            <div className="habit-card-dial-arc">
+              <HabitDial
+                color={habit.color}
+                progress={progress}
+                total={DIAL_DOTS}
+                size={260}
+                dot={14}
+                className="habit-card-dial-svg"
+                ariaLabel={`Сегодня: ${pct}% от цели`}
+              />
+              <div className="habit-card-dial-readout" aria-hidden>
+                <div className="habit-card-dial-number">
+                  {pct}
+                  <span className="habit-card-dial-percent-sign">%</span>
+                </div>
+                <div className="habit-card-dial-unit">
+                  {formatNumber(today)} / {formatNumber(target)}
+                  {unit && <span className="habit-card-dial-unit-label"> {unit}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="habit-card-dial-compare" aria-hidden>
+              <span className="habit-card-dial-compare-value">{yesterdayPct}%</span> вчера
+            </div>
+          </div>
+        )}
+        <ChartSwitch
+          className="habit-card-chart-switch"
+          label="Вид графика"
+          value={chart}
+          options={CHART_OPTIONS}
+          onChange={(next) => {
+            setChartSwitched(true);
+            onChartChange(next);
+          }}
+        />
       </div>
 
       {isHistoryOpen && (
@@ -381,6 +461,32 @@ function HabitCard({
       </div>
 
     </li>
+  );
+}
+
+// One labelled row under the gauge: name on the left, figure on the right,
+// a thin bar beneath. The first row is in the habit's colour, the second a
+// quiet grey, so the two never read as the same measure.
+function GaugeBar({ label, value, fill, muted = false, title }: {
+  label: string;
+  value: string;
+  fill: number;
+  muted?: boolean;
+  title: string;
+}) {
+  return (
+    <div className={`habit-gauge-bar${muted ? ' muted' : ''}`} title={title}>
+      <div className="habit-gauge-bar-head">
+        <span>{label}</span>
+        <span className="habit-gauge-bar-value">{value}</span>
+      </div>
+      <div className="habit-gauge-bar-track">
+        <div
+          className="habit-gauge-bar-fill"
+          style={{ width: `${Math.max(0, Math.min(1, fill)) * 100}%` }}
+        />
+      </div>
+    </div>
   );
 }
 

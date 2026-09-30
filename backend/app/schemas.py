@@ -178,7 +178,8 @@ class HabitTargetIn(BaseModel):
 # history, so raising 10 отжиманий to 15 leaves the days done at 10 as done;
 # `target` mirrors its latest version. Both are in those same units; `unit` is
 # the human-readable label ('раз', 'мин', ...). `order` is the habit's position
-# in the home-page grid.
+# in the home-page grid. `chart` is how its card draws today's progress:
+# 'dots' (a dotted arc) or 'gauge' (radial capsules over two progress bars).
 class HabitIn(BaseModel):
     id: str
     name: str
@@ -189,6 +190,16 @@ class HabitIn(BaseModel):
     targets: List[HabitTargetIn] = []
     unit: str = ''
     order: int = 0
+    chart: str = Field(default='dots', pattern=r'^(dots|gauge)$')
+
+
+# Per-user display choices. Every field is optional: a PUT carries only the
+# keys it changes and the rest of the stored object is kept.
+# `activityChart` is how the activity card draws its week / month slices:
+# 'bars', 'race' (running totals against the two periods before) or 'wave'
+# (a smooth daily curve).
+class PrefsIn(BaseModel):
+    activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

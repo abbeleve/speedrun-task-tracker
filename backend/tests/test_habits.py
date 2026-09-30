@@ -18,10 +18,30 @@ def test_habits_empty_and_upsert(client, auth_headers):
     resp = client.put('/api/habits/h1', headers=auth_headers, json=HABIT)
     assert resp.status_code == 200
     # A habit sent without a quota history reads back with one version that
-    # has applied from the beginning.
+    # has applied from the beginning, and one without a chart gets the dots.
     assert client.get('/api/habits', headers=auth_headers).json() == [
-        {**HABIT, 'targets': [{'since': '', 'target': 10}]}
+        {**HABIT, 'targets': [{'since': '', 'target': 10}], 'chart': 'dots'}
     ]
+
+
+def test_habit_chart_choice_round_trips_per_user(client, auth_headers):
+    client.put('/api/habits/h1', headers=auth_headers, json={**HABIT, 'chart': 'gauge'})
+    assert client.get('/api/habits', headers=auth_headers).json()[0]['chart'] == 'gauge'
+
+    # A reorder re-sends the habit; the chart it carries is kept.
+    client.put('/api/habits/h1', headers=auth_headers, json={**HABIT, 'chart': 'gauge', 'order': 2})
+    assert client.get('/api/habits', headers=auth_headers).json()[0]['chart'] == 'gauge'
+
+    from tests.helpers import register
+
+    other = register(client, username='bob', password='secret456')
+    other_headers = {'Authorization': f"Bearer {other['token']}"}
+    assert client.get('/api/habits', headers=other_headers).json() == []
+
+
+def test_habit_chart_rejects_unknown_styles(client, auth_headers):
+    resp = client.put('/api/habits/h1', headers=auth_headers, json={**HABIT, 'chart': 'pie'})
+    assert resp.status_code == 422
 
 
 def test_habit_update_keeps_one_row(client, auth_headers):

@@ -89,6 +89,13 @@ CREATE TABLE IF NOT EXISTS color_presets (
     data TEXT NOT NULL
 );
 
+-- Small per-user display choices (which chart the activity card draws, ...),
+-- one JSON object per user. Each PUT merges its keys into the stored object.
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL
+);
+
 -- Habit tracker. A habit's definition (name, format, target...) is stored as a
 -- JSON blob keyed by client-generated id, mirroring the templates tables.
 CREATE TABLE IF NOT EXISTS habits (

@@ -100,6 +100,8 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
       targets: nextTargets,
       unit: unit.trim(),
       order: habit?.order ?? nextOrder,
+      // Picked on the card, not here — editing a habit must not reset it.
+      ...(habit?.chart ? { chart: habit.chart } : {}),
     });
   };
 

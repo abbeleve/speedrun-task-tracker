@@ -108,3 +108,43 @@ export const IconClose = (p: IconProps) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
+
+// Chart styles, for the switches beside the habit cards' and the activity
+// card's charts. Each is a thumbnail of the chart it picks.
+
+// A half-ring of dots — the habit card's dotted arc.
+export const IconChartDots = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 17h.01M6.3 11.3h.01M12 9h.01M17.7 11.3h.01M20 17h.01" strokeWidth={3} />
+  </Icon>
+);
+
+// A fan of radial capsules — the habit card's gauge.
+export const IconChartGauge = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 18h3.5M5.6 11.6l2.5 2.5M12 9v3.5M18.4 11.6l-2.5 2.5M21 18h-3.5" strokeWidth={2.25} />
+  </Icon>
+);
+
+export const IconChartBars = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 20v-6M10 20V8M15 20v-9M20 20V5" strokeWidth={2.25} />
+  </Icon>
+);
+
+// Two running totals racing to a finish line.
+export const IconChartRace = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 18c5.5 0 6-11 11.5-11H18" />
+    <path d="M3 19.5c6 0 6.5-5 11.5-5H18" opacity={0.5} />
+    <path d="M20.5 3.5v17" />
+  </Icon>
+);
+
+// A smooth daily curve over an underlined stretch.
+export const IconChartWave = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12c2.5 0 3 3.5 5.5 3.5S12 7 15 7s3.5 4.5 6 4.5" />
+    <path d="M12.5 20.5h6" strokeWidth={2.5} />
+  </Icon>
+);

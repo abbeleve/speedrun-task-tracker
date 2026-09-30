@@ -8,7 +8,21 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { CSSProperties, ReactNode } from 'react';
 import type { DayStats, Habit, HabitEntry, Task } from './types';
 import { dateKey, heatLevel, shiftDayKey, startOfWeek, todayKey } from './history';
-import { habitHeatLevel, habitTargetOn, habitTotal } from './habits';
+import { habitHeatLevel, habitTargetOn, habitTotal, isHabitComplete } from './habits';
+import {
+  ACTIVITY_CHARTS,
+  activeAverage,
+  activityChartOf,
+  cumulative,
+  fmtChartValue,
+  valueOnDay,
+} from './activityChart';
+import type { ActivityChart, ValueKind } from './activityChart';
+import { RaceChart, WaveChart } from './ActivityCharts';
+import type { RaceSeries, WaveDay } from './ActivityCharts';
+import ChartSwitch from './ChartSwitch';
+import type { ChartSwitchOption } from './ChartSwitch';
+import { IconChartBars, IconChartRace, IconChartWave } from './icons';
 import {
   entryWithRange,
   extendToHour,
@@ -1108,6 +1122,52 @@ const HeatCells = memo(function HeatCells({ cells, title, onEnter, onMove, onLea
   );
 });
 
+// ── Chart style for the week / month slices ────────────────────────────
+
+const ACTIVITY_CHART_ICONS: Record<ActivityChart, ReactNode> = {
+  bars: <IconChartBars size={16} />,
+  race: <IconChartRace size={16} />,
+  wave: <IconChartWave size={16} />,
+};
+const ACTIVITY_CHART_OPTIONS: ChartSwitchOption<ActivityChart>[] = ACTIVITY_CHARTS.map((c) => ({
+  ...c,
+  icon: ACTIVITY_CHART_ICONS[c.value],
+}));
+
+// The chart the week / month slices are drawn with. It is a per-account
+// preference kept on the server, so it survives logging out and follows the
+// user to another device. The bars show until the stored choice arrives; a
+// choice made before then is not overwritten by the late answer.
+function useActivityChart(): [ActivityChart, (chart: ActivityChart) => void] {
+  const [chart, setChartState] = useState<ActivityChart>('bars');
+  const chosen = useRef(false);
+  useEffect(() => {
+    let active = true;
+    api
+      .loadPrefs()
+      .then((prefs) => {
+        if (active && !chosen.current) setChartState(activityChartOf(prefs?.activityChart));
+      })
+      .catch((e) => console.error('Failed to load display preferences', e));
+    return () => {
+      active = false;
+    };
+  }, []);
+  const setChart = useCallback((next: ActivityChart) => {
+    chosen.current = true;
+    setChartState(next);
+    void api
+      .savePrefs({ activityChart: next })
+      .catch((e) => console.error('Failed to save display preferences', e));
+  }, []);
+  return [chart, setChart];
+}
+
+// "29 сен – 5 окт" — a week without its year, for the race chart's legend.
+function shortRangeLabel(startKey: string, endKey: string): string {
+  return `${fmtShortDate(startKey)} – ${fmtShortDate(endKey)}`;
+}
+
 function weekRangeLabel(weekStart: string): string {
   const start = parseKey(weekStart);
   const end = parseKey(shiftDayKey(weekStart, 6));
@@ -1128,6 +1188,8 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
+
+  const [chart, setChart] = useActivityChart();
 
   const selectedHabit = useMemo(() => habits.find((h) => h.id === habitId) ?? null, [habits, habitId]);
   const todayKeyStr = useMemo(() => dateKey(today), [today]);
@@ -1168,6 +1230,77 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
     return computeBars(block.days, today, valueFn, barTarget, (d) => String(d.getDate()));
   }, [monthCursor, today, valueFn, barTarget]);
 
+  // The line charts work in seconds for anything timed (work, time habits —
+  // whose own unit is minutes) and in plain units for count habits, so both
+  // axes can label time as hours and minutes.
+  const kind: ValueKind = selectedHabit?.format === 'count' ? 'count' : 'duration';
+  const unit = selectedHabit?.format === 'count' ? selectedHabit.unit : '';
+  const lineCharts = useMemo(() => {
+    if (chart === 'bars' || (period !== 'week' && period !== 'month')) return null;
+    const scale = selectedHabit?.format === 'time' ? 60 : 1;
+    const valueOn = (key: string): number | null => (key > todayKeyStr ? null : valueFn(key) * scale);
+    const fmt = (v: number) => `${fmtChartValue(v, kind)}${unit ? ` ${unit}` : ''}`;
+
+    // The period in view and the two before it — the race compares against those.
+    const periods = [0, 1, 2].map((back) => {
+      if (period === 'week') {
+        const start = shiftDayKey(weekStart, -7 * back);
+        const keys = Array.from({ length: 7 }, (_, i) => shiftDayKey(start, i));
+        return { name: shortRangeLabel(keys[0], keys[6]), keys };
+      }
+      const first = new Date(monthCursor.year, monthCursor.month - back, 1);
+      const block = buildMonth(first.getFullYear(), first.getMonth());
+      const year = first.getFullYear() !== today.getFullYear() ? ` ${first.getFullYear()}` : '';
+      return { name: `${MONTHS_FULL[first.getMonth()]}${year}`, keys: block.days.map((d) => d.key) };
+    });
+    const keys = periods[0].keys;
+    const at = keys.indexOf(todayKeyStr);
+    const todayIndex = at >= 0 ? at : null;
+    const span = period;
+
+    if (chart === 'race') {
+      const days = Math.max(...periods.map((p) => p.keys.length));
+      const series: RaceSeries[] = periods.map((p) => ({ name: p.name, values: p.keys.map(valueOn) }));
+      const totals = series.map((s) => cumulative(s.values));
+      const xLabels = Array.from({ length: days }, (_, i) =>
+        span === 'week' ? `${DOW_SHORT_MON[i]} ${parseKey(keys[i]).getDate()}` : String(i + 1)
+      );
+      const tooltips = xLabels.map((_, i) => {
+        const head = span === 'week' ? `С начала недели по ${DOW_SHORT_MON[i]}` : `С 1 по ${i + 1} число`;
+        const rows = periods.map((p, s) => {
+          const v = valueOnDay(totals[s], i);
+          const label = span === 'week' ? fmtShortDate(p.keys[i]) : p.name;
+          return `${label}: ${v === null ? '—' : fmt(v)}`;
+        });
+        return [head, ...rows].join('\n');
+      });
+      return { chart: 'race' as const, span, series, xLabels, tooltips, today: todayIndex };
+    }
+
+    const values = keys.map(valueOn);
+    const average = selectedHabit ? null : activeAverage(values);
+    const days: WaveDay[] = keys.map((key, i) => {
+      const value = values[i];
+      if (selectedHabit) {
+        const target = habitTargetOn(selectedHabit, key) * scale;
+        return { value, reference: target, hit: value !== null && isHabitComplete(value, target) };
+      }
+      return { value, reference: average, hit: value !== null && average !== null && value > 0 && value >= average };
+    });
+    const xLabels = keys.map((key, i) =>
+      span === 'week' ? `${DOW_SHORT_MON[i]} ${parseKey(key).getDate()}` : String(parseKey(key).getDate())
+    );
+    const tooltips = keys.map((key, i) => {
+      const d = days[i];
+      if (d.value === null) return '';
+      const what = selectedHabit
+        ? `${selectedHabit.emoji} ${selectedHabit.name}: ${fmtChartValue(d.value, kind)} / ${fmt(d.reference ?? 0)}`
+        : `Работа: ${fmt(d.value)}`;
+      return `${fmtShortDate(key)}\n${what}`;
+    });
+    return { chart: 'wave' as const, span, days, xLabels, tooltips, today: todayIndex };
+  }, [chart, period, selectedHabit, todayKeyStr, valueFn, kind, unit, weekStart, monthCursor, today]);
+
   const effectiveHeatData = habitHeatData ?? heatData;
   const { scrollRef, daysRef, cell } = useHeatCellSize(effectiveHeatData.colsCount);
   const title = useMemo(
@@ -1178,6 +1311,43 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
   const showBar = useCallback(
     (e: { clientX: number; clientY: number }, b: BarInfo) => show(e, barTooltipLines(b, selectedHabit)),
     [show, selectedHabit]
+  );
+  const hover = useMemo(() => ({ onEnter: show, onMove: move, onLeave: hide }), [show, move, hide]);
+
+  // The week / month chart in the chosen style, with the style switch on its right.
+  const periodChart = (bars: BarInfo[]) => (
+    <div className="heat-period-chart">
+      {lineCharts?.chart === 'race' ? (
+        <RaceChart
+          series={lineCharts.series}
+          xLabels={lineCharts.xLabels}
+          today={lineCharts.today}
+          span={lineCharts.span}
+          kind={kind}
+          unit={unit}
+          tooltips={lineCharts.tooltips}
+          hover={hover}
+        />
+      ) : lineCharts?.chart === 'wave' ? (
+        <WaveChart
+          days={lineCharts.days}
+          xLabels={lineCharts.xLabels}
+          today={lineCharts.today}
+          span={lineCharts.span}
+          kind={kind}
+          unit={unit}
+          color={selectedHabit ? selectedHabit.color : 'var(--accent-purple)'}
+          name={selectedHabit ? `${selectedHabit.emoji} ${selectedHabit.name}` : 'Работа'}
+          referenceLabel={selectedHabit ? 'норма' : 'средний рабочий день'}
+          hitLabel={selectedHabit ? 'норма выполнена' : 'не меньше среднего'}
+          tooltips={lineCharts.tooltips}
+          hover={hover}
+        />
+      ) : (
+        <BarChart bars={bars} color={barColor} todayKeyStr={todayKeyStr} onEnter={showBar} onMove={move} onLeave={hide} />
+      )}
+      <ChartSwitch label="Вид графика" value={chart} options={ACTIVITY_CHART_OPTIONS} onChange={setChart} />
+    </div>
   );
 
   return (
@@ -1237,7 +1407,7 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
               След. неделя →
             </button>
           </div>
-          <BarChart bars={weekBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={showBar} onMove={move} onLeave={hide} />
+          {periodChart(weekBars)}
         </div>
       )}
 
@@ -1267,7 +1437,7 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
               След. месяц →
             </button>
           </div>
-          <BarChart bars={monthBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={showBar} onMove={move} onLeave={hide} />
+          {periodChart(monthBars)}
         </div>
       )}
 

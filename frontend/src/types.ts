@@ -160,6 +160,11 @@ export interface HabitTarget {
   target: number;
 }
 
+// How a habit's card draws today's progress: 'dots' is the dotted arc,
+// 'gauge' a ring of radial capsules over two progress bars. Chosen per habit
+// on the card itself and stored with the habit, so it follows the account.
+export type HabitChart = 'dots' | 'gauge';
+
 // A habit a user wants to keep doing every day. The quota and the derived
 // daily value are in the same units: count units for 'count', minutes for
 // 'time'. The quota is versioned — raise 10 отжиманий to 15 and the days done
@@ -176,6 +181,7 @@ export interface Habit {
   targets: HabitTarget[]; // quota history, oldest first
   unit: string; // human label: 'раз', 'мин', …
   order: number;
+  chart?: HabitChart; // absent on habits saved before the choice existed → 'dots'
 }
 
 // The hand-entered portion of a habit's progress for one day (count habits,

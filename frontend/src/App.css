@@ -2569,6 +2569,58 @@
   font-weight: 600;
 }
 
+/* --- Chart style switch: a column of icon buttons on the right of a chart
+   (the habit cards and the activity card's week / month charts) --- */
+
+.chart-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--track-bg);
+  border: 1px solid var(--border);
+  justify-self: end;
+  align-self: center;
+}
+
+.chart-switch-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.chart-switch-btn:hover {
+  color: var(--text-secondary);
+  background: var(--control-hover);
+}
+
+.chart-switch-btn.active {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+}
+
+.chart-switch-btn:active {
+  transform: scale(0.94);
+}
+
+.chart-switch-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
 /* --- Period toggle (Год / Неделя / Месяц) --- */
 
 .period-toggle {
@@ -2599,6 +2651,240 @@
 .period-toggle-btn.active {
   background: var(--bg-secondary);
   color: var(--accent-green);
+}
+
+/* --- Week / month line charts (race, wave) — see ActivityCharts.tsx --- */
+
+.heat-period-chart {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.act-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.act-chart-canvas {
+  width: 100%;
+  min-height: 240px;
+}
+
+.act-chart-canvas svg {
+  display: block;
+  overflow: visible;
+}
+
+.act-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.act-tick {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-dim);
+}
+
+.act-date.today {
+  fill: var(--text-primary);
+  font-weight: 700;
+}
+
+.act-hit {
+  fill: transparent;
+}
+
+.act-hit:hover {
+  fill: var(--control-hover);
+}
+
+/* The period in view: its stroke is a gradient of green / gold / red by the
+   lead it holds over the period before, with a blurred copy under it as a
+   glow. The two earlier periods are plain grey, the older one fainter. */
+.act-race-now,
+.act-race-glow,
+.act-race-past {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.act-race-now {
+  stroke-width: 3;
+}
+
+.act-race-glow {
+  stroke-width: 9;
+  opacity: 0.32;
+}
+
+.act-race-past {
+  stroke-width: 2.5;
+}
+
+.act-race-past.s1,
+.act-race-marker.s1 {
+  stroke: color-mix(in srgb, var(--text-secondary) 70%, transparent);
+}
+
+.act-race-past.s2,
+.act-race-marker.s2 {
+  stroke: color-mix(in srgb, var(--text-secondary) 38%, transparent);
+}
+
+/* Where the period in view has got to. */
+.act-race-cursor {
+  stroke: color-mix(in srgb, var(--accent-red) 55%, var(--accent-purple));
+  stroke-width: 1.5;
+}
+
+.act-race-marker {
+  fill: var(--bg-secondary);
+  stroke-width: 2.5;
+}
+
+.act-race-value {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-secondary);
+  /* A halo in the card's colour keeps the figure legible where it crosses a line. */
+  paint-order: stroke;
+  stroke: var(--bg-secondary);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.act-race-value.s0 {
+  fill: var(--text-primary);
+  font-weight: 700;
+}
+
+.act-wave-line {
+  fill: none;
+  stroke: var(--act-color);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.act-wave-hit-dots {
+  opacity: 0.55;
+}
+
+.act-wave-hit-bar {
+  fill: var(--act-color);
+}
+
+.act-wave-reference {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+  opacity: 0.6;
+}
+
+.act-wave-reference-label {
+  fill: var(--text-secondary);
+}
+
+.act-wave-today {
+  fill: var(--bg-secondary);
+  stroke: var(--act-color);
+  stroke-width: 2.5;
+}
+
+/* The main line draws itself in once, when the chart appears. */
+.act-draw {
+  stroke-dasharray: 1;
+  animation: act-draw 0.8s var(--ease-out) both;
+}
+
+@keyframes act-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.act-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding-left: 54px; /* under the plot, clear of the value axis */
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.act-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.act-legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.act-legend-item.s0 .act-legend-swatch {
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-gold), var(--accent-red));
+}
+
+.act-legend-item.s1 .act-legend-swatch {
+  background: color-mix(in srgb, var(--text-secondary) 70%, transparent);
+}
+
+.act-legend-item.s2 .act-legend-swatch {
+  background: color-mix(in srgb, var(--text-secondary) 38%, transparent);
+}
+
+.act-legend-note {
+  color: var(--text-dim);
+}
+
+.act-legend-line .act-legend-swatch {
+  background: var(--act-color);
+}
+
+.act-legend-dots .act-legend-swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  background-image: radial-gradient(var(--act-color) 1px, transparent 1.4px);
+  background-size: 4px 4px;
+  box-shadow: inset 0 -2px 0 var(--act-color);
+}
+
+.act-legend-reference .act-legend-swatch {
+  height: 0;
+  border-top: 1.5px dashed var(--text-secondary);
+  border-radius: 0;
+}
+
+@media (max-width: 720px) {
+  .act-legend {
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-draw {
+    animation: none;
+  }
+  .chart-switch-btn {
+    transition: none;
+  }
 }
 
 /* --- Custom hover tooltip (replaces native `title`, which is slow to show
@@ -4704,6 +4990,152 @@
     opacity 0.35s ease;
 }
 
+/* ── Chart stage: the chart centred, its style switch on the right ──
+   An empty first column as wide as the switch keeps the chart centred
+   under the name. The stage reaches 8px into the card's padding on both
+   sides, so the switch lines up under the history toggle. */
+
+.habit-card-stage {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -8px;
+}
+
+.habit-card-stage::before {
+  content: '';
+}
+
+.habit-card-stage > .habit-card-dial {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.habit-card-chart-switch {
+  grid-column: 3;
+}
+
+.habit-card-chart-switch .chart-switch-btn.active {
+  color: var(--habit-color, var(--text-primary));
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 16%, transparent);
+  box-shadow: none;
+}
+
+/* A chart picked from the switch eases in, so the change reads as an answer
+   to the press rather than a flash. */
+.habit-card-chart-in {
+  animation: habit-chart-in 0.26s var(--ease-out);
+}
+
+@keyframes habit-chart-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Gauge: radial capsules around today's value ─────────────────
+   The pill says whether today's quota is met (green) or how much is left
+   (neutral); the value sits under it, between the two lowest capsules. */
+
+.habit-gauge-capsule {
+  transition: stroke 0.35s ease;
+}
+
+.habit-gauge-readout {
+  position: absolute;
+  left: 50%;
+  bottom: 3%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.habit-gauge-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-dim) 18%, transparent);
+}
+
+.habit-gauge-pill.done {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+}
+
+.habit-gauge-number {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: clamp(1.9rem, 5vw, 2.6rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.habit-gauge-unit {
+  font-size: 0.4em;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.habit-gauge-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.habit-gauge-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.habit-gauge-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.habit-gauge-bar-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.habit-gauge-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 22%, transparent);
+  overflow: hidden;
+}
+
+.habit-gauge-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--habit-color, var(--accent-blue));
+  transition: width 0.35s var(--ease-out);
+}
+
+.habit-gauge-bar.muted .habit-gauge-bar-fill {
+  background: color-mix(in srgb, var(--text-dim) 75%, transparent);
+}
+
 /* ── Yesterday comparison — a quiet pill under the arc ─────────── */
 
 .habit-card-dial-compare {
@@ -4895,8 +5327,13 @@
   .habit-card,
   .habit-btn,
   .habit-card-history-toggle,
-  .habit-dial-dot {
+  .habit-dial-dot,
+  .habit-gauge-capsule,
+  .habit-gauge-bar-fill {
     transition: none;
+  }
+  .habit-card-chart-in {
+    animation: none;
   }
 }
 

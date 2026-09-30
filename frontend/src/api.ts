@@ -4,6 +4,7 @@
 // in localStorage and attached to each request.
 
 import { todayKey } from './history';
+import type { ActivityChart } from './activityChart';
 import type { ColorPreset } from './colorPresets';
 import type { SleepData } from './sleep';
 import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
@@ -240,6 +241,21 @@ export function saveColorPresets(presets: ColorPreset[]): Promise<void> {
     }));
   colorPresetWrites.set(token, promise);
   return promise;
+}
+
+// ── Display preferences ────────────────────────────────────────────
+
+export interface Prefs {
+  activityChart?: ActivityChart;
+}
+
+export async function loadPrefs(): Promise<Prefs> {
+  return apiFetch('/prefs');
+}
+
+// Only the keys passed change; the server keeps the rest of what it stored.
+export async function savePrefs(patch: Prefs): Promise<void> {
+  await apiFetch('/prefs', { method: 'PUT', body: JSON.stringify(patch) });
 }
 
 // ── Habits (home-page tracker) ─────────────────────────────────────

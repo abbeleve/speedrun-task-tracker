@@ -23,6 +23,7 @@ from .schemas import (
     HabitEntryIn,
     HabitIn,
     LoginIn,
+    PrefsIn,
     RegisterIn,
     RunIn,
     SleepIn,
@@ -508,6 +509,35 @@ def put_color_presets(
     )
     conn.commit()
     return {'ok': True}
+
+
+# ── Display preferences ─────────────────────────────────────────────
+
+@app.get('/api/prefs')
+def get_prefs(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    row = conn.execute('SELECT data FROM user_prefs WHERE user_id = ?', (user['id'],)).fetchone()
+    return json.loads(row['data']) if row else {}
+
+
+@app.put('/api/prefs')
+def put_prefs(
+    body: PrefsIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    # Only the keys the client sent change; a choice made on one screen never
+    # resets one made on another.
+    row = conn.execute('SELECT data FROM user_prefs WHERE user_id = ?', (user['id'],)).fetchone()
+    prefs = {**(json.loads(row['data']) if row else {}), **body.model_dump(exclude_unset=True)}
+    conn.execute(
+        """
+        INSERT INTO user_prefs (user_id, data) VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET data = excluded.data
+        """,
+        (user['id'], json.dumps(prefs)),
+    )
+    conn.commit()
+    return prefs
 
 
 # ── Habits (home-page tracker) ──────────────────────────────────────
