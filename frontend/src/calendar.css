@@ -875,11 +875,13 @@
   color: var(--accent-blue);
 }
 
+/* Thin edges, so most of a block is left for picking it up. On a short block
+   (16px at 15 min) they shrink further, to a fifth of its height each. */
 .cal-block-resize {
   position: absolute;
   left: 0;
   right: 0;
-  height: 7px;
+  height: min(4px, 20%);
   cursor: ns-resize;
   z-index: 2;
 }
