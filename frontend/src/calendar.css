@@ -2734,14 +2734,9 @@
 
 .cal-grid--timeline {
   overflow: auto;
-  /* The room for a scrollbar is kept whether a week overflows or not, so the
-     day's width — and with it the scale — never jumps when one appears. */
+  /* The room for a scrollbar is kept whether a week overflows or not, so a
+     zoomed stretch keeps its scale when one appears. */
   scrollbar-gutter: stable;
-}
-
-/* Unzoomed the whole day fits across: nothing to scroll sideways to. */
-.cal-grid--timeline.fit {
-  overflow-x: hidden;
 }
 
 .tl-ruler {

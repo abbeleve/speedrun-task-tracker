@@ -151,28 +151,28 @@ describe('landingLanes', () => {
 });
 
 describe('timelineScale', () => {
-  it('spreads the whole day over the width there is', () => {
-    expect(timelineScale(1152) * 24 * 60).toBeCloseTo(1152, 9);
-    expect(timelineScale(720)).toBe(0.5);
+  it('draws the day at 120px an hour whatever the width, scrolling across it', () => {
+    expect(timelineScale(1152, null)).toBe(2);
+    expect(timelineScale(320, null)).toBe(2);
   });
 
-  it('spreads a zoomed stretch over the same width', () => {
+  it('spreads a zoomed stretch over the width there is', () => {
     // 09:00–12:00 across 900px: 5px a minute.
     expect(timelineScale(900, 180)).toBe(5);
   });
 
-  it('falls back to a fixed scale before the sheet has been measured', () => {
-    expect(timelineScale(0)).toBe(2);
+  it('keeps the fixed scale until the sheet has been measured', () => {
+    expect(timelineScale(0, 180)).toBe(2);
   });
 });
 
 describe('blockDetail', () => {
-  it('shows a wide block in full, a middling one by name, a narrow one by emoji', () => {
-    expect(blockDetail(200)).toBe('full');
-    expect(blockDetail(136)).toBe('full');
-    expect(blockDetail(100)).toBe('name');
-    expect(blockDetail(76)).toBe('name');
-    expect(blockDetail(46)).toBe('compact');
+  it('shows a wide block in full, a middling one by name, a sliver by emoji', () => {
+    expect(blockDetail(120)).toBe('full'); // an hour
+    expect(blockDetail(92)).toBe('full');
+    expect(blockDetail(60)).toBe('name'); // half an hour
+    expect(blockDetail(48)).toBe('name');
+    expect(blockDetail(30)).toBe('compact'); // a quarter of an hour
   });
 });
 

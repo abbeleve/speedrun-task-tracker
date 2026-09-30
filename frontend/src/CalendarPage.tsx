@@ -42,6 +42,7 @@ import {
   TL_GUTTER_PX,
   TL_LANE_PX,
   TL_MIN_BLOCK_PX,
+  TL_PX_PER_MIN,
   TL_RAIL_PX,
   TL_REMINDER_PX,
   TL_RULER_PX,
@@ -412,8 +413,8 @@ function CalendarPage({
 
   // Re-attached whenever the grid may have been swapped for another element
   // (the month has none, the timeline its own). Measured once straight away,
-  // before the first paint: the timeline is as wide as the sheet, and must
-  // not show up at a guessed width for a frame first.
+  // before the first paint, so a zoomed grid never shows up at a guessed
+  // scale for a frame first.
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -492,14 +493,11 @@ function CalendarPage({
   }, [view, anchor, horizontal]);
 
   const zoomLenMin = zoomRange ? Math.max(1, zoomRange.endMin - zoomRange.startMin) : DAY_MIN;
-  // The timeline always fits the room right of its day labels: the whole day
-  // at once, or the zoomed stretch of it.
-  // Whole pixels, so the fitted day never overshoots the sheet by a fraction.
-  const trackViewPx = horizontal
-    ? Math.floor(scrollerSize.width) - TL_GUTTER_PX
-    : scrollerSize.height;
+  // The timeline zooms across the room right of its day labels; unzoomed it
+  // keeps a fixed scale and scrolls sideways through the day.
+  const trackViewPx = horizontal ? scrollerSize.width - TL_GUTTER_PX : scrollerSize.height;
   const pxPerMin = horizontal
-    ? timelineScale(trackViewPx, zoomLenMin)
+    ? timelineScale(trackViewPx, zoomRange ? zoomLenMin : null)
     : zoomRange && trackViewPx > 0
       ? trackViewPx / zoomLenMin
       : PX_PER_MIN;
@@ -560,9 +558,12 @@ function CalendarPage({
     if (view === 'month') return;
     const el = scrollerRef.current;
     if (!el) return;
+    const nowDate = new Date();
+    const focusMin = visibleDays.includes(today) ? nowDate.getHours() * 60 : 8 * 60;
     if (horizontal) {
-      // Unzoomed the whole day fits, so there is nothing to scroll across.
-      el.scrollLeft = zoomRange ? zoomRange.startMin * pxPerMin : 0;
+      el.scrollLeft = zoomRange
+        ? zoomRange.startMin * pxPerMin
+        : Math.max(0, (focusMin - 60) * TL_PX_PER_MIN);
       const todayIdx = visibleDays.indexOf(today);
       const rows = timelineRef.current?.rows;
       el.scrollTop = todayIdx > 0 && rows ? rows.tops[todayIdx] : 0;
@@ -572,8 +573,6 @@ function CalendarPage({
       el.scrollTop = zoomRange.startMin * pxPerMin;
       return;
     }
-    const nowDate = new Date();
-    const focusMin = visibleDays.includes(today) ? nowDate.getHours() * 60 : 8 * 60;
     el.scrollTop = Math.max(0, (focusMin - 60) * PX_PER_MIN);
     // Only when the layout changes, not on every task edit.
   }, [view, today, visibleDays, zoomRange, pxPerMin, horizontal]);
@@ -2334,7 +2333,7 @@ function CalendarPage({
     const showNow = visibleDays.includes(today);
     return (
       <div
-        className={`cal-grid cal-grid--timeline${zoomRange ? '' : ' fit'}`}
+        className="cal-grid cal-grid--timeline"
         ref={scrollerRef}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -2347,8 +2346,7 @@ function CalendarPage({
               </span>
             ))}
             {showNow && (
-              // Kept whole near midnight, where the day now ends at the
-              // sheet's edge.
+              // Kept whole in the first and last minutes of the day.
               <span
                 className="tl-now-label"
                 style={{ left: Math.min(trackPx - 22, Math.max(22, minToPx(nowMin))) }}

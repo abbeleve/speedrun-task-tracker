@@ -10,16 +10,16 @@
 //   reminders   thin rails along the bottom, one per overlapping reminder
 //
 // When the rows need less height than the sheet has, the spare height is
-// shared between them, so a short week still fills the screen. Across, the
-// whole day always fits the sheet's width: all 24 hours at once, with no
-// sideways scrolling until a stretch of it is zoomed into.
+// shared between them, so a short week still fills the screen. Across, an
+// hour is wide enough for a block's name to be read, and the sheet scrolls
+// sideways through the day; right-drag zooms a stretch of it to fill the
+// sheet's width.
 
 import type { Task } from './types';
 import type { Chain, DaySegment } from './schedule';
 import { DAY_MIN, MIN_MS, dayStartMs, daySegments, isSession } from './schedule';
 
-// Only until the sheet has been measured: 120px an hour.
-export const TL_PX_PER_MIN = 2;
+export const TL_PX_PER_MIN = 2; // 120px an hour
 export const TL_GUTTER_PX = 68; // the day labels on the left
 export const TL_RULER_PX = 30; // the hour ruler along the top
 export const TL_RAIL_PX = 20;
@@ -32,19 +32,21 @@ export const TL_REMINDER_PX = 8; // one reminder rail and the gap above it
 export const TL_MIN_BLOCK_PX = 26;
 // Hour labels closer together than this start skipping hours.
 const TL_MIN_LABEL_GAP_PX = 44;
-// How wide a block must be to show its name beside the emoji and the ✓, and
-// to show its times on a second line as well.
-const TL_NAME_MIN_PX = 76;
-const TL_TIMES_MIN_PX = 136;
+// How wide a block must be to have any room for its name beside the emoji
+// and the ✓, and to show its times on a second line as well.
+const TL_NAME_MIN_PX = 48;
+const TL_TIMES_MIN_PX = 92;
 
-// Pixels per minute across the timeline: the whole day — or, zoomed, the
-// chosen stretch of it — spread over the room right of the day labels.
-export function timelineScale(viewPx: number, spanMin: number = DAY_MIN): number {
-  return viewPx > 0 ? viewPx / Math.max(1, spanMin) : TL_PX_PER_MIN;
+// Pixels per minute across the timeline: the fixed scale, or — zoomed — the
+// chosen stretch spread over the room right of the day labels.
+export function timelineScale(viewPx: number, zoomSpanMin: number | null): number {
+  if (zoomSpanMin === null || viewPx <= 0) return TL_PX_PER_MIN;
+  return viewPx / Math.max(1, zoomSpanMin);
 }
 
 // What a block this wide has room for: everything, its name but not its
-// times, or only the emoji over the ✓ (the hover card has the rest).
+// times, or — a sliver of a block — only the emoji over the ✓ (the hover
+// card has the rest).
 export function blockDetail(widthPx: number): 'full' | 'name' | 'compact' {
   if (widthPx >= TL_TIMES_MIN_PX) return 'full';
   return widthPx >= TL_NAME_MIN_PX ? 'name' : 'compact';
