@@ -18,11 +18,14 @@ import {
   laneTop,
   layoutRows,
   linkPath,
+  peekWidth,
+  pickPeeks,
   reminderRailCount,
   rowAt,
   rowContentHeight,
   sessionLinks,
   spreadCards,
+  stackPeeks,
   timelineScale,
 } from './timeline';
 
@@ -248,6 +251,101 @@ describe('linkPath', () => {
 
   it('falls back to an S-curve when the blocks leave no room for an elbow', () => {
     expect(linkPath(100, 40, 104, 88)).toBe('M 100 40 C 118 40, 86 88, 104 88');
+  });
+});
+
+describe('pickPeeks', () => {
+  const visible = { left: 100, right: 1000, top: 50, bottom: 600 };
+  const block = (id: string, left: number, width = 30, top = 100) => ({
+    id,
+    rect: { left, right: left + width, top, bottom: top + 42 },
+  });
+
+  it('takes the first three on screen, left to right', () => {
+    const picked = pickPeeks(
+      [block('d', 700), block('a', 150), block('c', 500), block('b', 300), block('e', 900)],
+      visible
+    );
+    expect(picked.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('skips blocks scrolled out of sight, but keeps one half on screen', () => {
+    const picked = pickPeeks(
+      [block('gone-left', 20, 40), block('half', 80, 40), block('below', 300, 30, 700)],
+      visible
+    );
+    expect(picked.map((p) => p.id)).toEqual(['half']);
+  });
+
+  it('takes as many as asked for', () => {
+    expect(pickPeeks([block('a', 150), block('b', 300)], visible, 1).map((p) => p.id)).toEqual(['a']);
+  });
+});
+
+describe('peekWidth', () => {
+  it('fits its text with its chrome around it', () => {
+    expect(peekWidth(15, 80, 60)).toBe(33 + 15 + 80 + 60);
+  });
+
+  it('never gets narrower than a card or wider than a third of a laptop screen', () => {
+    expect(peekWidth(15, 5, 10)).toBe(72);
+    expect(peekWidth(15, 900, 60)).toBe(300);
+  });
+});
+
+describe('stackPeeks', () => {
+  const bounds = { left: 0, right: 1200 };
+
+  it('keeps cards that do not touch in one line, each under its block', () => {
+    expect(stackPeeks([{ left: 100, width: 120 }, { left: 300, width: 120 }], bounds, 4)).toEqual([
+      { left: 100, tier: 0 },
+      { left: 300, tier: 0 },
+    ]);
+  });
+
+  it('drops a card that would run into the one before it to the tier below', () => {
+    expect(
+      stackPeeks(
+        [
+          { left: 100, width: 150 },
+          { left: 130, width: 150 },
+          { left: 160, width: 150 },
+        ],
+        bounds,
+        4
+      ).map((p) => p.tier)
+    ).toEqual([0, 1, 2]);
+  });
+
+  it('goes back up to the first tier with room', () => {
+    expect(
+      stackPeeks(
+        [
+          { left: 100, width: 150 },
+          { left: 130, width: 150 },
+          { left: 260, width: 100 },
+        ],
+        bounds,
+        4
+      ).map((p) => p.tier)
+    ).toEqual([0, 1, 0]);
+  });
+
+  it('keeps a card inside the bounds, and still stacks it if that makes it touch', () => {
+    expect(stackPeeks([{ left: -40, width: 100 }], bounds, 4)).toEqual([{ left: 0, tier: 0 }]);
+    expect(
+      stackPeeks(
+        [
+          { left: 1000, width: 150 },
+          { left: 1150, width: 200 },
+        ],
+        bounds,
+        4
+      )
+    ).toEqual([
+      { left: 1000, tier: 0 },
+      { left: 1000, tier: 1 },
+    ]);
   });
 });
 

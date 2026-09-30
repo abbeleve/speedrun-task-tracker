@@ -218,6 +218,75 @@ export function linkPath(x1: number, y1: number, x2: number, y2: number): string
   ].join(' ');
 }
 
+// A rectangle on the screen, in client pixels.
+export type Box = { left: number; right: number; top: number; bottom: number };
+
+// ── peeks: the names a block has no room for ───────────────────────
+
+// A hovered row also names the blocks too short to show their own name in
+// full: a small card under each, in the row's free band under its lanes.
+// Only the first few on screen get one — the row points out what it cannot
+// show, it does not list the whole day — and a card that would run into the
+// one before it drops to a tier below.
+export const TL_PEEK_PX = 24;
+export const TL_PEEK_GAP_PX = 4;
+export const TL_PEEK_LIMIT = 3;
+// Around the text of a peek: its borders, padding and the gaps between the
+// emoji, the name and the time (see .tl-peek), plus a little slack so a
+// width measured on a canvas never cuts the name short.
+const TL_PEEK_CHROME_PX = 33;
+const TL_PEEK_MIN_PX = 72;
+const TL_PEEK_MAX_PX = 300;
+
+// The blocks that get a peek: of those whose name is hidden or cut short,
+// the first `limit` that are on screen, left to right.
+export function pickPeeks<T extends { rect: Box }>(
+  hidden: T[],
+  visible: Box,
+  limit = TL_PEEK_LIMIT
+): T[] {
+  return hidden
+    .filter(
+      ({ rect }) =>
+        rect.right > visible.left &&
+        rect.left < visible.right &&
+        rect.bottom > visible.top &&
+        rect.top < visible.bottom
+    )
+    .sort((a, b) => a.rect.left - b.rect.left)
+    .slice(0, limit);
+}
+
+// How wide a peek is: its text, measured, in its chrome — never so narrow it
+// looks like a chip, never so wide one long name crowds out the others.
+export function peekWidth(emojiPx: number, namePx: number, timePx: number): number {
+  const wanted = TL_PEEK_CHROME_PX + emojiPx + namePx + timePx;
+  return Math.max(TL_PEEK_MIN_PX, Math.min(TL_PEEK_MAX_PX, Math.ceil(wanted)));
+}
+
+// Lines the peeks up, left to right: each starts where its block starts
+// (moved just enough to stay inside `bounds`) and takes the first tier where
+// it clears the card before it by `gap`, opening a new tier below when none
+// has room.
+export function stackPeeks(
+  items: { left: number; width: number }[],
+  bounds: { left: number; right: number },
+  gap: number
+): { left: number; tier: number }[] {
+  const tierEnds: number[] = [];
+  return items.map(({ left: wanted, width }) => {
+    const left = Math.max(bounds.left, Math.min(wanted, bounds.right - width));
+    let tier = tierEnds.findIndex((end) => end + gap <= left);
+    if (tier === -1) {
+      tier = tierEnds.length;
+      tierEnds.push(left + width);
+    } else {
+      tierEnds[tier] = left + width;
+    }
+    return { left, tier };
+  });
+}
+
 // ── a day's detail cards ───────────────────────────────────────────
 
 // Hovering a day in the columns opens a card per reminder (and one for the
