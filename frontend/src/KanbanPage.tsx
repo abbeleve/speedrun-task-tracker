@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { DayState, RepeatMode, Task, TaskStatus, TaskType } from './types';
 import {
   DEFAULT_COLOR,
@@ -610,4 +610,6 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
   );
 }
 
-export default KanbanPage;
+// Memoized: it sits on the dashboard, which re-renders on every clock tick,
+// and draws every task of every day.
+export default memo(KanbanPage);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Chain } from './schedule';
 import { dayKeyOf, isDone, isSession } from './schedule';
 
@@ -181,4 +181,5 @@ function DaysPage({ runChains, onOpenChain }: DaysPageProps) {
   );
 }
 
-export default DaysPage;
+// Memoized: the dashboard re-renders on every clock tick.
+export default memo(DaysPage);

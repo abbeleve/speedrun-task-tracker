@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import type { Chain } from './schedule';
 import { todayKey } from './history';
 import type { Task } from './types';
@@ -31,7 +31,7 @@ const MIN_SIDE_SEGMENTS = 18;
 // right (green) when ahead of plan for the week, to the left (red) when
 // behind, one solid block per full hour and a partly-filled block for the
 // remainder. The current lead/lag sits in the middle in place of a zero mark.
-function WeekOvertakeBar({ sec }: { sec: number }) {
+const WeekOvertakeBar = memo(function WeekOvertakeBar({ sec }: { sec: number }) {
   const ahead = sec >= 0;
   const segments = overtakeSegments(sec);
   const sideCount = Math.max(MIN_SIDE_SEGMENTS, segments.length);
@@ -79,7 +79,7 @@ function WeekOvertakeBar({ sec }: { sec: number }) {
       </div>
     </div>
   );
-}
+});
 
 // The dashboard, top to bottom: this week's overtake, the habit tracker (the
 // two things acted on daily), the activity heatmap, the yearly stats summary,
@@ -88,6 +88,12 @@ function WeekOvertakeBar({ sec }: { sec: number }) {
 //
 // The board still reads and writes the backend directly, so the calendar's
 // store is flushed before this page is shown and re-read when it is left.
+//
+// App re-renders twice a second for its clock, and this page with it, but only
+// the overtake strip reads the clock. Every panel below is memoized and gets
+// props that keep their identity between ticks, so a tick — or a habit's + —
+// re-renders just the parts whose data changed, not the whole sleep grid,
+// heatmap and board.
 function HomePage({
   runChains,
   onOpenCalendar,

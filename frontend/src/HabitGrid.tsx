@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { Habit, HabitEntry, Task } from './types';
 import type { HabitStore } from './habitStore';
 import { shiftDayKey } from './history';
@@ -399,4 +399,5 @@ function formatNumber(n: number): string {
   return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
-export default HabitGrid;
+// Memoized: the dashboard re-renders on every clock tick.
+export default memo(HabitGrid);

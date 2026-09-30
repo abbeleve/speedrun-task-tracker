@@ -5,7 +5,7 @@
 // own PUT and updates local state on the spot. The task-linked part of the
 // progress is never stored here — it is derived live from the day plan.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Habit, HabitEntry } from './types';
 import * as api from './api';
 
@@ -89,5 +89,10 @@ export function useHabits(): HabitStore {
     });
   }, []);
 
-  return { habits, entries, ready, error, reload, upsert, remove, setManual, reorder };
+  // One object per change, not per render: the dashboard's panels are memoized
+  // on it, and App re-renders on every clock tick.
+  return useMemo(
+    () => ({ habits, entries, ready, error, reload, upsert, remove, setManual, reorder }),
+    [habits, entries, ready, error, reload, upsert, remove, setManual, reorder]
+  );
 }

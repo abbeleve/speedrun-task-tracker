@@ -211,17 +211,30 @@ function App() {
 
   // The kanban board still talks to the backend directly, so the plan is
   // flushed before handing over and re-read on the way back.
+  // These depend on the store's own callbacks rather than on `store`, which is
+  // a fresh object every render (every clock tick): the dashboard's panels are
+  // memoized and only stay put while the handlers they get keep their identity.
+  const { flush: flushPlan, reload: reloadPlan } = store;
   const goHome = useCallback(() => {
-    store.flush();
+    flushPlan();
     setPage('home');
-  }, [store]);
+  }, [flushPlan]);
 
   const leaveHome = useCallback(
     (next: 'calendar' | 'tracker') => {
-      void store.reload();
+      void reloadPlan();
       setPage(next);
     },
-    [store]
+    [reloadPlan]
+  );
+
+  const openCalendarFromHome = useCallback(() => leaveHome('calendar'), [leaveHome]);
+  const openChainFromHome = useCallback(
+    (chain: Chain) => {
+      void reloadPlan();
+      openSequence(chain);
+    },
+    [reloadPlan, openSequence]
   );
 
   // ── completing tasks ─────────────────────────────────────────────
@@ -740,11 +753,8 @@ function App() {
 
       {page === 'home' && (
         <HomePage
-          onOpenCalendar={() => leaveHome('calendar')}
-          onOpenChain={(chain) => {
-            void store.reload();
-            openSequence(chain);
-          }}
+          onOpenCalendar={openCalendarFromHome}
+          onOpenChain={openChainFromHome}
           runChains={runChains}
           habits={habits}
           tasks={store.tasks}

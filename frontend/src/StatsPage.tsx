@@ -4,7 +4,7 @@
    so the sections can be reordered independently on the home page. Fast
    refresh for the components is sacrificed for that sharing on purpose. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { DayStats, Habit, HabitEntry, Task } from './types';
 import { dateKey, heatLevel, shiftDayKey, startOfWeek, todayKey } from './history';
@@ -398,13 +398,16 @@ function SleepTimePopover({ date, range, anchor, onChange, onClear, onClose }: {
   );
 }
 
-function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, cycleQuality }: {
+// Memoized, and handed the tracker's shared callbacks rather than per-row
+// closures: a month holds ~750 cell buttons and the buffer several months, so
+// an edit re-renders only the day it touched.
+const SleepDayRow = memo(function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, onCycleQuality }: {
   date: Date;
   dateKey: string;
   entry?: SleepData;
   disabled: boolean;
-  onPickHour: (hour: number, cell: DOMRect) => void;
-  cycleQuality: () => void;
+  onPickHour: (dayKey: string, date: Date, hour: number, cell: DOMRect) => void;
+  onCycleQuality: (dayKey: string) => void;
 }) {
   const range = rangeOf(entry);
   const qual = entry?.quality ?? null;
@@ -425,7 +428,7 @@ function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, cycleQual
             className={`sleep-cell${span ? ' checked' : ''}`}
             disabled={disabled}
             title={span && spanTitle ? spanTitle : `${h}:00`}
-            onClick={(e) => onPickHour(h, e.currentTarget.getBoundingClientRect())}
+            onClick={(e) => onPickHour(dk, date, h, e.currentTarget.getBoundingClientRect())}
           >
             {span && (
               <span
@@ -440,7 +443,7 @@ function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, cycleQual
         <button
           type="button"
           className={`quality-dot${qual !== null ? ` filled q${qual}` : ' empty'}`}
-          onClick={cycleQuality}
+          onClick={() => onCycleQuality(dk)}
           title={QUALITY_TITLES[qual ?? 0]}
           aria-label={qual === null ? 'Нет оценки' : QUALITY_EMOJIS[qual]}
         >
@@ -449,7 +452,7 @@ function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, cycleQual
       </div>
     </div>
   );
-}
+});
 
 // Hour labels header, aligned with each day's 24 squares.
 function SleepHourHeader() {
@@ -465,7 +468,7 @@ function SleepHourHeader() {
 }
 
 // A whole month: title + hour header + one row per day.
-function SleepMonth({ block, entries, disabledFrom, onPickHour, onCycleQuality }: {
+const SleepMonth = memo(function SleepMonth({ block, entries, disabledFrom, onPickHour, onCycleQuality }: {
   block: MonthBlock;
   entries: Record<string, SleepData>;
   disabledFrom: Date;
@@ -483,13 +486,13 @@ function SleepMonth({ block, entries, disabledFrom, onPickHour, onCycleQuality }
           dateKey={d.key}
           entry={entries[d.key]}
           disabled={d.date.getTime() > disabledFrom.getTime()}
-          onPickHour={(h, cell) => onPickHour(d.key, d.date, h, cell)}
-          cycleQuality={() => onCycleQuality(d.key)}
+          onPickHour={onPickHour}
+          onCycleQuality={onCycleQuality}
         />
       ))}
     </div>
   );
-}
+});
 
 // ── Themed dropdown ──────────────────────────────────────────────────
 // Replaces a native <select>: on several platforms the browser's own option
@@ -844,7 +847,7 @@ export function useStatsData(): StatsData {
     if (el && target) scrollChildToTop(el, target);
   }, []);
 
-  const gotoMonth = (year: number, month: number) => {
+  const gotoMonth = useCallback((year: number, month: number) => {
     navGuardRef.current = true;
     pendingNavRef.current = { year, month };
     setMonths((prev) => {
@@ -870,33 +873,56 @@ export function useStatsData(): StatsData {
       return [...prev, ...added];
     });
     window.setTimeout(() => { navGuardRef.current = false; }, 120);
-  };
+  }, []);
 
   // ── Month navigation helpers (scroll to first visible month of target) ──
-  const targetMonth = (delta: number) => {
-    const base = new Date();
-    const d = new Date(base.getFullYear(), base.getMonth() + delta, 1);
-    gotoMonth(d.getFullYear(), d.getMonth());
-  };
+  const targetMonth = useCallback(
+    (delta: number) => {
+      const base = new Date();
+      const d = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+      gotoMonth(d.getFullYear(), d.getMonth());
+    },
+    [gotoMonth]
+  );
 
-  return {
-    selYear,
-    setSelYear,
-    availableYears,
-    heatData,
-    summary,
-    yearTotalHrs,
-    months,
-    history,
-    sleepLog,
-    today,
-    pickHour,
-    setRange,
-    cycleQuality,
-    scrollRef,
-    onScroll,
-    targetMonth,
-  };
+  // A new object only when something in it changed. The home page re-renders
+  // on every clock tick, and the three sections are memoized on this.
+  return useMemo(
+    () => ({
+      selYear,
+      setSelYear,
+      availableYears,
+      heatData,
+      summary,
+      yearTotalHrs,
+      months,
+      history,
+      sleepLog,
+      today,
+      pickHour,
+      setRange,
+      cycleQuality,
+      scrollRef,
+      onScroll,
+      targetMonth,
+    }),
+    [
+      selYear,
+      availableYears,
+      heatData,
+      summary,
+      yearTotalHrs,
+      months,
+      history,
+      sleepLog,
+      today,
+      pickHour,
+      setRange,
+      cycleQuality,
+      onScroll,
+      targetMonth,
+    ]
+  );
 }
 
 // ── Section 1: yearly activity heatmap ────────────────────────────────
@@ -1026,7 +1052,7 @@ function barTooltipLines(b: BarInfo, habit: Habit | null): string {
   return `${date}\nРабота: ${fmtSec(b.value)}`;
 }
 
-function BarChart({ bars, color, todayKeyStr, onEnter, onMove, onLeave }: {
+const BarChart = memo(function BarChart({ bars, color, todayKeyStr, onEnter, onMove, onLeave }: {
   bars: BarInfo[];
   color: string;
   todayKeyStr: string;
@@ -1056,7 +1082,31 @@ function BarChart({ bars, color, todayKeyStr, onEnter, onMove, onLeave }: {
       </div>
     </div>
   );
-}
+});
+
+// The year grid's cells, kept apart from the card so that the hover tooltip —
+// which updates on every mouse move — does not re-render ~370 of them each time.
+const HeatCells = memo(function HeatCells({ cells, title, onEnter, onMove, onLeave }: {
+  cells: HeatCellInfo[][];
+  title: (c: HeatCellInfo) => string;
+  onEnter: (e: { clientX: number; clientY: number }, text: string) => void;
+  onMove: (e: { clientX: number; clientY: number }) => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
+      {cells.flat().map((c) => (
+        <div
+          key={c.key}
+          className={`heat-cell l${c.level}${c.future ? ' future' : ''}`}
+          onMouseEnter={(e) => !c.future && onEnter(e, title(c))}
+          onMouseMove={onMove}
+          onMouseLeave={onLeave}
+        />
+      ))}
+    </div>
+  );
+});
 
 function weekRangeLabel(weekStart: string): string {
   const start = parseKey(weekStart);
@@ -1064,7 +1114,7 @@ function weekRangeLabel(weekStart: string): string {
   return `${start.getDate()} ${MONTHS_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTHS_SHORT[end.getMonth()]} ${end.getFullYear()}`;
 }
 
-export function ActivityHeatmap({ stats, habits, entries, tasks }: {
+export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, entries, tasks }: {
   stats: StatsData;
   habits: Habit[];
   entries: HabitEntry[];
@@ -1120,8 +1170,15 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
 
   const effectiveHeatData = habitHeatData ?? heatData;
   const { scrollRef, daysRef, cell } = useHeatCellSize(effectiveHeatData.colsCount);
-  const title = selectedHabit ? (c: HeatCellInfo) => habitCellTitle(c, selectedHabit) : cellTitle;
+  const title = useMemo(
+    () => (selectedHabit ? (c: HeatCellInfo) => habitCellTitle(c, selectedHabit) : cellTitle),
+    [selectedHabit]
+  );
   const { tooltip, show, move, hide } = useHoverTooltip();
+  const showBar = useCallback(
+    (e: { clientX: number; clientY: number }, b: BarInfo) => show(e, barTooltipLines(b, selectedHabit)),
+    [show, selectedHabit]
+  );
 
   return (
     <section className="card heat-card" style={cell ? ({ '--heat-cell': `${cell}px` } as CSSProperties) : undefined}>
@@ -1154,17 +1211,7 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
                 <span key={i}>{l}</span>
               ))}
             </div>
-            <div className="heatmap" role="img" aria-label="Тепловая карта работы по дням">
-              {effectiveHeatData.cells.flat().map((c) => (
-                <div
-                  key={c.key}
-                  className={`heat-cell l${c.level}${c.future ? ' future' : ''}`}
-                  onMouseEnter={(e) => !c.future && show(e, title(c))}
-                  onMouseMove={move}
-                  onMouseLeave={hide}
-                />
-              ))}
-            </div>
+            <HeatCells cells={effectiveHeatData.cells} title={title} onEnter={show} onMove={move} onLeave={hide} />
           </div>
           <div className="heat-legend">
             <span>Меньше</span>
@@ -1190,7 +1237,7 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
               След. неделя →
             </button>
           </div>
-          <BarChart bars={weekBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={(e, b) => show(e, barTooltipLines(b, selectedHabit))} onMove={move} onLeave={hide} />
+          <BarChart bars={weekBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={showBar} onMove={move} onLeave={hide} />
         </div>
       )}
 
@@ -1220,18 +1267,18 @@ export function ActivityHeatmap({ stats, habits, entries, tasks }: {
               След. месяц →
             </button>
           </div>
-          <BarChart bars={monthBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={(e, b) => show(e, barTooltipLines(b, selectedHabit))} onMove={move} onLeave={hide} />
+          <BarChart bars={monthBars} color={barColor} todayKeyStr={todayKeyStr} onEnter={showBar} onMove={move} onLeave={hide} />
         </div>
       )}
 
       <HoverTooltip tooltip={tooltip} />
     </section>
   );
-}
+});
 
 // ── Section 2: yearly summary cards ────────────────────────────────────
 
-export function ActivityStatsSummary({ stats }: { stats: StatsData }) {
+export const ActivityStatsSummary = memo(function ActivityStatsSummary({ stats }: { stats: StatsData }) {
   const { summary, yearTotalHrs } = stats;
   return (
     <div className="stats-summary-section">
@@ -1256,7 +1303,7 @@ export function ActivityStatsSummary({ stats }: { stats: StatsData }) {
       </div>
     </div>
   );
-}
+});
 
 // ── Section 3: sleep tracker — monthly scroll, 24h per day ─────────────
 
@@ -1304,7 +1351,7 @@ interface SleepEdit {
   anchor: { x: number; y: number; bottom: number };
 }
 
-export function SleepTracker({ stats }: { stats: StatsData }) {
+export const SleepTracker = memo(function SleepTracker({ stats }: { stats: StatsData }) {
   const { months, sleepLog, today, pickHour, setRange, cycleQuality, scrollRef, onScroll, targetMonth, yearTotalHrs } =
     stats;
   const cellWidth = useSleepCellWidth(scrollRef);
@@ -1404,4 +1451,4 @@ export function SleepTracker({ stats }: { stats: StatsData }) {
       )}
     </section>
   );
-}
+});
