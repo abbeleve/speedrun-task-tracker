@@ -42,10 +42,12 @@ import {
   TL_GUTTER_PX,
   TL_LANE_PX,
   TL_MIN_BLOCK_PX,
-  TL_PX_PER_MIN,
   TL_RAIL_PX,
   TL_REMINDER_PX,
   TL_RULER_PX,
+  blockDetail,
+  cardsBelow,
+  dropPath,
   hourLabelStep,
   hoverCardUnder,
   landingLanes,
@@ -59,6 +61,8 @@ import {
   rowAt,
   rowContentHeight,
   sessionLinks,
+  spreadCards,
+  timelineScale,
 } from './timeline';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, creditGroups, projectedFinishMs } from './credit';
@@ -157,6 +161,15 @@ function gapMenuStyle(anchor: DialogAnchor): React.CSSProperties {
   const top = Math.min(anchor.y, vh - GAP_MENU_MARGIN);
   return { position: 'fixed', left: Math.max(GAP_MENU_MARGIN, left), top, width };
 }
+
+// A rectangle on the screen, in client pixels.
+type Box = { left: number; right: number; top: number; bottom: number };
+
+// One of the cards a hovered day opens: a reminder, or the first real break,
+// with the on-screen rectangle its connector starts from.
+type DayDetailItem =
+  | { kind: 'reminder'; key: string; taskId: string; rect: Box; segment: DaySegment }
+  | { kind: 'gap'; key: string; gap: ScheduleGap; rect: Box };
 
 // A block drawn from a gesture or from the open editor rather than from the
 // saved plan, clipped to one day. `task` carries the slot it is shown at.
@@ -351,15 +364,12 @@ function CalendarPage({
   // rails. Hovering a day gives every visible rail its own detail card and a
   // connector, so several reminders stay visually tied to their real slots.
   const reminderStripRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // In the timeline the same cards open under (or over) the hovered row.
   const [dayReminderCard, setDayReminderCard] = useState<{
     day: string;
-    rect: DOMRect;
-    anchors: { key: string; taskId: string; rect: DOMRect }[];
-    gapAnchor: {
-      key: string;
-      gap: ScheduleGap;
-      rect: { left: number; right: number; top: number; bottom: number };
-    } | null;
+    rect: Box; // the column, or the visible part of the timeline row
+    anchors: { key: string; taskId: string; rect: Box }[];
+    gapAnchor: { key: string; gap: ScheduleGap; rect: Box } | null;
   } | null>(null);
   const reminderDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [reminderDetailHeights, setReminderDetailHeights] = useState<Record<string, number>>({});
@@ -401,18 +411,22 @@ function CalendarPage({
   }, []);
 
   // Re-attached whenever the grid may have been swapped for another element
-  // (the month has none, the timeline its own).
-  useEffect(() => {
+  // (the month has none, the timeline its own). Measured once straight away,
+  // before the first paint: the timeline is as wide as the sheet, and must
+  // not show up at a guessed width for a frame first.
+  useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
+    const measure = (width: number, height: number) => {
+      if (!width || !height) return;
+      setScrollerSize((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height }
+      );
+    };
+    measure(el.clientWidth, el.clientHeight);
     const ro = new ResizeObserver((entries) => {
       const box = entries[0]?.contentRect;
-      if (!box || !box.width || !box.height) return;
-      setScrollerSize((prev) =>
-        prev.width === box.width && prev.height === box.height
-          ? prev
-          : { width: box.width, height: box.height }
-      );
+      if (box) measure(box.width, box.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -478,14 +492,17 @@ function CalendarPage({
   }, [view, anchor, horizontal]);
 
   const zoomLenMin = zoomRange ? Math.max(1, zoomRange.endMin - zoomRange.startMin) : DAY_MIN;
-  // The timeline zooms across the room right of its day labels.
-  const trackViewPx = horizontal ? scrollerSize.width - TL_GUTTER_PX : scrollerSize.height;
-  const pxPerMin =
-    zoomRange && trackViewPx > 0
+  // The timeline always fits the room right of its day labels: the whole day
+  // at once, or the zoomed stretch of it.
+  // Whole pixels, so the fitted day never overshoots the sheet by a fraction.
+  const trackViewPx = horizontal
+    ? Math.floor(scrollerSize.width) - TL_GUTTER_PX
+    : scrollerSize.height;
+  const pxPerMin = horizontal
+    ? timelineScale(trackViewPx, zoomLenMin)
+    : zoomRange && trackViewPx > 0
       ? trackViewPx / zoomLenMin
-      : horizontal
-        ? TL_PX_PER_MIN
-        : PX_PER_MIN;
+      : PX_PER_MIN;
   const minToPx = useCallback((min: number) => min * pxPerMin, [pxPerMin]);
   const lenToPx = useCallback((lenMin: number) => lenMin * pxPerMin, [pxPerMin]);
   // How short a block can be before it must be pushed into its own column to
@@ -543,12 +560,9 @@ function CalendarPage({
     if (view === 'month') return;
     const el = scrollerRef.current;
     if (!el) return;
-    const nowDate = new Date();
-    const focusMin = visibleDays.includes(today) ? nowDate.getHours() * 60 : 8 * 60;
     if (horizontal) {
-      el.scrollLeft = zoomRange
-        ? zoomRange.startMin * pxPerMin
-        : Math.max(0, (focusMin - 60) * TL_PX_PER_MIN);
+      // Unzoomed the whole day fits, so there is nothing to scroll across.
+      el.scrollLeft = zoomRange ? zoomRange.startMin * pxPerMin : 0;
       const todayIdx = visibleDays.indexOf(today);
       const rows = timelineRef.current?.rows;
       el.scrollTop = todayIdx > 0 && rows ? rows.tops[todayIdx] : 0;
@@ -558,6 +572,8 @@ function CalendarPage({
       el.scrollTop = zoomRange.startMin * pxPerMin;
       return;
     }
+    const nowDate = new Date();
+    const focusMin = visibleDays.includes(today) ? nowDate.getHours() * 60 : 8 * 60;
     el.scrollTop = Math.max(0, (focusMin - 60) * PX_PER_MIN);
     // Only when the layout changes, not on every task edit.
   }, [view, today, visibleDays, zoomRange, pxPerMin, horizontal]);
@@ -1751,6 +1767,58 @@ function CalendarPage({
     setDayReminderCard((card) => (card?.day === day ? null : card));
   };
 
+  // The timeline's version of showDayReminders, for the same 3-day and week
+  // views. Where each rail and the break sit is already known from the row's
+  // geometry, so a hover reads one rectangle and measures nothing per rail.
+  // Rails scrolled out of sight (zoomed in) get no card.
+  const showTimelineDay = (day: string, idx: number) => {
+    if (view !== '3day' && view !== 'week') return;
+    // A drag passing over rows is not a hover.
+    if (gestureRef.current) return;
+    const tracks = columnsRef.current;
+    const scroller = scrollerRef.current;
+    if (!timeline || !tracks || !scroller) return;
+    const segments = daySegments(reminderTasks, day, minBlockMin);
+    const gap = firstGapAfterCurrent(tasks, day, now);
+    if (segments.length === 0 && !gap) {
+      setDayReminderCard(null);
+      return;
+    }
+    const origin = tracks.getBoundingClientRect();
+    const sheet = scroller.getBoundingClientRect();
+    const rowTop = origin.top + timeline.rows.tops[idx];
+    const rowBottom = rowTop + timeline.rows.heights[idx];
+    // The part of the row actually on screen, right of the pinned labels and
+    // under the pinned ruler.
+    const row: Box = {
+      left: Math.max(sheet.left + TL_GUTTER_PX, origin.left),
+      right: Math.min(sheet.right, origin.left + DAY_MIN * pxPerMin),
+      top: Math.max(sheet.top + TL_RULER_PX, rowTop),
+      bottom: Math.min(sheet.bottom, rowBottom),
+    };
+    const anchors = segments.flatMap((seg) => {
+      const left = origin.left + minToPx(seg.topMin);
+      const right = left + Math.max(TL_MIN_BLOCK_PX / 2, lenToPx(seg.bottomMin - seg.topMin));
+      if (right < row.left || left > row.right) return [];
+      const bottom = rowBottom - 4 - seg.col * TL_REMINDER_PX;
+      return [{ key: `${day}:${seg.task.id}`, taskId: seg.task.id, rect: { left, right, top: bottom - 6, bottom } }];
+    });
+    const dayFrom = dayStartMs(day);
+    const gapAnchor = gap
+      ? (() => {
+          const from = origin.left + minToPx(Math.max(0, (gap.currentEndMs - dayFrom) / MIN_MS));
+          const to = origin.left + minToPx(Math.min(DAY_MIN, (gap.nextStartMs - dayFrom) / MIN_MS));
+          const middle = rowTop + TL_RAIL_PX + lanesHeight(timeline.lanes[idx]) / 2;
+          return { key: `gap:${day}`, gap, rect: { left: from, right: to, top: middle, bottom: middle } };
+        })()
+      : null;
+    if (anchors.length === 0 && !gapAnchor) {
+      setDayReminderCard(null);
+      return;
+    }
+    setDayReminderCard({ day, rect: row, anchors, gapAnchor });
+  };
+
   // Everything one day shows, whichever way the grid runs: its blocks and
   // reminders packed from the saved plan, the sessions and glue handles that
   // touch it, and the ghosts — blocks drawn from a gesture or from the open
@@ -1884,14 +1952,18 @@ function CalendarPage({
     seg: DaySegment,
     day: string,
     across: boolean,
-    place: (lengthMin: number) => { style: React.CSSProperties; showMeta: boolean }
+    place: (lengthMin: number) => {
+      style: React.CSSProperties;
+      showMeta: boolean;
+      compact?: boolean;
+    }
   ) => {
     const g = liveGesture;
     const task = seg.task;
     const resizing = g?.kind === 'resize' && g.task.id === task.id;
     const topMin = seg.topMin;
     const lengthMin = resizing ? g.lengthMin : seg.bottomMin - seg.topMin;
-    const { style, showMeta } = place(lengthMin);
+    const { style, showMeta, compact } = place(lengthMin);
     const done = isDone(task);
     // Just clicked: the block plays its grow-and-sweep flourish while
     // the bullet itself already reflects the real (instant) done state.
@@ -1914,6 +1986,7 @@ function CalendarPage({
         className={[
           'cal-block',
           across ? 'cal-block--across' : '',
+          compact ? 'compact' : '',
           done ? 'done' : '',
           justCompleted ? 'completing' : '',
           active ? 'active' : '',
@@ -1996,12 +2069,18 @@ function CalendarPage({
 
   // A block drawn from a drag or from the open editor: it rises off the grid
   // (or, followed by the editor, is outlined) where it would land.
-  const renderGhost = (ghost: Ghost, across: boolean, style: React.CSSProperties) => (
+  const renderGhost = (
+    ghost: Ghost,
+    across: boolean,
+    style: React.CSSProperties,
+    { showMeta = true, compact = false }: { showMeta?: boolean; compact?: boolean } = {}
+  ) => (
     <div
       key={ghost.key}
       className={[
         'cal-block',
         across ? 'cal-block--across' : '',
+        compact ? 'compact' : '',
         ghost.live ? 'live' : 'dragging',
         taskColorAnimationClass(ghost.task.colorAnimation),
         ghost.startsHere ? '' : across ? 'cont-start' : 'cont-top',
@@ -2018,12 +2097,14 @@ function CalendarPage({
         <span className="cal-block-emoji">{ghost.task.emoji}</span>
         <span className="cal-block-name">{ghost.task.name || 'Без названия'}</span>
       </div>
-      <div className="cal-block-meta">
-        <span>
-          {hhmm(ghost.topMin)}–{hhmm(ghost.topMin + ghost.lengthMin)}
-        </span>
-        <strong className="cal-block-duration">{dur(ghost.lengthMin * 60)}</strong>
-      </div>
+      {showMeta && (
+        <div className="cal-block-meta">
+          <span>
+            {hhmm(ghost.topMin)}–{hhmm(ghost.topMin + ghost.lengthMin)}
+          </span>
+          <strong className="cal-block-duration">{dur(ghost.lengthMin * 60)}</strong>
+        </div>
+      )}
     </div>
   );
 
@@ -2253,7 +2334,7 @@ function CalendarPage({
     const showNow = visibleDays.includes(today);
     return (
       <div
-        className="cal-grid cal-grid--timeline"
+        className={`cal-grid cal-grid--timeline${zoomRange ? '' : ' fit'}`}
         ref={scrollerRef}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -2266,7 +2347,12 @@ function CalendarPage({
               </span>
             ))}
             {showNow && (
-              <span className="tl-now-label" style={{ left: minToPx(nowMin) }}>
+              // Kept whole near midnight, where the day now ends at the
+              // sheet's edge.
+              <span
+                className="tl-now-label"
+                style={{ left: Math.min(trackPx - 22, Math.max(22, minToPx(nowMin))) }}
+              >
                 {hhmm(nowMin)}
               </span>
             )}
@@ -2366,6 +2452,7 @@ function CalendarPage({
         sequenceGradientColors(sequenceGradientForTasks(chain.tasks, chain.sessionId ?? chain.id)),
       ])
     );
+    const breakShown = dayReminderCard?.day === day ? dayReminderCard.gapAnchor?.gap : null;
     const links = sessionLinks(chains, segments, day).filter((link) => {
       // Back to back in one lane there is nothing to draw between them.
       const run = minToPx(link.toMin) - minToPx(link.fromMin);
@@ -2380,6 +2467,13 @@ function CalendarPage({
           .join(' ')}
         data-day={day}
         style={{ top: rows.tops[idx], height: rows.heights[idx] }}
+        // As in the columns: a mouse hovering the day opens its reminders and
+        // its first break (a tap fires enter events too, and would leave the
+        // cards standing over the editor it opens).
+        onPointerEnter={(e) => {
+          if (e.pointerType === 'mouse') showTimelineDay(day, idx);
+        }}
+        onPointerLeave={() => hideDayReminders(day)}
         onPointerDown={(e) => {
           // Right-drag picks a stretch of hours to zoom into, whatever is under it.
           if (e.button === 2) {
@@ -2466,6 +2560,7 @@ function CalendarPage({
         {segments.map((seg) =>
           renderBlock(seg, day, true, (lengthMin) => {
             const width = Math.max(TL_MIN_BLOCK_PX, lenToPx(lengthMin));
+            const detail = blockDetail(width);
             return {
               style: {
                 left: minToPx(seg.topMin),
@@ -2473,19 +2568,27 @@ function CalendarPage({
                 top: laneTop(seg.col),
                 height: TL_LANE_PX,
               },
-              showMeta: width >= 92,
+              showMeta: detail === 'full',
+              compact: detail === 'compact',
             };
           })
         )}
 
-        {ghosts.map((ghost) =>
-          renderGhost(ghost, true, {
-            left: minToPx(ghost.topMin),
-            width: Math.max(TL_MIN_BLOCK_PX, lenToPx(ghost.lengthMin)),
-            top: laneTop(ghostLanes.get(ghost.task.id) ?? 0),
-            height: TL_LANE_PX,
-          })
-        )}
+        {ghosts.map((ghost) => {
+          const width = Math.max(TL_MIN_BLOCK_PX, lenToPx(ghost.lengthMin));
+          const detail = blockDetail(width);
+          return renderGhost(
+            ghost,
+            true,
+            {
+              left: minToPx(ghost.topMin),
+              width,
+              top: laneTop(ghostLanes.get(ghost.task.id) ?? 0),
+              height: TL_LANE_PX,
+            },
+            { showMeta: detail === 'full', compact: detail === 'compact' }
+          );
+        })}
 
         {g?.kind === 'create' && g.day === day && (
           <div
@@ -2565,8 +2668,11 @@ function CalendarPage({
                 seg.topMin + lengthMin
               )}${expired ? ' · окно закрыто' : ''}`}
               onPointerDown={(e) => startMove(e, task)}
+              // In the 3-day and week views the day's own cards already
+              // describe every rail; a single day has none, so the rail
+              // brings its own.
               onPointerEnter={(e) => {
-                if (e.pointerType === 'mouse') {
+                if (e.pointerType === 'mouse' && view === 'day') {
                   setHoverCard({ task, rect: e.currentTarget.getBoundingClientRect() });
                 }
               }}
@@ -2587,6 +2693,20 @@ function CalendarPage({
             } as React.CSSProperties}
           />
         ))}
+
+        {/* While its card is open, the first break is marked out in the row
+            itself, so the card's connector points at a stretch, not a dot. */}
+        {breakShown && (
+          <div
+            className="tl-break-band"
+            style={{
+              left: minX(breakShown.currentEndMs),
+              width: Math.max(2, minX(breakShown.nextStartMs) - minX(breakShown.currentEndMs)),
+              top: laneTop(0),
+              height: lanesPx,
+            }}
+          />
+        )}
 
         {isToday && renderTimelineNow()}
       </div>
@@ -2732,8 +2852,66 @@ function CalendarPage({
   };
 
   const DAY_REMINDER_CARD_WIDTH = 288;
+  const DAY_REMINDER_CARD_MIN_WIDTH = 180;
   const DAY_REMINDER_CARD_GAP = 18;
   const DAY_REMINDER_STACK_GAP = 8;
+
+  // What one of a day's detail cards says, and in which colour — the same
+  // whether it opens beside a column or under a timeline row.
+  const dayDetailCard = (item: DayDetailItem, label: string) => {
+    if (item.kind === 'gap') {
+      const currentNames = item.gap.currentTasks.map((task) => task.name).join(', ');
+      const nextNames = item.gap.nextTasks.map((task) => task.name).join(', ');
+      return {
+        className: 'cal-gap-detail-card',
+        color: 'var(--accent-gold)',
+        body: (
+          <>
+            <div className="cal-reminder-detail-main">
+              <span className="cal-reminder-detail-emoji">⏳</span>
+              <span className="cal-reminder-detail-name">
+                Первый перерыв · {dur(item.gap.gapMs / 1000)}
+              </span>
+            </div>
+            <div className="cal-reminder-detail-time">
+              {label} · {wallTime(item.gap.currentEndMs)}–{wallTime(item.gap.nextStartMs)}
+            </div>
+            <p className="cal-reminder-detail-desc">
+              После {currentNames || 'текущей серии'} · дальше {nextNames || 'следующая задача'}
+            </p>
+          </>
+        ),
+      };
+    }
+    const seg = item.segment;
+    const task = seg.task;
+    const expired = taskEndMs(task) <= now;
+    const start = seg.startsHere ? hhmm(seg.topMin) : '↳ 00:00';
+    const end = seg.endsHere
+      ? seg.bottomMin >= DAY_MIN
+        ? '24:00'
+        : hhmm(seg.bottomMin)
+      : '24:00 ↪';
+    return {
+      className: expired ? 'expired' : '',
+      color: task.color,
+      body: (
+        <>
+          <div className="cal-reminder-detail-main">
+            <span className="cal-reminder-detail-emoji">{task.emoji || '🔔'}</span>
+            <span className="cal-reminder-detail-name">{task.name || 'Напоминание'}</span>
+          </div>
+          <div className="cal-reminder-detail-time">
+            🔔 {label} · {start}–{end}
+            {expired && <span> · окно закрыто</span>}
+          </div>
+          <p className={`cal-reminder-detail-desc${task.description ? '' : ' empty'}`}>
+            {task.description || 'Без описания'}
+          </p>
+        </>
+      ),
+    };
+  };
 
   const renderDayReminderCard = () => {
     // The task-specific card has priority while a regular block is hovered;
@@ -2743,18 +2921,23 @@ function CalendarPage({
     const segmentsByTask = new Map(
       daySegments(reminderTasks, day).map((segment) => [segment.task.id, segment])
     );
-    const reminderItems = anchors
-      .map((anchor) => {
-        const segment = segmentsByTask.get(anchor.taskId);
-        return segment ? { kind: 'reminder' as const, ...anchor, segment } : null;
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-    const items = [
+    const reminderItems = anchors.flatMap((anchor): DayDetailItem[] => {
+      const segment = segmentsByTask.get(anchor.taskId);
+      return segment ? [{ kind: 'reminder', ...anchor, segment }] : [];
+    });
+    const items: DayDetailItem[] = [
       ...reminderItems,
       ...(gapAnchor ? [{ kind: 'gap' as const, ...gapAnchor }] : []),
-    ]
-      .sort((a, b) => a.rect.top - b.rect.top);
+    ];
     if (items.length === 0) return null;
+
+    const [y, m, d] = day.split('-').map(Number);
+    const label = new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+    });
+    if (horizontal) return renderTimelineDayCards(items, rect, label);
+    items.sort((a, b) => a.rect.top - b.rect.top);
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -2808,12 +2991,6 @@ function CalendarPage({
       for (let index = 0; index < tops.length; index += 1) tops[index] += shift;
     }
 
-    const [y, m, d] = day.split('-').map(Number);
-    const label = new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-    });
-
     return (
       <>
         <svg
@@ -2846,52 +3023,7 @@ function CalendarPage({
         </svg>
 
         {items.map((item, index) => {
-          if (item.kind === 'gap') {
-            const currentNames = item.gap.currentTasks.map((task) => task.name).join(', ');
-            const nextNames = item.gap.nextTasks.map((task) => task.name).join(', ');
-            return (
-              <article
-                key={item.key}
-                ref={(element) => {
-                  if (element) reminderDetailRefs.current.set(item.key, element);
-                  else reminderDetailRefs.current.delete(item.key);
-                }}
-                className={`cal-reminder-detail-card cal-gap-detail-card ${onRight ? 'right' : 'left'}`}
-                style={
-                  {
-                    left,
-                    top: tops[index],
-                    width,
-                    transformOrigin: onRight ? 'left center' : 'right center',
-                    '--task-color': 'var(--accent-gold)',
-                  } as React.CSSProperties
-                }
-                aria-hidden="true"
-              >
-                <div className="cal-reminder-detail-main">
-                  <span className="cal-reminder-detail-emoji">⏳</span>
-                  <span className="cal-reminder-detail-name">
-                    Первый перерыв · {dur(item.gap.gapMs / 1000)}
-                  </span>
-                </div>
-                <div className="cal-reminder-detail-time">
-                  {label} · {wallTime(item.gap.currentEndMs)}–{wallTime(item.gap.nextStartMs)}
-                </div>
-                <p className="cal-reminder-detail-desc">
-                  После {currentNames || 'текущей серии'} · дальше {nextNames || 'следующая задача'}
-                </p>
-              </article>
-            );
-          }
-          const seg = item.segment;
-          const task = seg.task;
-          const expired = taskEndMs(task) <= now;
-          const start = seg.startsHere ? hhmm(seg.topMin) : '↳ 00:00';
-          const end = seg.endsHere
-            ? seg.bottomMin >= DAY_MIN
-              ? '24:00'
-              : hhmm(seg.bottomMin)
-            : '24:00 ↪';
+          const card = dayDetailCard(item, label);
           return (
             <article
               key={item.key}
@@ -2899,31 +3031,90 @@ function CalendarPage({
                 if (element) reminderDetailRefs.current.set(item.key, element);
                 else reminderDetailRefs.current.delete(item.key);
               }}
-              className={`cal-reminder-detail-card ${onRight ? 'right' : 'left'}${
-                expired ? ' expired' : ''
-              }`}
+              className={`cal-reminder-detail-card ${card.className} ${onRight ? 'right' : 'left'}`}
               style={{
                 left,
                 top: tops[index],
                 width,
                 transformOrigin: onRight ? 'left center' : 'right center',
-                '--task-color': task.color,
+                '--task-color': card.color,
               } as React.CSSProperties}
               aria-hidden="true"
             >
-              <div className="cal-reminder-detail-main">
-                <span className="cal-reminder-detail-emoji">{task.emoji || '🔔'}</span>
-                <span className="cal-reminder-detail-name">
-                  {task.name || 'Напоминание'}
-                </span>
-              </div>
-              <div className="cal-reminder-detail-time">
-                🔔 {label} · {start}–{end}
-                {expired && <span> · окно закрыто</span>}
-              </div>
-              <p className={`cal-reminder-detail-desc${task.description ? '' : ' empty'}`}>
-                {task.description || 'Без описания'}
-              </p>
+              {card.body}
+            </article>
+          );
+        })}
+      </>
+    );
+  };
+
+  // The same cards for a timeline row: in one line under the row (over it,
+  // low on the screen), each dropping a connector from what it describes.
+  // Nothing here is measured — the cards hang from one shared edge, so their
+  // heights never matter and a hover costs a single render.
+  const renderTimelineDayCards = (items: DayDetailItem[], row: Box, label: string) => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const centreX = (box: Box) =>
+      Math.min(row.right, Math.max(row.left, (box.left + box.right) / 2));
+    const centreY = (box: Box) =>
+      Math.min(row.bottom, Math.max(row.top, (box.top + box.bottom) / 2));
+    const sorted = [...items].sort((a, b) => centreX(a.rect) - centreX(b.rect));
+    const below = cardsBelow(row.top, row.bottom, vh, DAY_REMINDER_CARD_GAP);
+    const edgeY = below ? row.bottom + DAY_REMINDER_CARD_GAP : row.top - DAY_REMINDER_CARD_GAP;
+    const { width, lefts } = spreadCards(
+      sorted.map((item) => centreX(item.rect)),
+      { left: 8, right: vw - 8 },
+      DAY_REMINDER_CARD_WIDTH,
+      Math.min(DAY_REMINDER_CARD_MIN_WIDTH, vw - 16),
+      DAY_REMINDER_STACK_GAP
+    );
+    const maxHeight = Math.max(80, below ? vh - 8 - edgeY : edgeY - 8);
+
+    return (
+      <>
+        <svg
+          className="cal-reminder-connectors"
+          width={vw}
+          height={vh}
+          viewBox={`0 0 ${vw} ${vh}`}
+          aria-hidden="true"
+        >
+          {sorted.map((item, index) => {
+            const color = item.kind === 'gap' ? 'var(--accent-gold)' : item.segment.task.color;
+            const x1 = centreX(item.rect);
+            const y1 = centreY(item.rect);
+            // Into the card as straight as its place in the line allows.
+            const x2 = Math.min(lefts[index] + width - 16, Math.max(lefts[index] + 16, x1));
+            return (
+              <g key={item.key} style={{ color }}>
+                <path d={dropPath(x1, y1, x2, edgeY)} />
+                <circle cx={x1} cy={y1} r="3" />
+              </g>
+            );
+          })}
+        </svg>
+
+        {sorted.map((item, index) => {
+          const card = dayDetailCard(item, label);
+          return (
+            <article
+              key={item.key}
+              className={`cal-reminder-detail-card ${card.className} ${below ? 'below' : 'above'}`}
+              style={{
+                left: lefts[index],
+                // Hung from the edge nearest the row, whatever its height.
+                top: below ? edgeY : undefined,
+                bottom: below ? undefined : vh - edgeY,
+                width,
+                maxHeight,
+                transformOrigin: below ? 'center top' : 'center bottom',
+                '--task-color': card.color,
+              } as React.CSSProperties}
+              aria-hidden="true"
+            >
+              {card.body}
             </article>
           );
         })}

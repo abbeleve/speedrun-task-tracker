@@ -7,6 +7,9 @@ import {
   TL_RAIL_PX,
   TL_REMINDER_PX,
   TL_ROW_PAD_PX,
+  blockDetail,
+  cardsBelow,
+  dropPath,
   hourLabelStep,
   hoverCardUnder,
   landingLanes,
@@ -19,6 +22,8 @@ import {
   rowAt,
   rowContentHeight,
   sessionLinks,
+  spreadCards,
+  timelineScale,
 } from './timeline';
 
 const DAY = '2026-03-10';
@@ -145,11 +150,38 @@ describe('landingLanes', () => {
   });
 });
 
+describe('timelineScale', () => {
+  it('spreads the whole day over the width there is', () => {
+    expect(timelineScale(1152) * 24 * 60).toBeCloseTo(1152, 9);
+    expect(timelineScale(720)).toBe(0.5);
+  });
+
+  it('spreads a zoomed stretch over the same width', () => {
+    // 09:00–12:00 across 900px: 5px a minute.
+    expect(timelineScale(900, 180)).toBe(5);
+  });
+
+  it('falls back to a fixed scale before the sheet has been measured', () => {
+    expect(timelineScale(0)).toBe(2);
+  });
+});
+
+describe('blockDetail', () => {
+  it('shows a wide block in full, a middling one by name, a narrow one by emoji', () => {
+    expect(blockDetail(200)).toBe('full');
+    expect(blockDetail(136)).toBe('full');
+    expect(blockDetail(100)).toBe('name');
+    expect(blockDetail(76)).toBe('name');
+    expect(blockDetail(46)).toBe('compact');
+  });
+});
+
 describe('hourLabelStep', () => {
-  it('labels every hour at the default scale and skips hours as it shrinks', () => {
+  it('labels every hour while an hour is wide enough and skips hours as it shrinks', () => {
     expect(hourLabelStep(2)).toBe(1); // 120px an hour
-    expect(hourLabelStep(0.75)).toBe(2); // 45px an hour
-    expect(hourLabelStep(0.3)).toBe(4); // 18px an hour
+    expect(hourLabelStep(0.8)).toBe(1); // 48px — a 1152px-wide day
+    expect(hourLabelStep(0.5)).toBe(2); // 30px — a 720px-wide day
+    expect(hourLabelStep(0.21)).toBe(4); // 12.6px — a phone
     expect(hourLabelStep(0.01)).toBe(12);
   });
 });
@@ -216,6 +248,64 @@ describe('linkPath', () => {
 
   it('falls back to an S-curve when the blocks leave no room for an elbow', () => {
     expect(linkPath(100, 40, 104, 88)).toBe('M 100 40 C 118 40, 86 88, 104 88');
+  });
+});
+
+describe('cardsBelow', () => {
+  it('opens the day cards under a row with room below it', () => {
+    expect(cardsBelow(100, 180, 900, 18)).toBe(true);
+  });
+
+  it('opens them over a row near the bottom of the screen', () => {
+    expect(cardsBelow(700, 800, 900, 18)).toBe(false);
+  });
+
+  it('takes the roomier side when neither has enough', () => {
+    // A 300px-high window: 84px under the row against 64 over it, then the
+    // other way round.
+    expect(cardsBelow(90, 190, 300, 18)).toBe(true);
+    expect(cardsBelow(110, 210, 300, 18)).toBe(false);
+  });
+});
+
+describe('spreadCards', () => {
+  const bounds = { left: 8, right: 1192 };
+
+  it('centres a lone card on what it points at', () => {
+    expect(spreadCards([600], bounds, 288, 180, 8)).toEqual({ width: 288, lefts: [456] });
+  });
+
+  it('pushes cards that would overlap apart, in order', () => {
+    const { lefts } = spreadCards([500, 520], bounds, 288, 180, 8);
+    expect(lefts).toEqual([356, 652]);
+  });
+
+  it('keeps cards near either edge on screen', () => {
+    expect(spreadCards([20], bounds, 288, 180, 8).lefts).toEqual([8]);
+    expect(spreadCards([1180], bounds, 288, 180, 8).lefts).toEqual([904]);
+    // Two crowding the right edge are pulled back together.
+    expect(spreadCards([1150, 1180], bounds, 288, 180, 8).lefts).toEqual([608, 904]);
+  });
+
+  it('narrows the cards when there are many, down to the smallest width', () => {
+    const five = spreadCards([100, 200, 300, 400, 500], { left: 0, right: 1000 }, 288, 180, 10);
+    expect(five.width).toBe(192);
+    expect(five.lefts[4] + five.width).toBeLessThanOrEqual(1000);
+    expect(spreadCards([1, 2, 3, 4, 5, 6, 7], { left: 0, right: 1000 }, 288, 180, 10).width).toBe(180);
+  });
+
+  it('lays out nothing for no cards', () => {
+    expect(spreadCards([], bounds, 288, 180, 8)).toEqual({ width: 288, lefts: [] });
+  });
+});
+
+describe('dropPath', () => {
+  it('leaves the row straight down and arrives straight down', () => {
+    expect(dropPath(100, 50, 140, 100)).toBe('M 100 50 C 100 71, 140 79, 140 100');
+  });
+
+  it('rises the same way to a card over the row', () => {
+    expect(dropPath(100, 100, 140, 50)).toBe('M 100 100 C 100 79, 140 71, 140 50');
   });
 });
 

@@ -10,13 +10,16 @@
 //   reminders   thin rails along the bottom, one per overlapping reminder
 //
 // When the rows need less height than the sheet has, the spare height is
-// shared between them, so a short week still fills the screen.
+// shared between them, so a short week still fills the screen. Across, the
+// whole day always fits the sheet's width: all 24 hours at once, with no
+// sideways scrolling until a stretch of it is zoomed into.
 
 import type { Task } from './types';
 import type { Chain, DaySegment } from './schedule';
-import { MIN_MS, dayStartMs, daySegments, isSession } from './schedule';
+import { DAY_MIN, MIN_MS, dayStartMs, daySegments, isSession } from './schedule';
 
-export const TL_PX_PER_MIN = 2; // 120px an hour
+// Only until the sheet has been measured: 120px an hour.
+export const TL_PX_PER_MIN = 2;
 export const TL_GUTTER_PX = 68; // the day labels on the left
 export const TL_RULER_PX = 30; // the hour ruler along the top
 export const TL_RAIL_PX = 20;
@@ -24,10 +27,28 @@ export const TL_LANE_PX = 42;
 export const TL_LANE_GAP_PX = 6;
 export const TL_ROW_PAD_PX = 10; // under the last lane
 export const TL_REMINDER_PX = 8; // one reminder rail and the gap above it
-// The narrowest a block is drawn: the colour bar and the ✓ still fit.
+// The narrowest a block is drawn: the colour bar, the emoji and the ✓ still
+// fit, one over the other.
 export const TL_MIN_BLOCK_PX = 26;
 // Hour labels closer together than this start skipping hours.
-const TL_MIN_LABEL_GAP_PX = 58;
+const TL_MIN_LABEL_GAP_PX = 44;
+// How wide a block must be to show its name beside the emoji and the ✓, and
+// to show its times on a second line as well.
+const TL_NAME_MIN_PX = 76;
+const TL_TIMES_MIN_PX = 136;
+
+// Pixels per minute across the timeline: the whole day — or, zoomed, the
+// chosen stretch of it — spread over the room right of the day labels.
+export function timelineScale(viewPx: number, spanMin: number = DAY_MIN): number {
+  return viewPx > 0 ? viewPx / Math.max(1, spanMin) : TL_PX_PER_MIN;
+}
+
+// What a block this wide has room for: everything, its name but not its
+// times, or only the emoji over the ✓ (the hover card has the rest).
+export function blockDetail(widthPx: number): 'full' | 'name' | 'compact' {
+  if (widthPx >= TL_TIMES_MIN_PX) return 'full';
+  return widthPx >= TL_NAME_MIN_PX ? 'name' : 'compact';
+}
 
 // How many lanes a day needs: as many as blocks ever run at once in it.
 export function laneCount(segments: Pick<DaySegment, 'cols'>[]): number {
@@ -143,7 +164,7 @@ export interface TimelineLink {
 // its ends are: one that would cross midnight is drawn in neither.
 export function sessionLinks(chains: Chain[], segments: DaySegment[], day: string): TimelineLink[] {
   const from = dayStartMs(day);
-  const to = from + 24 * 60 * MIN_MS;
+  const to = from + DAY_MIN * MIN_MS;
   const byTask = new Map(segments.map((seg) => [seg.task.id, seg]));
   const links: TimelineLink[] = [];
   for (const chain of chains) {
@@ -193,6 +214,65 @@ export function linkPath(x1: number, y1: number, x2: number, y2: number): string
     `Q ${mid} ${y2} ${mid + r} ${y2}`,
     `H ${x2}`,
   ].join(' ');
+}
+
+// ── a day's detail cards ───────────────────────────────────────────
+
+// Hovering a day in the columns opens a card per reminder (and one for the
+// first real break) beside the column. A timeline row spans the screen, so
+// there the cards line up under the row instead — or over it, when the row
+// sits too low on the screen for them.
+export function cardsBelow(
+  rowTop: number,
+  rowBottom: number,
+  viewportHeight: number,
+  gap: number,
+  wanted = 150
+): boolean {
+  const below = viewportHeight - 8 - (rowBottom + gap);
+  const above = rowTop - gap - 8;
+  return below >= wanted || below >= above;
+}
+
+// Lays the cards out in one line: each as close as it can get to straight
+// across from what it describes, pushed apart so none overlap, and kept
+// inside `bounds`. They narrow (down to `minWidth`) when there are many.
+// `anchors` are the x the cards point at, left to right.
+export function spreadCards(
+  anchors: number[],
+  bounds: { left: number; right: number },
+  maxWidth: number,
+  minWidth: number,
+  gap: number
+): { width: number; lefts: number[] } {
+  const n = anchors.length;
+  if (n === 0) return { width: maxWidth, lefts: [] };
+  const room = bounds.right - bounds.left;
+  const width = Math.max(minWidth, Math.min(maxWidth, (room - (n - 1) * gap) / n));
+  const lefts: number[] = [];
+  anchors.forEach((x, i) => {
+    const wanted = x - width / 2;
+    lefts.push(i === 0 ? Math.max(bounds.left, wanted) : Math.max(wanted, lefts[i - 1] + width + gap));
+  });
+  // Ran off the right edge: pull back from there, as far as the gaps allow.
+  if (lefts[n - 1] + width > bounds.right) {
+    lefts[n - 1] = bounds.right - width;
+    for (let i = n - 2; i >= 0; i--) lefts[i] = Math.min(lefts[i], lefts[i + 1] - gap - width);
+  }
+  // More cards than fit even at their narrowest: keep the first ones on screen.
+  if (lefts[0] < bounds.left) {
+    const shift = bounds.left - lefts[0];
+    for (let i = 0; i < n; i++) lefts[i] += shift;
+  }
+  return { width, lefts };
+}
+
+// A connector dropping from a point in the row to the near edge of its card:
+// it leaves straight down (or up) and arrives the same way.
+export function dropPath(x1: number, y1: number, x2: number, y2: number): string {
+  const dir = y2 >= y1 ? 1 : -1;
+  const bend = Math.max(16, Math.abs(y2 - y1) * 0.42);
+  return `M ${x1} ${y1} C ${x1} ${y1 + dir * bend}, ${x2} ${y2 - dir * bend}, ${x2} ${y2}`;
 }
 
 // ── hover card ─────────────────────────────────────────────────────

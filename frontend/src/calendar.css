@@ -2734,6 +2734,14 @@
 
 .cal-grid--timeline {
   overflow: auto;
+  /* The room for a scrollbar is kept whether a week overflows or not, so the
+     day's width — and with it the scale — never jumps when one appears. */
+  scrollbar-gutter: stable;
+}
+
+/* Unzoomed the whole day fits across: nothing to scroll sideways to. */
+.cal-grid--timeline.fit {
+  overflow-x: hidden;
 }
 
 .tl-ruler {
@@ -2996,6 +3004,22 @@
   font-size: 0.8rem;
 }
 
+/* Too narrow for a name: the emoji stands over the ✓, and the hover card
+   says the rest. */
+.cal-block--across.compact {
+  padding: 3px 3px 3px 7px;
+}
+
+.cal-block--across.compact .cal-block-head {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cal-block--across.compact .cal-block-name,
+.cal-block--across.compact .cal-block-pin {
+  display: none;
+}
+
 /* The shade of what the clock has passed grows from the left, and ends in
    the red line at the current minute. */
 .cal-block--across.active::after {
@@ -3148,6 +3172,31 @@
   .cal-reminder.tl-reminder:hover {
     height: 9px;
   }
+}
+
+/* A hovered day's cards in the timeline hang in a line under the row (or
+   over it), their colour edge turned towards it. */
+.cal-reminder-detail-card.below,
+.cal-reminder-detail-card.above {
+  overflow-y: auto;
+}
+
+.cal-reminder-detail-card.below {
+  border-top: 3px solid var(--task-color, #3498db);
+}
+
+.cal-reminder-detail-card.above {
+  border-bottom: 3px solid var(--task-color, #3498db);
+}
+
+/* The first real break, marked out in its row while its card is open. */
+.tl-break-band {
+  position: absolute;
+  z-index: 1;
+  border: 1px dashed color-mix(in srgb, var(--accent-gold) 75%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-gold) 10%, transparent);
+  pointer-events: none;
 }
 
 .cal-zoom-select--across {
