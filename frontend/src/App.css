@@ -2593,7 +2593,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   cursor: pointer;
   transition:
     color 150ms ease,
@@ -2602,7 +2602,7 @@
 }
 
 .chart-switch-btn:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--control-hover);
 }
 
@@ -4990,35 +4990,25 @@
     opacity 0.35s ease;
 }
 
-/* ── Chart stage: the chart centred, its style switch on the right ──
-   An empty first column as wide as the switch keeps the chart centred
-   under the name. The stage reaches 8px into the card's padding on both
-   sides, so the switch lines up under the history toggle. */
+/* ── Chart stage: the chart at its full width, the style switch floating
+   at the card's right edge beside the top of the arc — where the arc is
+   narrow, so the two never touch and the chart gives up no width to it.
+   It lines up under the history toggle. */
 
 .habit-card-stage {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 30px;
-  align-items: center;
-  gap: 6px;
-  margin: 0 -8px;
-}
-
-.habit-card-stage::before {
-  content: '';
-}
-
-.habit-card-stage > .habit-card-dial {
-  grid-column: 2;
-  min-width: 0;
+  position: relative;
 }
 
 .habit-card-chart-switch {
-  grid-column: 3;
+  position: absolute;
+  top: 26px;
+  right: -8px;
+  z-index: 1;
 }
 
 .habit-card-chart-switch .chart-switch-btn.active {
   color: var(--habit-color, var(--text-primary));
-  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 16%, transparent);
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 22%, transparent);
   box-shadow: none;
 }
 
@@ -5039,6 +5029,14 @@
 
 .habit-gauge-capsule {
   transition: stroke 0.35s ease;
+}
+
+/* Own pixel size, centred; shrinks only when the card is narrower. */
+.habit-gauge-svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
 }
 
 .habit-gauge-readout {

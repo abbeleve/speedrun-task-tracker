@@ -13,47 +13,64 @@ interface HabitGaugeProps {
   color: string;
   // 0..1 — how much of today's quota is done.
   progress: number;
-  // Width of the canvas in CSS pixels; the height follows from the geometry.
+  // Tip-to-tip width of the fan in CSS pixels; the height follows from it.
   size: number;
   className?: string;
   ariaLabel?: string;
 }
 
+// The capsules keep the proportions of the reference design: each is about
+// a sixteenth of the gauge's width thick and a little over twice as long as
+// it is thick, round ends included — stubby petals, not thin spokes.
+const THICKNESS = 0.062; // × size
+const LENGTH = 2.3; // × thickness, tip to tip
+
 function buildLayout(size: number, progress: number) {
-  const outer = size * 0.42;
-  const inner = outer * 0.7;
-  const thickness = outer * 0.11;
-  const pad = thickness / 2 + 2;
-  const cx = size / 2;
-  const cy = pad + outer;
-  const segments = gaugeSegments(GAUGE_SEGMENTS, progress);
-  // The fan dips below its centre line at both ends; the canvas stops just
-  // under the lowest capsule.
-  const dip = Math.max(0, ...segments.map((s) => -Math.sin(s.angle)));
-  const height = cy + dip * outer + pad;
-  const capsules = segments.map((s) => {
+  const tip = size / 2; // from the centre to a capsule's outer tip
+  const thickness = size * THICKNESS;
+  const length = thickness * LENGTH;
+  // A round cap reaches half the thickness past the end of its line, so the
+  // lines themselves stop that far short of the tips.
+  const outer = tip - thickness / 2;
+  const inner = tip - length + thickness / 2;
+  const capsules = gaugeSegments(GAUGE_SEGMENTS, progress).map((s) => {
     const cos = Math.cos(s.angle);
     const sin = Math.sin(s.angle);
     return {
-      x1: cx + inner * cos,
-      y1: cy - inner * sin,
-      x2: cx + outer * cos,
-      y2: cy - outer * sin,
+      x1: inner * cos,
+      y1: -inner * sin,
+      x2: outer * cos,
+      y2: -outer * sin,
       lit: s.lit,
       position: s.position,
     };
   });
-  return { capsules, thickness, height };
+  // Crop the canvas to the capsules themselves (the fan dips below its centre
+  // line at both ends), with room for the round caps.
+  const pad = thickness / 2 + 1;
+  const xs = capsules.flatMap((c) => [c.x1, c.x2]);
+  const ys = capsules.flatMap((c) => [c.y1, c.y2]);
+  const minX = Math.min(...xs) - pad;
+  const minY = Math.min(...ys) - pad;
+  const width = Math.max(...xs) + pad - minX;
+  const height = Math.max(...ys) + pad - minY;
+  return { capsules, thickness, viewBox: `${minX} ${minY} ${width} ${height}`, width, height };
 }
 
+// Drawn at its own pixel size rather than stretched to the card, so the
+// capsules look the same whatever the card's width (CSS only shrinks it on a
+// screen too narrow to hold it).
 function HabitGauge({ color, progress, size, className, ariaLabel }: HabitGaugeProps) {
-  const { capsules, thickness, height } = useMemo(() => buildLayout(size, progress), [size, progress]);
+  const { capsules, thickness, viewBox, width, height } = useMemo(
+    () => buildLayout(size, progress),
+    [size, progress]
+  );
   return (
     <svg
       className={className}
-      width={size}
+      width={width}
       height={height}
-      viewBox={`0 0 ${size} ${height}`}
+      viewBox={viewBox}
       role="img"
       aria-label={ariaLabel ?? 'Progress'}
     >

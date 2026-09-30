@@ -19,13 +19,27 @@ describe('HabitGauge', () => {
     expect(html).not.toContain('NaN');
   });
 
-  it('crops the canvas to the fan', () => {
+  it('keeps the stubby capsules of the reference design', () => {
     const html = renderToStaticMarkup(<HabitGauge color="#3498db" progress={1} size={260} />);
+    const [x1, y1, x2, y2, thickness] = ['x1', 'y1', 'x2', 'y2', 'stroke-width'].map((a) =>
+      Number(new RegExp(`${a}="([-\\d.e]+)"`).exec(html)?.[1])
+    );
+    // Round caps add half the thickness at each end.
+    const length = Math.hypot(x2 - x1, y2 - y1) + thickness;
+    expect(thickness).toBeGreaterThan(14);
+    expect(length / thickness).toBeCloseTo(2.3, 1);
+  });
+
+  it('is drawn at its own pixel size, cropped to the fan', () => {
+    const html = renderToStaticMarkup(<HabitGauge color="#3498db" progress={1} size={260} />);
+    const width = Number(/width="([\d.]+)"/.exec(html)?.[1]);
     const height = Number(/height="([\d.]+)"/.exec(html)?.[1]);
-    // A little more than the fan's radius (0.42 × 260), since its ends dip
-    // below the centre line — but nowhere near a square canvas.
-    expect(height).toBeGreaterThan(260 * 0.42);
-    expect(height).toBeLessThan(260 * 0.6);
+    expect(width).toBeGreaterThan(250);
+    expect(width).toBeLessThanOrEqual(262);
+    // A little more than the fan's radius, since its ends dip below the
+    // centre line — but nowhere near a square canvas.
+    expect(height).toBeGreaterThan(130);
+    expect(height).toBeLessThan(260 * 0.7);
   });
 });
 

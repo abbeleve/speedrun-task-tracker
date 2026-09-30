@@ -329,7 +329,7 @@ function HabitCard({
                 color={habit.color}
                 progress={progress}
                 size={260}
-                className="habit-card-dial-svg"
+                className="habit-gauge-svg"
                 ariaLabel={`Сегодня: ${pct}% от цели`}
               />
               <div className="habit-gauge-readout" aria-hidden>
