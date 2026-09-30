@@ -89,8 +89,9 @@ CREATE TABLE IF NOT EXISTS color_presets (
     data TEXT NOT NULL
 );
 
--- Small per-user display choices (which chart the activity card draws, ...),
--- one JSON object per user. Each PUT merges its keys into the stored object.
+-- Small per-user display choices (which chart the activity card draws, how
+-- the calendar is laid out, ...), one JSON object per user. Each PUT merges
+-- its keys into the stored object.
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     data TEXT NOT NULL

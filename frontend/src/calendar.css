@@ -2710,3 +2710,453 @@
     transform: none;
   }
 }
+
+/* ── layout switch ───────────────────────────────────────────────── */
+
+.cal-seg--layout button {
+  display: grid;
+  place-items: center;
+  padding: 4px 9px;
+}
+
+.cal-seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+
+/* ── timeline: the grid on its side ──────────────────────────────────
+   A row per day, the hours running across. The ruler along the top and the
+   day labels down the left stay pinned while the sheet scrolls under them;
+   blocks that run at once stack into lanes; a session's blocks hang under a
+   rail and are tied step to step by connectors. Geometry lives in
+   timeline.ts — these rules only dress it. */
+
+.cal-grid--timeline {
+  overflow: auto;
+}
+
+.tl-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: none;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
+.tl-ticks {
+  position: relative;
+  flex: none;
+}
+
+/* Each label sits just right of its hour, over a short tick. */
+.tl-tick {
+  position: absolute;
+  bottom: 7px;
+  padding-left: 6px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-tick::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -7px;
+  height: 7px;
+  border-left: 1px solid var(--border);
+}
+
+/* The current time on the ruler, with a short stem dropping into the line
+   below it. */
+.tl-now-label {
+  position: absolute;
+  bottom: 5px;
+  z-index: 1;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.tl-now-label::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 2px;
+  height: 6px;
+  margin-left: -1px;
+  background: var(--accent-red);
+}
+
+.tl-body {
+  display: flex;
+}
+
+.tl-labels {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: none;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
+/* Lined up with the first lane rather than centred, so a tall row still
+   reads from its top. */
+.tl-day {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 14px 4px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tl-day:hover {
+    background: var(--control-hover);
+  }
+}
+
+.tl-day.today {
+  background: color-mix(in srgb, var(--accent-blue) 5%, var(--bg-secondary));
+}
+
+.tl-day-name {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tl-day.weekend .tl-day-name {
+  color: var(--text-dim);
+}
+
+.tl-day-num {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tl-day.today .tl-day-num {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.tl-day .cal-day-reminder-badge {
+  margin-top: 2px;
+}
+
+/* Its own stacking context, so nothing inside climbs over the pinned ruler
+   and labels. */
+.tl-tracks {
+  position: relative;
+  flex: none;
+  isolation: isolate;
+}
+
+.tl-hour-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.tl-hour-line.half {
+  border-left-style: dashed;
+  opacity: 0.22;
+}
+
+.tl-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-row.today {
+  background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
+}
+
+/* Weekends are hatched with hairlines, the same 45° grain a rest block
+   carries, kept faint enough to stay behind the blocks. */
+.tl-row.weekend {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--text-dim) 10%, transparent) 7px 8px
+  );
+}
+
+/* Today's line stands across its own row; the other rows only get a faint
+   guide at the same minute. Both stay under the blocks. */
+.tl-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin-left: -1px;
+  border-left: 2px solid var(--accent-red);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.tl-now .cal-now-dot {
+  left: -5px;
+  top: -1px;
+}
+
+.tl-now-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed color-mix(in srgb, var(--accent-red) 45%, transparent);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.cal-lead-band--across {
+  top: 0;
+  bottom: 0;
+}
+
+.cal-lead-band--across.ahead {
+  border-top: none;
+  border-bottom: none;
+  border-left: 1px dashed color-mix(in srgb, var(--accent-green) 70%, transparent);
+  border-right: 1px dashed color-mix(in srgb, var(--accent-green) 70%, transparent);
+}
+
+/* A timeline block: a card lifted off the row, with a deeper stripe of its
+   own colour down the leading edge. */
+.cal-block--across {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 8px 4px 11px;
+  border-radius: 8px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.25),
+    0 6px 14px -8px rgba(0, 0, 0, 0.5);
+}
+
+.cal-block--across::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.cal-block--across.draft::before,
+.cal-block--across.cont-start::before {
+  display: none;
+}
+
+.cal-block--across .cal-block-head {
+  font-size: 0.8rem;
+}
+
+/* The shade of what the clock has passed grows from the left, and ends in
+   the red line at the current minute. */
+.cal-block--across.active::after {
+  inset: 0 auto 0 0;
+  width: var(--elapsed, 0%);
+  height: auto;
+}
+
+.cal-block--across.active.now-inside::after {
+  border-bottom: none;
+  border-right: 2px solid var(--accent-red);
+}
+
+.cal-block--across.cont-start {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px dashed var(--border);
+}
+
+.cal-block--across.cont-end {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 1px dashed var(--border);
+}
+
+.cal-block-resize--start,
+.cal-block-resize--end {
+  top: 0;
+  bottom: 0;
+  width: min(5px, 20%);
+  height: auto;
+  cursor: ew-resize;
+}
+
+.cal-block-resize--start {
+  left: 0;
+  right: auto;
+}
+
+.cal-block-resize--end {
+  left: auto;
+  right: 0;
+}
+
+/* A session's rail, over the lanes its blocks sit in. It opens on a ring,
+   like the connectors, and carries the session's name when it has one.
+   Pressed it opens the session editor; dragged it moves the whole session. */
+.tl-rail {
+  position: absolute;
+  top: 7px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sequence-across, linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)));
+  opacity: 0.8;
+  cursor: grab;
+  touch-action: manipulation;
+  z-index: 3;
+  transition: opacity 0.15s, top 0.15s, height 0.15s;
+}
+
+.tl-rail::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--sequence-accent, var(--accent-cyan));
+  background: var(--bg-secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tl-rail:hover {
+    opacity: 1;
+    top: 6px;
+    height: 8px;
+  }
+}
+
+.tl-rail.session {
+  opacity: 0.9;
+}
+
+.tl-rail.named,
+.tl-rail.named:hover {
+  top: 3px;
+  height: 14px;
+  border-radius: 7px;
+}
+
+.tl-rail-label {
+  position: absolute;
+  inset: 0 8px 0 12px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--bg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.tl-rail.locked,
+.tl-rail.locked:hover {
+  cursor: pointer;
+  outline: 1px solid color-mix(in srgb, var(--accent-gold) 75%, transparent);
+}
+
+.tl-rail.dragging {
+  opacity: 1;
+  cursor: grabbing;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sequence-accent, var(--accent-cyan)) 60%, transparent);
+}
+
+/* Step to step within a session: out of one block's end, into the next
+   one's start, in the colour of the session's rail at that point. */
+.tl-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.tl-links path {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.tl-links .tl-link-end {
+  fill: var(--bg-secondary);
+  stroke-width: 1.75;
+}
+
+/* Reminders lie along the bottom of the row instead of down a column's
+   edge. */
+.cal-reminder.tl-reminder {
+  height: 6px;
+  transition: opacity 0.15s, height 0.15s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-reminder.tl-reminder:hover {
+    height: 9px;
+  }
+}
+
+.cal-zoom-select--across {
+  top: 0;
+  bottom: 0;
+  align-items: flex-start;
+  padding-top: 10px;
+  border-top: none;
+  border-bottom: none;
+  border-left: 1px dashed var(--accent-blue);
+  border-right: 1px dashed var(--accent-blue);
+}

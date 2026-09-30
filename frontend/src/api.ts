@@ -5,6 +5,7 @@
 
 import { todayKey } from './history';
 import type { ActivityChart } from './activityChart';
+import type { CalLayout } from './calendarLayout';
 import type { ColorPreset } from './colorPresets';
 import type { SleepData } from './sleep';
 import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
@@ -247,6 +248,7 @@ export function saveColorPresets(presets: ColorPreset[]): Promise<void> {
 
 export interface Prefs {
   activityChart?: ActivityChart;
+  calendarLayout?: CalLayout;
 }
 
 export async function loadPrefs(): Promise<Prefs> {
@@ -254,8 +256,16 @@ export async function loadPrefs(): Promise<Prefs> {
 }
 
 // Only the keys passed change; the server keeps the rest of what it stored.
-export async function savePrefs(patch: Prefs): Promise<void> {
-  await apiFetch('/prefs', { method: 'PUT', body: JSON.stringify(patch) });
+// Writes go out one after another, so flipping a choice back and forth quickly
+// can never leave the older value stored last.
+let prefsWrite: Promise<unknown> = Promise.resolve();
+
+export function savePrefs(patch: Prefs): Promise<void> {
+  const promise = prefsWrite
+    .catch(() => undefined)
+    .then(() => apiFetch<void>('/prefs', { method: 'PUT', body: JSON.stringify(patch) }));
+  prefsWrite = promise;
+  return promise;
 }
 
 // ── Habits (home-page tracker) ─────────────────────────────────────

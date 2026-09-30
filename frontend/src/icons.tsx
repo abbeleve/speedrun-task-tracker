@@ -41,6 +41,24 @@ export const IconCalendar = (p: IconProps) => (
   </Icon>
 );
 
+// The calendar's two layouts, for the switch in its toolbar: a column per day
+// with blocks stacked down it, or a row per day with blocks laid along it.
+export const IconLayoutColumns = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3.5" width="18" height="17" rx="2.5" />
+    <path d="M9 3.5v17M15 3.5v17" />
+    <path d="M5.75 7v4M12 9.5v5M17.75 7.5v3.5" strokeWidth={2.5} />
+  </Icon>
+);
+
+export const IconLayoutRows = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3.5" width="18" height="17" rx="2.5" />
+    <path d="M3 9.25h18M3 14.75h18" />
+    <path d="M6.5 6.4h5M10 12h7M7.5 17.6h4" strokeWidth={2.5} />
+  </Icon>
+);
+
 export const IconHome = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3.5 10.5 12 3.5l8.5 7" />
