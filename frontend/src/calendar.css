@@ -1,5 +1,58 @@
 /* ===== Calendar — the wall-clock plan ===== */
 
+/* Card design: a white (or near-black) sheet with no column rules, big day
+   numbers, today as a soft band, and every block a rounded pastel card with
+   dark ink. Popovers and the view switches are dark in both themes. */
+:root,
+[data-theme="dark"] {
+  --cal-sheet: var(--bg-secondary);
+  --cal-ink: #f4f4f5;
+  --cal-ink-inverse: #111113;
+  --cal-line: rgba(255, 255, 255, 0.055);
+  --cal-today: rgba(150, 136, 255, 0.075);
+  --cal-day-dim: #4b4e57;
+  --cal-card-ink: #18181b;
+  --cal-card-radius: 16px;
+  --cal-panel-radius: 22px;
+  --cal-panel-shadow: none;
+  --cal-pop-bg: #2a2b30;
+  --cal-pop-ink: #f4f4f5;
+  --cal-pop-dim: #a1a1aa;
+  --cal-pop-border: rgba(255, 255, 255, 0.08);
+  --cal-seg-track: #0d0d0f;
+  --cal-seg-border: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] {
+  --cal-sheet: #ffffff;
+  --cal-ink: #111113;
+  --cal-ink-inverse: #ffffff;
+  --cal-line: #eeeef2;
+  --cal-today: #f2f1fb;
+  --cal-day-dim: #c6c6cd;
+  --cal-panel-shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 8px 24px -12px rgba(16, 16, 24, 0.12);
+  --cal-pop-bg: #1c1c1f;
+  --cal-pop-border: transparent;
+  --cal-seg-track: #18181b;
+  --cal-seg-border: transparent;
+}
+
+/* A card's fill: the task's own hue, lifted to a bright pastel so dark ink
+   always reads on it. Browsers without relative colours get a tint instead. */
+.cal-block,
+.cal-backlog-card,
+.cal-chip {
+  --card-fill: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
+}
+
+@supports (color: oklch(from red l c h)) {
+  .cal-block,
+  .cal-backlog-card,
+  .cal-chip {
+    --card-fill: oklch(from var(--task-color, #3498db) clamp(0.8, l, 0.9) min(c, 0.16) h);
+  }
+}
+
 .cal-page {
   display: flex;
   flex-direction: column;
@@ -27,10 +80,13 @@
 }
 
 .cal-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-left: 6px;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--cal-ink);
+  margin-left: 10px;
   text-transform: capitalize;
   white-space: nowrap;
   overflow: hidden;
@@ -38,11 +94,11 @@
 }
 
 .cal-btn {
-  background: var(--bg-secondary);
+  background: var(--cal-sheet);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
+  border-radius: 999px;
+  padding: 6px 14px;
   font-family: var(--font-sans);
   font-size: 0.85rem;
   cursor: pointer;
@@ -63,15 +119,15 @@
 }
 
 .cal-btn--icon {
-  padding: 6px 10px;
+  padding: 6px 11px;
   line-height: 1;
   font-size: 1rem;
 }
 
 .cal-btn--primary {
-  background: var(--accent-blue);
-  border-color: var(--accent-blue);
-  color: #fff;
+  background: var(--cal-ink);
+  border-color: var(--cal-ink);
+  color: var(--cal-ink-inverse);
   font-weight: 600;
 }
 
@@ -131,6 +187,33 @@
   box-shadow: var(--shadow-pill);
 }
 
+/* The calendar's own switches: a dark pill track with a white pill in it. */
+.cal-toolbar .cal-seg {
+  padding: 4px;
+  border-color: var(--cal-seg-border);
+  border-radius: 999px;
+  background: var(--cal-seg-track);
+}
+
+.cal-toolbar .cal-seg button {
+  border-radius: 999px;
+  padding: 5px 14px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-toolbar .cal-seg button:not(.active):not(:disabled):hover {
+    color: #fff;
+  }
+}
+
+.cal-toolbar .cal-seg button.active {
+  background: #fff;
+  color: #111113;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 /* ── HUD: the overtake read-out ──────────────────────────────── */
 
 /* The product's headline number. It is the largest type on the page and the
@@ -140,10 +223,10 @@
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  padding: 12px 20px;
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
 }
 
 .cal-hud-main {
@@ -160,7 +243,7 @@
 }
 
 .cal-hud-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: clamp(1.75rem, 2.4vw, 2.25rem);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -182,7 +265,7 @@
 }
 
 .cal-hud-week-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -225,68 +308,82 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
   overflow: hidden;
 }
 
+/* The header keeps the grid's scrollbar gutter too, so today's band runs
+   straight down from its date into its column. */
 .cal-days-head {
   display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: var(--cal-sheet);
+  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
+/* "18 / вт": a big number and the weekday after it, set on one baseline. */
 .cal-day-head {
   flex: 1;
   min-width: 0;
   background: none;
   border: none;
-  border-left: 1px solid var(--border);
-  padding: 6px 4px;
+  padding: 14px 10px 12px 18px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 2px;
+  color: var(--cal-day-dim);
+  font-family: var(--font-display);
+  text-align: left;
+  transition: color 150ms ease;
 }
 
-.cal-day-head:first-child {
-  border-left: none;
-}
-
-.cal-day-name {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+@media (hover: hover) and (pointer: fine) {
+  .cal-day-head:hover {
+    color: var(--text-secondary);
+  }
 }
 
 .cal-day-num {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.cal-day-reminder-badge {
-  padding: 1px 5px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-  color: var(--text-secondary);
-  font-size: 0.6rem;
-  line-height: 1.25;
+  font-size: 2.1rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
+.cal-day-name {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.cal-day-name::before {
+  content: '/ ';
+}
+
+.cal-day-reminder-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.6rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-day-head.today {
+  background: var(--cal-today);
+  color: var(--cal-ink);
+}
+
 .cal-day-head.today .cal-day-num {
-  background: var(--accent-blue);
-  color: #fff;
-  border-radius: 50%;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
+  font-weight: 700;
 }
 
 .cal-grid {
@@ -294,6 +391,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   position: relative;
 }
 
@@ -310,9 +408,10 @@
 
 .cal-hour {
   position: absolute;
-  right: 6px;
+  right: 10px;
   transform: translateY(-50%);
   font-size: 0.68rem;
+  font-weight: 500;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
@@ -331,8 +430,7 @@
   position: absolute;
   left: 56px;
   right: 0;
-  border-top: 1px solid var(--border);
-  opacity: 0.55;
+  border-top: 1px solid var(--cal-line);
 }
 
 .cal-columns {
@@ -343,11 +441,11 @@
   display: flex;
 }
 
+/* No rules between the days: the cards' own gaps keep them apart. */
 .cal-col {
   position: relative;
   flex: 1;
   min-width: 0;
-  border-left: 1px solid var(--border);
 }
 
 /* The blocks live to the right of the sequence spine's gutter. */
@@ -357,7 +455,7 @@
 }
 
 .cal-col.today {
-  background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
+  background: var(--cal-today);
 }
 
 /* ── right-drag zoom selection ──────────────────────────────── */
@@ -460,10 +558,10 @@
   position: absolute;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 1px 6px;
+  padding: 1px 7px;
   border: 1px dashed var(--accent-cyan);
-  border-radius: 10px;
-  background: var(--bg-secondary);
+  border-radius: 999px;
+  background: var(--cal-sheet);
   color: var(--accent-cyan);
   font-family: var(--font-sans);
   font-size: 0.62rem;
@@ -542,14 +640,21 @@
 
 /* ── blocks ──────────────────────────────────────────────────── */
 
+/* A transparent border keeps every card a few pixels inside its slot, so
+   back-to-back and parallel cards stand apart without moving their times;
+   the fill is clipped to the padding box inside it. Outer shadows therefore
+   start a little off the visible edge — rings are drawn inset instead. */
 .cal-block {
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: 5px;
-  background: var(--task-color, #3498db);
-  color: var(--text-primary);
-  padding: 2px 5px;
+  border: solid transparent;
+  border-width: 2px 3px;
+  border-radius: var(--cal-card-radius);
+  background: var(--card-fill);
+  background-clip: padding-box;
+  color: var(--cal-card-ink);
+  padding: 4px 9px;
   overflow: hidden;
   cursor: grab;
   user-select: none;
@@ -561,53 +666,71 @@
   transition: box-shadow 150ms ease;
 }
 
+.cal-block.short {
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
 /* Hover answers with a little depth, never with scale: a block is passed
    over dozens of times a day, and scaling it blurs its text and pushes it
    out of its column. */
 @media (hover: hover) and (pointer: fine) {
   .cal-block:hover {
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 22px -12px rgba(0, 0, 0, 0.45);
     z-index: 3;
   }
 }
 
 .cal-block.active {
-  box-shadow: 0 0 0 2px var(--task-color, #3498db), var(--shadow);
+  box-shadow:
+    inset 0 0 0 2px var(--cal-card-ink),
+    0 12px 26px -14px rgba(0, 0, 0, 0.55);
   z-index: 4;
 }
 
-/* What of the block the clock is in is already behind it is shaded down to
-   a red line at the current minute. The shade sits under the text (z-index
-   -1 inside the block's own stacking context), so the grid's now line can
-   stay beneath the blocks instead of striking through their names. */
+/* What of the block the clock is in is already behind it is hatched, like a
+   progress bar, down to a dark line at the current minute. The shade sits
+   under the text (z-index -1 inside the block's own stacking context), so
+   the grid's now line can stay beneath the blocks instead of striking
+   through their names. */
 .cal-block.active::after {
   content: '';
   position: absolute;
   inset: 0 0 auto;
   height: var(--elapsed, 0%);
-  background: rgba(0, 0, 0, 0.14);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.13) 0 3px,
+    rgba(0, 0, 0, 0.04) 3px 7px
+  );
   z-index: -1;
   pointer-events: none;
 }
 
 .cal-block.active.now-inside::after {
-  border-bottom: 2px solid var(--accent-red);
+  border-bottom: 2px solid var(--cal-card-ink);
 }
 
-/* Faded via background + text alpha rather than the `opacity` property —
-   `opacity` on .cal-block would dim the bullet along with everything else,
-   and a dimmed bullet is exactly what got lost against a same-hue task
-   colour earlier. This keeps the bullet at full strength no matter how
-   translucent the rest of the card gets. */
+/* Closed: the card steps back into the sheet and its name is struck
+   through, as on a ticked checklist; the filled box is the verdict. Faded
+   via the fill and the text, never the `opacity` property, so the box keeps
+   full strength. */
 .cal-block.done {
-  background: color-mix(in srgb, var(--task-color, #3498db) 45%, var(--bg-secondary));
+  background: color-mix(in srgb, var(--card-fill) 24%, var(--cal-sheet));
+  color: var(--card-fill);
   transition: background 0.3s ease;
 }
 
-.cal-block.done .cal-block-emoji,
-.cal-block.done .cal-block-name,
-.cal-block.done .cal-block-meta {
-  opacity: 0.65;
+[data-theme="light"] .cal-block.done {
+  background: color-mix(in srgb, var(--card-fill) 45%, var(--cal-sheet));
+  color: color-mix(in srgb, var(--cal-card-ink) 55%, transparent);
+}
+
+.cal-block.done .cal-block-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
 }
 
 /* The one-shot "just completed" flourish: the block grows in step with a
@@ -715,9 +838,13 @@
     45deg,
     transparent,
     transparent 5px,
-    rgba(255, 255, 255, 0.06) 5px,
-    rgba(255, 255, 255, 0.06) 10px
+    rgba(255, 255, 255, 0.3) 5px,
+    rgba(255, 255, 255, 0.3) 10px
   );
+}
+
+.cal-block.rest.done {
+  background-image: none;
 }
 
 /* Picked up: the block rises off the grid rather than fading into it. */
@@ -726,7 +853,7 @@
   cursor: grabbing;
   pointer-events: none;
   z-index: 6;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 18px 34px -12px rgba(0, 0, 0, 0.5);
 }
 
 /* The block the editor is describing: it stays on the grid next to the popover
@@ -734,13 +861,13 @@
 .cal-block.live {
   pointer-events: none;
   z-index: 6;
-  border: 1px dashed var(--task-color, #3498db);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--task-color, #3498db) 45%, transparent);
+  box-shadow: inset 0 0 0 2px var(--cal-card-ink);
 }
 
 .cal-block.draft {
-  border: 1px dashed var(--accent-blue);
-  background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-secondary));
+  border: 2px dashed var(--cal-ink);
+  background: color-mix(in srgb, var(--cal-ink) 6%, transparent);
+  color: var(--cal-ink);
   pointer-events: none;
 }
 
@@ -753,7 +880,7 @@
   font: inherit;
   background: transparent;
   border: 2px dashed var(--text-dim);
-  border-radius: 5px;
+  border-radius: var(--cal-card-radius);
   cursor: pointer;
   display: flex;
   justify-content: center;
@@ -773,28 +900,41 @@
   color: var(--text-secondary);
 }
 
+/* A block that runs past midnight is cut flat where the day cuts it. */
 .cal-block.cont-top {
+  border-top-width: 0;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  border-top: 1px dashed var(--border);
 }
 
 .cal-block.cont-bottom {
+  border-bottom-width: 0;
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  border-bottom: 1px dashed var(--border);
 }
 
 .cal-block-head {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.78rem;
-  line-height: 1.2;
+  gap: 6px;
+  font-size: 0.8rem;
+  line-height: 1.25;
 }
 
 .cal-block-emoji {
   flex: none;
+}
+
+/* With room for the times the emoji sits in a white badge, like an avatar. */
+.cal-block:not(.short) .cal-block-emoji {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.7rem;
+  line-height: 1;
 }
 
 .cal-block-name {
@@ -803,31 +943,43 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
-  color: var(--bg-secondary);
+  font-weight: 700;
+  letter-spacing: -0.005em;
 }
 
-/* The completion control: an empty bullet that fills solid black once the
-   task is done. Black (rather than one keyed to --task-color) is what keeps
-   it legible against every block colour in the palette — none of them are
-   dark, so a black dot always reads as a distinct mark rather than blending
-   into the background. */
+/* The completion control: a checklist box that fills with ink and shows a
+   tick once the task is done. Ink rather than the task's own colour keeps it
+   legible on every card. */
 .cal-block-check {
+  position: relative;
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
   padding: 0;
-  border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.4);
-  background: rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+  border: 1.5px solid color-mix(in srgb, var(--cal-card-ink) 70%, transparent);
+  background: rgba(255, 255, 255, 0.55);
   cursor: pointer;
   transition: transform 150ms var(--ease-out), border-color 150ms ease, background 150ms ease;
 }
 
+.cal-block-check::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 3.5px;
+  height: 7px;
+  border: solid var(--card-fill);
+  border-width: 0 1.75px 1.75px 0;
+  transform: translate(-50%, -50%) rotate(45deg) scale(0);
+  transition: transform 150ms var(--ease-out);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .cal-block-check:hover {
-    border-color: rgba(0, 0, 0, 0.65);
-    transform: scale(1.15);
+    border-color: var(--cal-card-ink);
+    transform: scale(1.12);
   }
 }
 
@@ -836,10 +988,22 @@
 }
 
 .cal-block.done .cal-block-check {
-  border-color: rgba(0, 0, 0, 0.55);
-  /* Completion keeps the task's identity: lighten its own colour enough that
-     the filled bullet still separates from the card behind it. */
-  background: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
+  border-color: var(--card-fill);
+  background: var(--card-fill);
+}
+
+.cal-block.done .cal-block-check::before {
+  border-color: var(--cal-card-ink);
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+}
+
+[data-theme="light"] .cal-block.done .cal-block-check {
+  border-color: var(--cal-card-ink);
+  background: var(--cal-card-ink);
+}
+
+[data-theme="light"] .cal-block.done .cal-block-check::before {
+  border-color: #fff;
 }
 
 .cal-block-pin {
@@ -853,9 +1017,56 @@
   display: flex;
   justify-content: space-between;
   gap: 6px;
-  font-size: 0.68rem;
-  color: var(--bg-secondary);
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: inherit;
+  opacity: 0.8;
   font-variant-numeric: tabular-nums;
+}
+
+/* Room enough for a whole card: badge and ✓ on top, the name under them
+   (two lines if it needs them), the times at the foot. */
+.cal-block.tall {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 11px;
+}
+
+.cal-block.tall .cal-block-head {
+  flex-wrap: wrap;
+  row-gap: 7px;
+}
+
+.cal-block.tall .cal-block-emoji {
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+}
+
+.cal-block.tall .cal-block-check {
+  margin-left: auto;
+}
+
+.cal-block.tall .cal-block-name {
+  order: 1;
+  flex: 1 0 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+/* A narrow card puts the duration under the times rather than cut them. */
+.cal-block.tall .cal-block-meta {
+  flex-wrap: wrap;
+  row-gap: 0;
+  margin-top: 0;
 }
 
 .cal-block-meta > span {
@@ -905,12 +1116,12 @@
 .cal-hover-card {
   position: fixed;
   z-index: 50;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--task-color, #3498db);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow);
-  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--cal-pop-border);
+  background: var(--cal-pop-bg);
+  color: var(--cal-pop-ink);
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55);
+  padding: 11px 13px;
   pointer-events: none;
   animation: cal-hover-card-in 140ms ease-out both;
   /* The name/description/time must show in full — this only guards against
@@ -932,16 +1143,27 @@
 .cal-hover-card-head {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 7px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
+}
+
+/* The task's colour, as the dot in front of its name. */
+.cal-hover-card-head::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.4em;
+  border-radius: 50%;
+  background: var(--task-color, #3498db);
 }
 
 .cal-hover-card-focus {
   margin: -1px -2px 9px;
   padding: 3px 2px 9px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .cal-hover-card-focus-title {
@@ -953,14 +1175,14 @@
 }
 
 .cal-hover-card-focus-title span {
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .cal-hover-card-motivation {
   margin-top: 4px;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-size: 0.73rem;
   font-style: italic;
   line-height: 1.35;
@@ -975,14 +1197,14 @@
 .cal-hover-card-time {
   margin-top: 3px;
   font-size: 0.72rem;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-variant-numeric: tabular-nums;
 }
 
 .cal-hover-card-desc {
   margin-top: 5px;
   font-size: 0.74rem;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1015,24 +1237,31 @@
   stroke-width: 1.5;
 }
 
+.cal-hover-card .cal-hover-deadline {
+  color: var(--cal-pop-dim);
+}
+
+/* Dark like the block's hover card; the edge turned towards the rail it
+   belongs to carries the reminder's colour. */
 .cal-reminder-detail-card {
   position: fixed;
   z-index: 49;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow);
-  padding: 9px 10px;
+  border: 1px solid var(--cal-pop-border);
+  border-radius: 14px;
+  background: var(--cal-pop-bg);
+  color: var(--cal-pop-ink);
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55);
+  padding: 10px 12px;
   pointer-events: none;
   animation: cal-hover-card-in 140ms ease-out both;
 }
 
 .cal-reminder-detail-card.right {
-  border-left: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 3px 0 0 var(--task-color, #3498db), 0 18px 40px -16px rgba(0, 0, 0, 0.55);
 }
 
 .cal-reminder-detail-card.left {
-  border-right: 3px solid var(--task-color, #3498db);
+  box-shadow: inset -3px 0 0 var(--task-color, #3498db), 0 18px 40px -16px rgba(0, 0, 0, 0.55);
 }
 
 .cal-reminder-detail-card.expired {
@@ -1041,7 +1270,7 @@
 }
 
 .cal-gap-detail-card {
-  background: color-mix(in srgb, var(--accent-gold) 7%, var(--bg-secondary));
+  background: color-mix(in srgb, var(--accent-gold) 12%, var(--cal-pop-bg));
 }
 
 .cal-reminder-detail-main {
@@ -1058,7 +1287,7 @@
 .cal-reminder-detail-name {
   flex: 1;
   min-width: 0;
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
   font-size: 0.8rem;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -1066,14 +1295,14 @@
 
 .cal-reminder-detail-time {
   margin: 3px 0 0 22px;
-  color: var(--text-dim);
+  color: var(--cal-pop-dim);
   font: 0.68rem var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .cal-reminder-detail-desc {
   margin: 5px 0 0 22px;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-size: 0.73rem;
   line-height: 1.35;
   white-space: pre-wrap;
@@ -1081,7 +1310,8 @@
 }
 
 .cal-reminder-detail-desc.empty {
-  color: var(--text-dim);
+  color: var(--cal-pop-dim);
+  opacity: 0.7;
   font-style: italic;
 }
 
@@ -1089,23 +1319,24 @@
 
 /* Under the blocks (they sit at z-index 2+): it runs across the free grid,
    and the block the clock is in draws its own red line under its text. */
+/* An ink hairline with a short bar across its start, like a pin in the day. */
 .cal-now {
   position: absolute;
   left: 0;
   right: 0;
-  border-top: 2px solid var(--accent-red);
+  border-top: 1.5px solid var(--cal-ink);
   z-index: 1;
   pointer-events: none;
 }
 
 .cal-now-dot {
   position: absolute;
-  left: -5px;
-  top: -5px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent-red);
+  left: -2px;
+  top: -7.5px;
+  width: 2.5px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--cal-ink);
 }
 
 .cal-lead-band {
@@ -1114,7 +1345,7 @@
   right: 0;
   z-index: 1;
   pointer-events: none;
-  border-radius: 3px;
+  border-radius: 10px;
 }
 
 .cal-lead-band.ahead {
@@ -1134,24 +1365,22 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
   overflow: hidden;
 }
 
 .cal-month-head {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  border-bottom: 1px solid var(--border);
+  padding: 4px 6px 0;
 }
 
 .cal-month-head span {
-  padding: 5px;
-  text-align: center;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  padding: 10px 10px 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
   color: var(--text-dim);
 }
 
@@ -1160,23 +1389,21 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   grid-auto-rows: 1fr;
+  gap: 4px;
+  padding: 0 6px 6px;
   min-height: 0;
 }
 
 .cal-cell {
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  padding: 3px 4px;
+  border-top: 1px solid var(--cal-line);
+  padding: 6px 6px 4px;
   min-height: 0;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.cal-cell:nth-child(7n + 1) {
-  border-left: none;
+  gap: 3px;
+  border-radius: 0 0 12px 12px;
 }
 
 .cal-cell.other-month {
@@ -1184,20 +1411,33 @@
 }
 
 .cal-cell.today {
-  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+  background: var(--cal-today);
+  border-top-color: transparent;
+  border-radius: 12px;
 }
 
 .cal-cell-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 4px;
 }
 
 .cal-cell-num {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--cal-day-dim);
+}
+
+.cal-cell:not(.other-month) .cal-cell-num {
+  color: var(--text-secondary);
+}
+
+.cal-cell.today .cal-cell-num {
+  color: var(--cal-ink);
+  font-weight: 700;
 }
 
 .cal-cell-lead {
@@ -1225,12 +1465,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--task-color, #3498db);
+  background: var(--card-fill);
   border: none;
-  border-radius: 3px;
-  padding: 1px 4px;
+  border-radius: 8px;
+  padding: 2px 7px;
   font-size: 0.68rem;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--cal-card-ink);
   cursor: pointer;
   text-align: left;
   font-family: var(--font-sans);
@@ -1238,11 +1479,18 @@
 
 .cal-chip.done {
   text-decoration: line-through;
+  color: var(--card-fill);
+  background: color-mix(in srgb, var(--card-fill) 24%, var(--cal-sheet));
+}
+
+[data-theme="light"] .cal-chip.done {
+  color: color-mix(in srgb, var(--cal-card-ink) 55%, transparent);
+  background: color-mix(in srgb, var(--card-fill) 45%, var(--cal-sheet));
 }
 
 .cal-chip-time {
   font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
+  opacity: 0.7;
   flex: none;
 }
 
@@ -1252,19 +1500,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--bg-secondary);
+  font-weight: 600;
 }
-
-/* In the light theme the task names stay dark/readable over the colored blocks. */
-[data-theme="light"] .cal-block-name,
-[data-theme="light"] .cal-chip-name {
-  color: var(--text-primary);
-}
-
-[data-theme="light"] .cal-block-meta {
-  color: var(--text-secondary);
-}
-
 .cal-cell-more {
   font-size: 0.65rem;
   color: var(--text-dim);
@@ -1278,11 +1515,12 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  padding: 8px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
+  padding: 12px;
   min-height: 0;
   transition: background 0.1s, border-color 0.1s;
 }
@@ -1290,6 +1528,7 @@
 .cal-backlog.drop-target {
   background: var(--accent-dim, rgba(52, 152, 219, 0.15));
   border-color: var(--accent, #3498db);
+  border-style: dashed;
 }
 
 .cal-backlog-head {
@@ -1299,31 +1538,40 @@
 }
 
 .cal-backlog-head h3 {
-  font-size: 0.85rem;
-  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cal-ink);
 }
 
+/* Same dark pill track as the toolbar switches. */
 .cal-backlog-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--cal-seg-border);
+  background: var(--cal-seg-track);
 }
 
 .cal-backlog-tabs button {
   flex: 1;
-  padding: 7px 4px;
+  padding: 5px 4px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.72);
   font: inherit;
   font-size: 0.76rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .cal-backlog-tabs button.active {
-  border-bottom-color: var(--accent-blue);
-  color: var(--text-primary);
-  font-weight: 700;
+  background: #fff;
+  color: #111113;
+  font-weight: 600;
 }
 
 .cal-backlog-hint {
@@ -1335,7 +1583,7 @@
 .cal-backlog-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   overflow-y: auto;
   min-height: 0;
 }
@@ -1343,13 +1591,17 @@
 .cal-backlog-card {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 6px;
-  border-radius: 4px;
-  background: var(--task-color, #3498db);
-  color: var(--text-primary);
-  font-size: 0.76rem;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--card-fill);
+  color: var(--cal-card-ink);
+  font-size: 0.78rem;
   cursor: grab;
+}
+
+.cal-backlog-card .cal-chip-time {
+  font-weight: 500;
 }
 
 .cal-backlog-card:active {
@@ -2489,10 +2741,10 @@
 .cal-hour.cal-now-label {
   right: 4px;
   z-index: 6;
-  color: #fff;
-  background: var(--accent-red);
-  border-radius: 4px;
-  padding: 1px 4px;
+  color: var(--cal-ink-inverse);
+  background: var(--cal-ink);
+  border-radius: 999px;
+  padding: 1px 6px;
   font-weight: 600;
 }
 
@@ -2569,7 +2821,22 @@
   }
 
   .cal-title {
-    font-size: 0.95rem;
+    font-size: 1.15rem;
+  }
+
+  /* Narrow columns: the weekday drops under the number. */
+  .cal-day-head {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 2px;
+  }
+
+  .cal-day-num {
+    font-size: 1.35rem;
+  }
+
+  .cal-day-name::before {
+    content: none;
   }
 
   .cal-seg--views {
@@ -2748,8 +3015,8 @@
   top: 0;
   z-index: 4;
   display: flex;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  background: var(--cal-sheet);
+  border-bottom: 1px solid var(--cal-line);
 }
 
 .tl-corner {
@@ -2757,8 +3024,7 @@
   left: 0;
   z-index: 2;
   flex: none;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background: var(--cal-sheet);
 }
 
 .tl-ticks {
@@ -2784,7 +3050,7 @@
   left: 0;
   bottom: -7px;
   height: 7px;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--cal-line);
 }
 
 /* The current time on the ruler, with a short stem dropping into the line
@@ -2794,10 +3060,10 @@
   bottom: 5px;
   z-index: 1;
   transform: translateX(-50%);
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--accent-red);
-  color: #fff;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--cal-ink);
+  color: var(--cal-ink-inverse);
   font-size: 0.68rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -2809,10 +3075,10 @@
   position: absolute;
   left: 50%;
   bottom: -6px;
-  width: 2px;
+  width: 1.5px;
   height: 6px;
-  margin-left: -1px;
-  background: var(--accent-red);
+  margin-left: -0.75px;
+  background: var(--cal-ink);
 }
 
 .tl-body {
@@ -2824,12 +3090,11 @@
   left: 0;
   z-index: 3;
   flex: none;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background: var(--cal-sheet);
 }
 
-/* Lined up with the first lane rather than centred, so a tall row still
-   reads from its top. */
+/* The big number over the weekday, lined up with the first lane rather than
+   centred, so a tall row still reads from its top. */
 .tl-day {
   position: absolute;
   left: 0;
@@ -2838,50 +3103,44 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 1px;
-  padding: 14px 4px 4px;
+  gap: 2px;
+  padding: 12px 4px 4px;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-secondary);
+  border-bottom: 1px solid var(--cal-line);
+  color: var(--cal-day-dim);
   font-family: var(--font-sans);
   cursor: pointer;
+  transition: color 150ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .tl-day:hover {
-    background: var(--control-hover);
+    color: var(--text-secondary);
   }
 }
 
 .tl-day.today {
-  background: color-mix(in srgb, var(--accent-blue) 5%, var(--bg-secondary));
+  background: var(--cal-today);
+  color: var(--cal-ink);
 }
 
 .tl-day-name {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.tl-day.weekend .tl-day-name {
-  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .tl-day-num {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .tl-day.today .tl-day-num {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--accent-blue);
-  color: #fff;
+  font-weight: 700;
 }
 
 .tl-day .cal-day-reminder-badge {
@@ -2900,25 +3159,24 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid var(--border);
-  opacity: 0.55;
+  border-left: 1px solid var(--cal-line);
   pointer-events: none;
 }
 
 .tl-hour-line.half {
   border-left-style: dashed;
-  opacity: 0.22;
+  opacity: 0.5;
 }
 
 .tl-row {
   position: absolute;
   left: 0;
   right: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--cal-line);
 }
 
 .tl-row.today {
-  background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
+  background: var(--cal-today);
 }
 
 /* Weekends are hatched with hairlines, the same 45° grain a rest block
@@ -2933,26 +3191,29 @@
 
 /* Today's line stands across its own row; the other rows only get a faint
    guide at the same minute. Both stay under the blocks. */
+/* Stood on end, the now line keeps its bar on top: a "T" through today. */
 .tl-now {
   position: absolute;
   top: 0;
   bottom: 0;
-  margin-left: -1px;
-  border-left: 2px solid var(--accent-red);
+  margin-left: -0.75px;
+  border-left: 1.5px solid var(--cal-ink);
   z-index: 1;
   pointer-events: none;
 }
 
 .tl-now .cal-now-dot {
-  left: -5px;
-  top: -1px;
+  left: -7.5px;
+  top: 0;
+  width: 13px;
+  height: 2.5px;
 }
 
 .tl-now-guide {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px dashed color-mix(in srgb, var(--accent-red) 45%, transparent);
+  border-left: 1px dashed color-mix(in srgb, var(--cal-ink) 30%, transparent);
   z-index: 1;
   pointer-events: none;
 }
@@ -2969,44 +3230,44 @@
   border-right: 1px dashed color-mix(in srgb, var(--accent-green) 70%, transparent);
 }
 
-/* A timeline block: a card lifted off the row, with a deeper stripe of its
-   own colour down the leading edge. */
+/* A timeline block: the same card, laid along its lane. The lanes already
+   keep their own gaps, so only the ends are held apart. */
 .cal-block--across {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  padding: 4px 8px 4px 11px;
-  border-radius: 8px;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.25),
-    0 6px 14px -8px rgba(0, 0, 0, 0.5);
+  gap: 1px;
+  border-width: 0 2px;
+  padding: 3px 10px;
+  border-radius: 14px;
 }
 
-.cal-block--across::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: rgba(0, 0, 0, 0.28);
-  pointer-events: none;
-}
-
-.cal-block--across.draft::before,
-.cal-block--across.cont-start::before {
-  display: none;
+.cal-block--across.short {
+  border-width: 0 2px;
+  padding: 3px 10px;
 }
 
 .cal-block--across .cal-block-head {
   font-size: 0.8rem;
 }
 
+.cal-block--across .cal-block-meta {
+  margin-top: 0;
+}
+
+.cal-block--across:not(.short) .cal-block-emoji {
+  width: 18px;
+  height: 18px;
+}
+
 /* Too narrow for a name: the emoji stands over the ✓, and the hover card
    says the rest. */
 .cal-block--across.compact {
-  padding: 3px 3px 3px 7px;
+  padding: 3px;
+}
+
+.cal-block--across.compact .cal-block-head {
+  align-items: center;
 }
 
 .cal-block--across.compact .cal-block-head {
@@ -3029,19 +3290,19 @@
 
 .cal-block--across.active.now-inside::after {
   border-bottom: none;
-  border-right: 2px solid var(--accent-red);
+  border-right: 2px solid var(--cal-card-ink);
 }
 
 .cal-block--across.cont-start {
+  border-left-width: 0;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
-  border-left: 1px dashed var(--border);
 }
 
 .cal-block--across.cont-end {
+  border-right-width: 0;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
-  border-right: 1px dashed var(--border);
 }
 
 .cal-block-resize--start,
@@ -3181,11 +3442,11 @@
 }
 
 .cal-reminder-detail-card.below {
-  border-top: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 0 3px 0 var(--task-color, #3498db), 0 18px 40px -16px rgba(0, 0, 0, 0.55);
 }
 
 .cal-reminder-detail-card.above {
-  border-bottom: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 0 -3px 0 var(--task-color, #3498db), 0 18px 40px -16px rgba(0, 0, 0, 0.55);
 }
 
 /* Peeks: a hovered timeline row opens the hover card (.cal-hover-card) of

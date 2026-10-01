@@ -113,6 +113,9 @@ interface CalendarPageProps {
 const PX_PER_HOUR = 52;
 const PX_PER_MIN = PX_PER_HOUR / 60;
 const MIN_BLOCK_PX = 16; // shortest a block is ever drawn, however brief the task
+// From this height a column block is laid out as a full card: the emoji badge
+// and the ✓ on top, the name under them, the times at the bottom.
+const TALL_BLOCK_PX = 84;
 const SNAP_MIN = 5;
 const DEFAULT_LENGTH_MIN = 60;
 const MIN_LENGTH_MIN = 10;
@@ -2078,6 +2081,7 @@ function CalendarPage({
     const topMin = seg.topMin;
     const lengthMin = resizing ? g.lengthMin : seg.bottomMin - seg.topMin;
     const { style, showMeta, compact } = place(lengthMin);
+    const tall = !across && typeof style.height === 'number' && style.height >= TALL_BLOCK_PX;
     const done = isDone(task);
     // Just clicked: the block plays its grow-and-sweep flourish while
     // the bullet itself already reflects the real (instant) done state.
@@ -2103,6 +2107,8 @@ function CalendarPage({
           'cal-block',
           across ? 'cal-block--across' : '',
           compact ? 'compact' : '',
+          tall ? 'tall' : '',
+          showMeta ? '' : 'short',
           task.deadlineId && deadlineById.has(task.deadlineId) && (!showMeta || compact) ? 'deadline-compact' : '',
           done ? 'done' : '',
           justCompleted ? 'completing' : '',
@@ -2199,6 +2205,8 @@ function CalendarPage({
         'cal-block',
         across ? 'cal-block--across' : '',
         compact ? 'compact' : '',
+        !across && typeof style.height === 'number' && style.height >= TALL_BLOCK_PX ? 'tall' : '',
+        showMeta ? '' : 'short',
         ghost.live ? 'live' : 'dragging',
         taskColorAnimationClass(ghost.task.colorAnimation),
         ghost.startsHere ? '' : across ? 'cont-start' : 'cont-top',
@@ -2529,8 +2537,8 @@ function CalendarPage({
           setView('day');
         }}
       >
-        <span className="tl-day-name">{WEEKDAYS[weekday]}</span>
         <span className="tl-day-num">{d}</span>
+        <span className="tl-day-name">{WEEKDAYS[weekday]}</span>
         {reminderCount > 0 && <span className="cal-day-reminder-badge">🔔 {reminderCount}</span>}
       </button>
     );
@@ -3586,8 +3594,8 @@ function CalendarPage({
                       setView('day');
                     }}
                   >
-                    <span className="cal-day-name">{WEEKDAYS[(date.getDay() + 6) % 7]}</span>
                     <span className="cal-day-num">{d}</span>
+                    <span className="cal-day-name">{WEEKDAYS[(date.getDay() + 6) % 7]}</span>
                     {(view === '3day' || view === 'week') && reminderCount > 0 && (
                       <span className="cal-day-reminder-badge">🔔 {reminderCount}</span>
                     )}
