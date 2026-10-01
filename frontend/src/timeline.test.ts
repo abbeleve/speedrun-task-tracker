@@ -18,14 +18,13 @@ import {
   laneTop,
   layoutRows,
   linkPath,
-  peekWidth,
+  peekBand,
   pickPeeks,
   reminderRailCount,
   rowAt,
   rowContentHeight,
   sessionLinks,
   spreadCards,
-  stackPeeks,
   timelineScale,
 } from './timeline';
 
@@ -282,70 +281,22 @@ describe('pickPeeks', () => {
   });
 });
 
-describe('peekWidth', () => {
-  it('fits its text with its chrome around it', () => {
-    expect(peekWidth(15, 80, 60)).toBe(33 + 15 + 80 + 60);
+describe('peekBand', () => {
+  const row = { top: 200, bottom: 400 };
+
+  it('hangs the peeks under the lanes, and the row reaches as far as they do', () => {
+    expect(peekBand(row, 300, 120, 900)).toEqual({ below: true, edge: 308, over: 200, under: 428 });
+    // Short ones that stay inside the row leave it as it is.
+    expect(peekBand(row, 300, 60, 900).under).toBe(400);
   });
 
-  it('never gets narrower than a card or wider than a third of a laptop screen', () => {
-    expect(peekWidth(15, 5, 10)).toBe(72);
-    expect(peekWidth(15, 900, 60)).toBe(300);
-  });
-});
-
-describe('stackPeeks', () => {
-  const bounds = { left: 0, right: 1200 };
-
-  it('keeps cards that do not touch in one line, each under its block', () => {
-    expect(stackPeeks([{ left: 100, width: 120 }, { left: 300, width: 120 }], bounds, 4)).toEqual([
-      { left: 100, tier: 0 },
-      { left: 300, tier: 0 },
-    ]);
+  it('puts them over the row when they would run off the bottom of the screen', () => {
+    expect(peekBand(row, 300, 120, 420)).toEqual({ below: false, edge: 192, over: 72, under: 400 });
   });
 
-  it('drops a card that would run into the one before it to the tier below', () => {
-    expect(
-      stackPeeks(
-        [
-          { left: 100, width: 150 },
-          { left: 130, width: 150 },
-          { left: 160, width: 150 },
-        ],
-        bounds,
-        4
-      ).map((p) => p.tier)
-    ).toEqual([0, 1, 2]);
-  });
-
-  it('goes back up to the first tier with room', () => {
-    expect(
-      stackPeeks(
-        [
-          { left: 100, width: 150 },
-          { left: 130, width: 150 },
-          { left: 260, width: 100 },
-        ],
-        bounds,
-        4
-      ).map((p) => p.tier)
-    ).toEqual([0, 1, 0]);
-  });
-
-  it('keeps a card inside the bounds, and still stacks it if that makes it touch', () => {
-    expect(stackPeeks([{ left: -40, width: 100 }], bounds, 4)).toEqual([{ left: 0, tier: 0 }]);
-    expect(
-      stackPeeks(
-        [
-          { left: 1000, width: 150 },
-          { left: 1150, width: 200 },
-        ],
-        bounds,
-        4
-      )
-    ).toEqual([
-      { left: 1000, tier: 0 },
-      { left: 1000, tier: 1 },
-    ]);
+  it('keeps them on screen over a row at the very top', () => {
+    const top = { top: 40, bottom: 400 };
+    expect(peekBand(top, 380, 120, 420)).toEqual({ below: false, edge: 128, over: 8, under: 400 });
   });
 });
 

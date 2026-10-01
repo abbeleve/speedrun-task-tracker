@@ -223,20 +223,10 @@ export type Box = { left: number; right: number; top: number; bottom: number };
 
 // ── peeks: the names a block has no room for ───────────────────────
 
-// A hovered row also names the blocks too short to show their own name in
-// full: a small card under each, in the row's free band under its lanes.
-// Only the first few on screen get one — the row points out what it cannot
-// show, it does not list the whole day — and a card that would run into the
-// one before it drops to a tier below.
-export const TL_PEEK_PX = 24;
-export const TL_PEEK_GAP_PX = 4;
+// A hovered row also opens the hover card of each block too short to show
+// its own name in full. Only the first few on screen get one — the row
+// points out what it cannot show, it does not list the whole day.
 export const TL_PEEK_LIMIT = 3;
-// Around the text of a peek: its borders, padding and the gaps between the
-// emoji, the name and the time (see .tl-peek), plus a little slack so a
-// width measured on a canvas never cuts the name short.
-const TL_PEEK_CHROME_PX = 33;
-const TL_PEEK_MIN_PX = 72;
-const TL_PEEK_MAX_PX = 300;
 
 // The blocks that get a peek: of those whose name is hidden or cut short,
 // the first `limit` that are on screen, left to right.
@@ -255,36 +245,6 @@ export function pickPeeks<T extends { rect: Box }>(
     )
     .sort((a, b) => a.rect.left - b.rect.left)
     .slice(0, limit);
-}
-
-// How wide a peek is: its text, measured, in its chrome — never so narrow it
-// looks like a chip, never so wide one long name crowds out the others.
-export function peekWidth(emojiPx: number, namePx: number, timePx: number): number {
-  const wanted = TL_PEEK_CHROME_PX + emojiPx + namePx + timePx;
-  return Math.max(TL_PEEK_MIN_PX, Math.min(TL_PEEK_MAX_PX, Math.ceil(wanted)));
-}
-
-// Lines the peeks up, left to right: each starts where its block starts
-// (moved just enough to stay inside `bounds`) and takes the first tier where
-// it clears the card before it by `gap`, opening a new tier below when none
-// has room.
-export function stackPeeks(
-  items: { left: number; width: number }[],
-  bounds: { left: number; right: number },
-  gap: number
-): { left: number; tier: number }[] {
-  const tierEnds: number[] = [];
-  return items.map(({ left: wanted, width }) => {
-    const left = Math.max(bounds.left, Math.min(wanted, bounds.right - width));
-    let tier = tierEnds.findIndex((end) => end + gap <= left);
-    if (tier === -1) {
-      tier = tierEnds.length;
-      tierEnds.push(left + width);
-    } else {
-      tierEnds[tier] = left + width;
-    }
-    return { left, tier };
-  });
 }
 
 // ── a day's detail cards ───────────────────────────────────────────
@@ -364,4 +324,27 @@ export function hoverCardUnder(
     ? rect.bottom + gap
     : Math.max(margin, rect.top - gap - card.height);
   return { left, top, origin: fitsBelow ? 'left top' : 'left bottom' };
+}
+
+// Where a hovered row's peeks hang, all from one edge: under the row's lanes,
+// as a block's own hover card opens under the block, or over the row when
+// they would run off the bottom of the screen there — kept on screen either
+// way. Below, `edge` is the cards' top; above, their bottom. `over` and
+// `under` are how far the row now reaches with them, for its reminder and
+// break cards to keep clear of.
+export function peekBand(
+  row: { top: number; bottom: number },
+  lanesBottom: number,
+  height: number,
+  viewportHeight: number,
+  gap = 8
+): { below: boolean; edge: number; over: number; under: number } {
+  const margin = 8;
+  const below = lanesBottom + gap + height <= viewportHeight - margin;
+  if (below) {
+    const edge = lanesBottom + gap;
+    return { below, edge, over: row.top, under: Math.max(row.bottom, edge + height) };
+  }
+  const edge = Math.max(margin + height, row.top - gap);
+  return { below, edge, over: Math.min(row.top, edge - height), under: row.bottom };
 }

@@ -41,11 +41,8 @@ import {
 } from './selection';
 import {
   TL_GUTTER_PX,
-  TL_LANE_GAP_PX,
   TL_LANE_PX,
   TL_MIN_BLOCK_PX,
-  TL_PEEK_GAP_PX,
-  TL_PEEK_PX,
   TL_PX_PER_MIN,
   TL_RAIL_PX,
   TL_REMINDER_PX,
@@ -62,17 +59,15 @@ import {
   lanesHeight,
   layoutRows,
   linkPath,
-  peekWidth,
+  peekBand,
   pickPeeks,
   reminderRailCount,
   rowAt,
   rowContentHeight,
   sessionLinks,
   spreadCards,
-  stackPeeks,
   timelineScale,
 } from './timeline';
-import { textWidth } from './textWidth';
 import type { CreditSnapshot } from './credit';
 import { computeCredit, creditGroups, projectedFinishMs } from './credit';
 import { clockTime, compactDur, signedDur } from './format';
@@ -377,9 +372,9 @@ function CalendarPage({
     anchors: { key: string; taskId: string; rect: Box }[];
     gapAnchor: { key: string; gap: ScheduleGap; rect: Box } | null;
     // Timeline only: blocks whose name is cut short, and where on the screen
-    // the band for their peeks starts (right under the row's lanes).
+    // the row's lanes end (their peeks hang under there).
     peeks: { taskId: string; rect: Box }[];
-    peekTop: number;
+    lanesBottom: number;
   } | null>(null);
   const reminderDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [reminderDetailHeights, setReminderDetailHeights] = useState<Record<string, number>>({});
@@ -1768,7 +1763,7 @@ function CalendarPage({
       setDayReminderCard(null);
       return;
     }
-    setDayReminderCard({ day, rect: columnRect, anchors, gapAnchor, peeks: [], peekTop: 0 });
+    setDayReminderCard({ day, rect: columnRect, anchors, gapAnchor, peeks: [], lanesBottom: 0 });
   };
 
   const hideDayReminders = (day: string) => {
@@ -1813,10 +1808,9 @@ function CalendarPage({
       }
     });
     const peeks = pickPeeks(cut, row);
-    // Their band starts right under the row's last lane.
-    const peekTop = Math.max(
-      row.top,
-      rowTop + TL_RAIL_PX + lanesHeight(timeline.lanes[idx]) + TL_LANE_GAP_PX
+    const lanesBottom = Math.min(
+      row.bottom,
+      Math.max(row.top, rowTop + TL_RAIL_PX + lanesHeight(timeline.lanes[idx]))
     );
 
     // As in the columns, a single day has no reminder or break cards: each of
@@ -1844,7 +1838,7 @@ function CalendarPage({
       setDayReminderCard(null);
       return;
     }
-    setDayReminderCard({ day, rect: row, anchors, gapAnchor, peeks, peekTop });
+    setDayReminderCard({ day, rect: row, anchors, gapAnchor, peeks, lanesBottom });
   };
 
   // Everything one day shows, whichever way the grid runs: its blocks and
@@ -2815,44 +2809,25 @@ function CalendarPage({
   const HOVER_CARD_WIDTH = 260;
   const HOVER_CARD_GAP = 10;
 
-  const renderHoverCard = () => {
-    if (!hoverCard) return null;
-    const { task, rect } = hoverCard;
+  // The card itself, wherever it is placed: a hovered block's own, or one of
+  // the peeks a timeline row opens for the blocks too short to show it.
+  const taskHoverCard = (
+    task: Task,
+    style: React.CSSProperties,
+    ref: React.Ref<HTMLDivElement>,
+    key?: string
+  ) => {
     const taskChain = chainOfTask(chains, task.id);
     const focusSequence = taskChain && isSession(taskChain) ? taskChain : null;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const fitsRight = rect.right + HOVER_CARD_GAP + HOVER_CARD_WIDTH <= vw - 8;
-    // A timeline block is wide and short: its card opens under it (or over
-    // it, low on the screen) rather than beside it.
-    const { left, top, origin } = horizontal
-      ? hoverCardUnder(rect, { width: HOVER_CARD_WIDTH, height: hoverCardHeight }, { width: vw, height: vh })
-      : {
-          left: fitsRight
-            ? rect.right + HOVER_CARD_GAP
-            : Math.max(8, rect.left - HOVER_CARD_GAP - HOVER_CARD_WIDTH),
-          // Clamped against the card's own (measured) height so a long name or
-          // description never pushes it past the bottom of the screen.
-          top: Math.min(Math.max(8, rect.top), Math.max(8, vh - 8 - hoverCardHeight)),
-          origin: fitsRight ? 'left top' : 'right top',
-        };
-    const start = hhmm(task.start ?? 0);
-    const end = wallTime(taskEndMs(task));
     const sequenceDuration = focusSequence
       ? dur((focusSequence.endMs - focusSequence.startMs) / 1000)
       : null;
     return (
       <div
-        ref={hoverCardRef}
+        key={key}
+        ref={ref}
         className="cal-hover-card"
-        style={{
-          left,
-          top,
-          width: HOVER_CARD_WIDTH,
-          maxHeight: vh - 16,
-          transformOrigin: origin,
-          '--task-color': task.color,
-        } as React.CSSProperties}
+        style={{ ...style, '--task-color': task.color } as React.CSSProperties}
         aria-hidden="true"
       >
         {focusSequence && sequenceDuration && (
@@ -2870,12 +2845,38 @@ function CalendarPage({
           <span className="cal-hover-card-name">{task.name || 'Без названия'}</span>
         </div>
         <div className="cal-hover-card-time">
-          {start}–{end}
+          {hhmm(task.start ?? 0)}–{wallTime(taskEndMs(task))}
         </div>
         {task.description && (
           <div className="cal-hover-card-desc">{task.description}</div>
         )}
       </div>
+    );
+  };
+
+  const renderHoverCard = () => {
+    if (!hoverCard) return null;
+    const { task, rect } = hoverCard;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const fitsRight = rect.right + HOVER_CARD_GAP + HOVER_CARD_WIDTH <= vw - 8;
+    // A timeline block is wide and short: its card opens under it (or over
+    // it, low on the screen) rather than beside it.
+    const { left, top, origin } = horizontal
+      ? hoverCardUnder(rect, { width: HOVER_CARD_WIDTH, height: hoverCardHeight }, { width: vw, height: vh })
+      : {
+          left: fitsRight
+            ? rect.right + HOVER_CARD_GAP
+            : Math.max(8, rect.left - HOVER_CARD_GAP - HOVER_CARD_WIDTH),
+          // Clamped against the card's own (measured) height so a long name or
+          // description never pushes it past the bottom of the screen.
+          top: Math.min(Math.max(8, rect.top), Math.max(8, vh - 8 - hoverCardHeight)),
+          origin: fitsRight ? 'left top' : 'right top',
+        };
+    return taskHoverCard(
+      task,
+      { left, top, width: HOVER_CARD_WIDTH, maxHeight: vh - 16, transformOrigin: origin },
+      hoverCardRef
     );
   };
 
@@ -2945,7 +2946,7 @@ function CalendarPage({
     // The task-specific card has priority while a regular block is hovered;
     // the reminder cards return as soon as it is left.
     if (!dayReminderCard || hoverCard) return null;
-    const { day, rect, anchors, gapAnchor, peeks, peekTop } = dayReminderCard;
+    const { day, rect, anchors, gapAnchor, peeks, lanesBottom } = dayReminderCard;
     const segmentsByTask = new Map(
       daySegments(reminderTasks, day).map((segment) => [segment.task.id, segment])
     );
@@ -2964,7 +2965,7 @@ function CalendarPage({
       day: 'numeric',
       month: 'short',
     });
-    if (horizontal) return renderTimelineDayCards(items, rect, label, peeks, peekTop);
+    if (horizontal) return renderTimelineDayCards(items, rect, label, peeks, lanesBottom);
     if (items.length === 0) return null;
     items.sort((a, b) => a.rect.top - b.rect.top);
 
@@ -3078,57 +3079,52 @@ function CalendarPage({
     );
   };
 
-  // The same cards for a timeline row, plus its peeks. The peeks stand in the
-  // row's own free band under its lanes, each hanging from its block, a card
-  // that would run into another dropping a tier. The reminder and break cards
-  // line up under the row (under the peeks, should those spill past it) or
-  // over it low on the screen, each dropping a connector from what it
-  // describes. Nothing is measured on the page: the peeks are sized from
-  // their text (textWidth) and the cards hang from one shared edge, so a
-  // hover costs a single render.
+  // The same cards for a timeline row, plus its peeks: the hover card of each
+  // block too short to show its own name, the very card it opens itself. They
+  // stand in one line under the row's lanes (over the row, low on the
+  // screen), each as near under its block as the others let it and tied to
+  // it by a guide. The reminder and break cards line up under the row and
+  // its peeks, or over both, each dropping a connector from what it
+  // describes. Those hang from one shared edge, so their heights never
+  // matter; the peeks' heights are measured like the column cards' are.
   const renderTimelineDayCards = (
     items: DayDetailItem[],
     row: Box,
     label: string,
     peeks: { taskId: string; rect: Box }[],
-    peekTop: number
+    lanesBottom: number
   ) => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
     const peekCards = peeks.flatMap(({ taskId, rect }) => {
       const task = tasks.find((t) => t.id === taskId);
-      if (!task) return [];
-      const name = task.name || 'Без названия';
-      const time = `${hhmm(task.start ?? 0)}–${wallTime(taskEndMs(task))}`;
-      // The fonts of .tl-peek's emoji, name and time.
-      const width = peekWidth(
-        textWidth(task.emoji, '12px'),
-        textWidth(name, 'italic 600 12px'),
-        textWidth(time, 'italic 500 11px')
-      );
-      return [{ task, rect, name, time, width }];
+      return task ? [{ key: `peek:${task.id}`, task, rect }] : [];
     });
-    const placed = stackPeeks(
-      peekCards.map(({ rect, width }) => ({ left: rect.left, width })),
+    // Each left under its block's, as the block's own card opens.
+    const peekLine = spreadCards(
+      peekCards.map(({ rect }) => rect.left + HOVER_CARD_WIDTH / 2),
       { left: row.left, right: vw - 8 },
-      TL_PEEK_GAP_PX
+      HOVER_CARD_WIDTH,
+      Math.min(DAY_REMINDER_CARD_MIN_WIDTH, vw - 16),
+      DAY_REMINDER_STACK_GAP
     );
-    const tiers = placed.reduce((most, { tier }) => Math.max(most, tier + 1), 0);
-    const stackHeight = tiers * (TL_PEEK_PX + TL_PEEK_GAP_PX) - (tiers > 0 ? TL_PEEK_GAP_PX : 0);
-    // A row at the very bottom of the screen keeps its peeks on it.
-    const stackTop = Math.min(peekTop, vh - 8 - stackHeight);
-    const peekY = (tier: number) => stackTop + tier * (TL_PEEK_PX + TL_PEEK_GAP_PX);
+    const peekHeight = peekCards.reduce(
+      (most, { key }) => Math.max(most, reminderDetailHeights[key] ?? 64),
+      0
+    );
+    const band =
+      peekCards.length > 0 ? peekBand(row, lanesBottom, peekHeight, vh) : null;
 
     const centreX = (box: Box) =>
       Math.min(row.right, Math.max(row.left, (box.left + box.right) / 2));
     const centreY = (box: Box) =>
       Math.min(row.bottom, Math.max(row.top, (box.top + box.bottom) / 2));
     const sorted = [...items].sort((a, b) => centreX(a.rect) - centreX(b.rect));
-    // Peeks that spill past the row push the cards under it further down.
-    const under = Math.max(row.bottom, tiers > 0 ? stackTop + stackHeight : row.bottom);
-    const below = cardsBelow(row.top, under, vh, DAY_REMINDER_CARD_GAP);
-    const edgeY = below ? under + DAY_REMINDER_CARD_GAP : row.top - DAY_REMINDER_CARD_GAP;
+    const over = band?.over ?? row.top;
+    const under = band?.under ?? row.bottom;
+    const below = cardsBelow(over, under, vh, DAY_REMINDER_CARD_GAP);
+    const edgeY = below ? under + DAY_REMINDER_CARD_GAP : over - DAY_REMINDER_CARD_GAP;
     const { width, lefts } = spreadCards(
       sorted.map((item) => centreX(item.rect)),
       { left: 8, right: vw - 8 },
@@ -3140,9 +3136,9 @@ function CalendarPage({
 
     return (
       <>
-        {peekCards.length > 0 && (
-          // Each peek's guide leaves its block and runs down into the peek;
-          // a peek on a lower tier has its guide pass behind the ones above.
+        {band && (
+          // Each guide leaves its block as near its peek's left as the block
+          // allows, and runs into the peek's near edge.
           <svg
             className="tl-peek-guides"
             width={vw}
@@ -3150,36 +3146,41 @@ function CalendarPage({
             viewBox={`0 0 ${vw} ${vh}`}
             aria-hidden="true"
           >
-            {peekCards.map(({ task, rect }, index) => {
-              const x2 = placed[index].left + 10;
-              const x1 = Math.min(rect.right - 3, Math.max(Math.max(rect.left, row.left) + 3, x2));
+            {peekCards.map(({ key, task, rect }, index) => {
+              const left = peekLine.lefts[index];
+              const x1 = Math.min(rect.right - 3, Math.max(Math.max(rect.left, row.left) + 3, left + 16));
+              const x2 = Math.min(left + peekLine.width - 16, Math.max(left + 16, x1));
+              const y1 = band.below ? rect.bottom : rect.top;
               return (
-                <g key={task.id} style={{ color: task.color }}>
-                  <path d={dropPath(x1, rect.bottom, x2, peekY(placed[index].tier))} />
-                  <circle cx={x1} cy={rect.bottom} r="2.5" />
+                <g key={key} style={{ color: task.color }}>
+                  <path d={dropPath(x1, y1, x2, band.edge)} />
+                  <circle cx={x1} cy={y1} r="2.5" />
                 </g>
               );
             })}
           </svg>
         )}
 
-        {peekCards.map(({ task, name, time, width: peekW }, index) => (
-          <div
-            key={task.id}
-            className="tl-peek"
-            style={{
-              left: placed[index].left,
-              top: peekY(placed[index].tier),
-              width: peekW,
-              '--task-color': task.color,
-            } as React.CSSProperties}
-            aria-hidden="true"
-          >
-            <span className="tl-peek-emoji">{task.emoji}</span>
-            <span className="tl-peek-name">{name}</span>
-            <span className="tl-peek-time">{time}</span>
-          </div>
-        ))}
+        {band &&
+          peekCards.map(({ key, task }, index) =>
+            taskHoverCard(
+              task,
+              {
+                left: peekLine.lefts[index],
+                // Hung from the edge nearest the row, whatever its height.
+                top: band.below ? band.edge : undefined,
+                bottom: band.below ? undefined : vh - band.edge,
+                width: peekLine.width,
+                maxHeight: vh - 16,
+                transformOrigin: band.below ? 'left top' : 'left bottom',
+              },
+              (element) => {
+                if (element) reminderDetailRefs.current.set(key, element);
+                else reminderDetailRefs.current.delete(key);
+              },
+              key
+            )
+          )}
 
         {sorted.length > 0 && (
           <svg

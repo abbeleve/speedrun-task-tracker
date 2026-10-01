@@ -3184,57 +3184,9 @@
   border-bottom: 3px solid var(--task-color, #3498db);
 }
 
-/* Peeks: a hovered row names the blocks too short to show their own name, in
-   its free band under the lanes — a one-line version of the task's hover
-   card. The widths are worked out from this font and these paddings
-   (TL_PEEK_CHROME_PX in timeline.ts): change one, change the other. */
-.tl-peek {
-  position: fixed;
-  z-index: 49;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px 0 7px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--task-color, #3498db);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-style: italic;
-  line-height: 1;
-  white-space: nowrap;
-  pointer-events: none;
-  transform-origin: left top;
-  animation: cal-hover-card-in 140ms ease-out both;
-}
-
-.tl-peek-emoji {
-  flex: none;
-  font-style: normal;
-}
-
-.tl-peek-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.tl-peek-time {
-  flex: none;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The guide from a block down to its peek; it passes behind the peeks of
-   the tiers above. */
+/* Peeks: a hovered timeline row opens the hover card (.cal-hover-card) of
+   each block too short to show its own name. This is the guide from a block
+   to its card. */
 .tl-peek-guides {
   position: fixed;
   inset: 0;
@@ -3255,12 +3207,6 @@
   fill: currentColor;
   stroke: var(--bg-secondary);
   stroke-width: 1.5;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tl-peek {
-    animation: none;
-  }
 }
 
 /* The first real break, marked out in its row while its card is open. */
