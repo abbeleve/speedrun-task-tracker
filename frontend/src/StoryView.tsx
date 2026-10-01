@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { SessionState, Task } from './types';
 import { formatDelta, formatTime } from './format';
@@ -43,6 +43,7 @@ export function StoryView({
   tasks, cumulativeTimes, elapsedSec, sessionState, currentTaskIdx, deltaMs,
   onCompleteTask, onUncompleteTask, onSeek, formatEnd,
 }: StoryViewProps) {
+  const routeMaskId = useId();
   const images = useMotivationImages();
   const deck = useMemo(() => pageStoryImages(images), [images]);
   const completedCount = tasks.filter((task) => task.completedAt !== null).length;
@@ -74,6 +75,7 @@ export function StoryView({
           const delta = done ? taskDeltaMs(task, endSec) : active ? deltaMs : null;
           const deltaClass = delta !== null && delta < 0 ? 'ahead' : delta !== null && delta > 0 ? 'behind' : '';
           const reverse = idx % 2 === 1;
+          const fillMaskId = `${routeMaskId}-${idx}`;
           const arc = reverse
             ? 'M 860 0 A 130 130 0 0 1 860 260 H 140'
             : `${idx === 0 ? 'M 480 0 H 140' : 'M 140 0'} A 130 130 0 0 0 140 260 H 860`;
@@ -83,7 +85,30 @@ export function StoryView({
               aria-current={active ? 'step' : undefined}
               style={{ '--story-task-color': task.color } as CSSProperties}>
               <svg className="story-line" viewBox="0 0 1000 260" preserveAspectRatio="none" aria-hidden="true">
-                <path d={arc} />
+                <defs>
+                  {/* Normalize the reveal in path coordinates, independently of
+                      the fixed-width rail stroke on phones and taller rows. */}
+                  <mask id={fillMaskId} maskUnits="userSpaceOnUse" x="-10" y="-10" width="1020" height="280">
+                    <path
+                      className="story-line-reveal"
+                      d={arc}
+                      fill="none"
+                      stroke="white"
+                      strokeWidth={48}
+                      strokeLinecap="butt"
+                      pathLength={100}
+                      strokeDasharray="100 100"
+                      strokeDashoffset={100 - pct}
+                    />
+                  </mask>
+                </defs>
+                <path className="story-line-track" d={arc} />
+                <path
+                  className="story-line-fill"
+                  d={arc}
+                  mask={pct < 100 ? `url(#${fillMaskId})` : undefined}
+                  visibility={pct > 0 ? 'visible' : 'hidden'}
+                />
               </svg>
               <div className="story-step-content">
                 <StoryPicture src={storyImage(deck, idx)} emoji={task.emoji} />

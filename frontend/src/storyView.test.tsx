@@ -21,11 +21,17 @@ const props = {
   formatEnd: () => '10:30',
 };
 
+// Read the visual progress for every step from the rendered SVG paths.
+const routeOffsets = (html: string) =>
+  [...html.matchAll(/class="story-line-reveal"[^>]*stroke-dashoffset="([^"]+)"/g)]
+    .map((match) => Number(match[1]));
+
 describe('StoryView tracking', () => {
   it('starts the next step progress at the real previous completion', () => {
     const html = renderToStaticMarkup(<StoryView {...props} />);
     expect(html).toContain('aria-current="step"');
     expect(html).toContain('value="25"');
+    expect(routeOffsets(html)).toEqual([0, 75, 100, 100]);
     expect(html).toContain('Завершить шаг');
     expect(html).toContain('Вернуть задачу');
     expect(html).toContain('Заметки к задаче');
@@ -39,6 +45,7 @@ describe('StoryView tracking', () => {
     const html = renderToStaticMarkup(<StoryView {...props} sessionState="finished" elapsedSec={3000} />);
     expect(html).toContain('Завершить шаг');
     expect(html).toContain('value="100"');
+    expect(routeOffsets(html)).toEqual([0, 0, 100, 100]);
   });
 
   it('does not offer to complete a sequence that has not started', () => {
@@ -52,6 +59,30 @@ describe('StoryView tracking', () => {
       tasks={tasks.map((task) => ({ ...task, completedAt: 300 }))}
       sessionState="finished" currentTaskIdx={-1} />);
     expect(html).toContain('Секвенция пройдена. Отличная работа!');
+    expect(routeOffsets(html)).toEqual([0, 0, 0, 0]);
     expect(html).not.toContain('Завершить шаг');
+  });
+
+  it('fills along the active curve as time advances, without filling future steps', () => {
+    const at = (elapsedSec: number) =>
+      routeOffsets(renderToStaticMarkup(<StoryView {...props} elapsedSec={elapsedSec} />));
+    expect(at(300)).toEqual([0, 100, 100, 100]);
+    expect(at(450)).toEqual([0, 75, 100, 100]);
+    expect(at(600)).toEqual([0, 50, 100, 100]);
+  });
+
+  it('leaves the entire route pale before the sequence starts', () => {
+    const html = renderToStaticMarkup(<StoryView {...props}
+      tasks={tasks.map((task) => ({ ...task, completedAt: null }))}
+      sessionState="idle" currentTaskIdx={0} elapsedSec={0} />);
+    expect(routeOffsets(html)).toEqual([100, 100, 100, 100]);
+    expect(html.match(/visibility="hidden"/g)).toHaveLength(tasks.length);
+  });
+
+  it('removes the completed fill when a step is reopened', () => {
+    const html = renderToStaticMarkup(<StoryView {...props}
+      tasks={tasks.map((task) => ({ ...task, completedAt: null }))}
+      currentTaskIdx={0} elapsedSec={150} />);
+    expect(routeOffsets(html)).toEqual([75, 100, 100, 100]);
   });
 });
