@@ -4725,19 +4725,21 @@
 }
 
 /* ===== Home dashboard: activity, habits, stats, sleep, kanban, days ===== */
-/* The whole width of the window. The dashboard is its own scroller, so it
-   reaches out over the shell's side gutter (the same clamp as .app's
-   --app-gutter, taken against the viewport) and pads it back in: the
-   scrollbar sits at the window's edge while the panels line up with the
-   header above them. Room for the scrollbar is always kept and taken off the
-   right padding, so both edges match the header's. */
+/* The panels keep to a 1200px column (1160px inside its padding), centred on
+   the window. The dashboard is its own scroller, and it spans the whole
+   window — reaching out over the shell's side gutter (the same clamp as
+   .app's --app-gutter, taken against the viewport) — so its scrollbar sits at
+   the window's edge rather than beside the column; the column is then padded
+   back in. Room for the scrollbar is always kept and taken off the right
+   padding, so the column stays centred. */
 .home-page {
   --home-bleed: clamp(0px, calc((100vw - var(--app-min-width, 1200px)) / 2), 50px);
+  --home-side: max(calc(var(--home-bleed) + 20px), calc((100vw - 1160px) / 2));
   flex: 1;
   overflow-y: auto;
   scrollbar-gutter: stable;
   margin: 0 calc(-1 * var(--home-bleed));
-  padding: 16px calc(var(--home-bleed) + 20px - var(--scrollbar-size, 0px)) 32px calc(var(--home-bleed) + 20px);
+  padding: 16px calc(var(--home-side) - var(--scrollbar-size, 0px)) 32px var(--home-side);
   display: flex;
   flex-direction: column;
   gap: 20px;

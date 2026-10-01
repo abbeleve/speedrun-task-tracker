@@ -948,7 +948,7 @@ const ACTIVITY_PANEL_ID = 'dash-activity';
 const SLEEP_PANEL_ID = 'dash-sleep';
 
 const HEAT_CELL_MIN = 10;
-const HEAT_CELL_MAX = 40; // the full-width dashboard: a year's ~53 columns still fill it
+const HEAT_CELL_MAX = 26;
 const HEAT_CELL_GAP = 4; // matches --heat-gap
 const HEAT_BODY_GAP = 6; // matches .heat-body's gap
 const HEAT_HOVER_ROOM = 8; // matches .heatmap's padding: the grid's box reaches this far past its last column
