@@ -2302,45 +2302,136 @@
 
 /* ===== Stats page: daily activity heatmap + sleep tracker ===== */
 
+/* A card's title: a round badge with the card's icon, then its name. */
 .stats-title {
-  font-size: 1.2rem;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   margin: 0;
+}
+
+.dash-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--glass-bg-strong, var(--bg-surface));
+  border: 1px solid var(--dash-badge-ring, var(--border));
+  color: var(--dash-ink, var(--text-primary));
+}
+
+/* A card's quiet corner action: a small round button with an arrow. */
+.dash-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong, var(--bg-surface));
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
+}
+
+.dash-icon-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.dash-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.dash-icon-btn:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
 }
 
 .stats-summary-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
+/* Four figures, each its own card: four abreast on a wide screen, two by
+   two on a narrower one, stacked on a phone. */
 .stats-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
 
 .stat-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  min-width: 0;
 }
 
-.stat-value {
-  font-family: var(--font-mono);
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--text-primary);
+.stat-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 
 .stat-label {
-  font-size: 0.8rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value {
+  font-family: var(--font-sans);
+  font-size: 2.1rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.stat-value small {
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-dim);
+}
+
+/* "+12,5% к 2025 г." under the number. */
+.stat-change {
+  margin-top: 6px;
+  font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+.stat-change b {
+  font-weight: 600;
+}
+
+.stat-change .up {
+  color: var(--dash-up, var(--accent-green));
+}
+
+.stat-change .down {
+  color: var(--dash-down, var(--accent-red));
 }
 
 .card {
@@ -2350,22 +2441,41 @@
   padding: 18px 20px;
 }
 
+/* An empty square: diagonal hatching over a faint tint, the way an unfilled
+   slot reads at a glance without competing with the filled ones. Used by the
+   heatmap's empty days, the week / month bar tracks and the sleep grid. */
+.heat-cell.l0,
+.heat-bar-track {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--hatch-ink, var(--heat-0)) 0 1.5px,
+      transparent 1.5px 5px
+    ),
+    var(--hatch-base, var(--heat-0));
+}
+
 /* --- Heatmap --- */
 
 .heat-card {
   --heat-cell: 13px;
-  --heat-gap: 3px;
+  --heat-gap: 4px;
+  --heat-days-w: 22px; /* the weekday column */
 }
 
+/* The bottom padding takes the grid's hover room (see .heatmap), which would
+   otherwise hang past the end and scroll. */
 .heat-scroll {
   overflow-x: auto;
+  padding-bottom: 8px;
 }
 
+/* Starts where the cells do: past the weekday column and the body's gap. */
 .heat-months {
   display: grid;
   gap: var(--heat-gap);
-  margin-left: calc(var(--heat-cell) + 22px + var(--heat-gap));
-  height: 16px;
+  margin-left: calc(var(--heat-days-w) + 6px);
+  height: 18px;
   font-size: 10px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -2380,10 +2490,12 @@
   display: grid;
   grid-template-rows: repeat(7, var(--heat-cell));
   gap: var(--heat-gap);
+  align-items: center;
   font-size: 10px;
   color: var(--text-secondary);
   text-align: right;
-  min-width: 20px;
+  width: var(--heat-days-w);
+  flex: none;
 }
 
 .heatmap {
@@ -2410,14 +2522,15 @@
   display: inline-block;
 }
 
+/* Rounded in proportion to their size, like the squares of a planner. */
 .heatmap .heat-cell {
   width: 100%;
   height: 100%;
   position: relative;
+  border-radius: max(3px, calc(var(--heat-cell) * 0.22));
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-.heat-cell.l0 { background: var(--heat-0); }
 .heat-cell.l1 { background: var(--heat-1); }
 .heat-cell.l2 { background: var(--heat-2); }
 .heat-cell.l3 { background: var(--heat-3); }
@@ -2428,32 +2541,48 @@
 }
 
 .heatmap .heat-cell:not(.future):hover {
-  transform: scale(1.6);
+  transform: scale(1.5);
   z-index: 3;
-  box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px var(--border), 0 4px 10px rgba(0, 0, 0, 0.18);
 }
 
+/* What the four filled shades mean, above the grid. */
 .heat-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 10px;
-  font-size: 10px;
+  gap: 6px 18px;
+  margin: -2px 0 14px;
+  font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+.heat-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.heat-legend .heat-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
 }
 
 /* --- Sleep tracker --- */
 
 .sleep-card {
-  /* Hour cell width — recomputed in JS to span the card; the value here is the
-     fallback used until the grid has been measured. Its height stays put so a
-     wide card does not also become a tall one. */
+  /* Hour cell size (cells are square) and the inset that centres the grid —
+     both recomputed in JS to fit the card; these are the fallbacks used until
+     the grid has been measured. */
   --sleep-cell: 22px;
-  --sleep-cell-h: 22px;
-  --sleep-gap: 3px;
+  --sleep-inset: 0px;
+  --sleep-gap: 4px;
   --sleep-num-w: 34px;
   --sleep-qual-w: 30px;
+  --sleep-dot: 22px;
+  /* A day's row: the tallest of a cell and the quality dot, plus the gap. */
+  --sleep-row-h: calc(max(var(--sleep-cell), var(--sleep-dot)) + var(--sleep-gap));
   position: relative;
 }
 
@@ -2967,8 +3096,7 @@
   position: relative;
   width: 100%;
   height: 150px;
-  background: var(--heat-0);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: flex-end;
   overflow: visible;
@@ -3044,17 +3172,29 @@
 /* The scrollable window — one month fits comfortably, more are buffered above
    and below and filled in as the user scrolls. */
 .sleep-month-scroll {
-  max-height: 560px;
+  max-height: 600px;
   overflow-y: auto;
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  padding: 12px;
+  border-radius: 14px;
+  padding: 0 4px 8px;
 }
 
+/* Only the months in (or near) the scroll area are laid out and painted: the
+   buffer holds up to two years of them, ~17 000 cells, and the rest are
+   skipped until they scroll into reach. Until a month has been drawn once it
+   holds the height of its rows (--sleep-days comes from SleepTracker); after
+   that the browser remembers the real one. */
 .sleep-month {
   min-width: max-content;
+  content-visibility: auto;
+  contain-intrinsic-height: auto calc(var(--sleep-days, 31) * var(--sleep-row-h) + 58px);
+}
+
+/* The grid's parts all start at the inset, so the capped grid sits centred. */
+.sleep-month-title,
+.sleep-hour-header,
+.sleep-day-row {
+  margin-left: var(--sleep-inset);
 }
 
 /* Hour labels appear in a separate track above a month's rows, so they only
@@ -3066,11 +3206,15 @@
   gap: var(--sleep-gap);
 }
 
+/* Frosted, so the rows passing under it stay faintly visible. */
 .sleep-hour-header {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
   padding: 4px 0 6px;
 }
 
@@ -3086,9 +3230,10 @@
 
 .sleep-month-title {
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-primary);
-  margin: 6px 0 4px;
+  margin-top: 6px;
+  margin-bottom: 4px;
 }
 
 /* The fixed number column ("1 я", "2 я" …) aligned before the cells. */
@@ -3110,39 +3255,45 @@
   margin-left: 2px;
 }
 
-/* One day = 24 square cells. Each cell is a flex squarish button. */
+/* One day = 24 square cells, a gap's height apart. */
 .sleep-day-row {
-  padding: 1.5px 0;
-  border-radius: 4px;
+  height: var(--sleep-row-h);
+  padding: calc(var(--sleep-gap) / 2) 0;
+  border-radius: 8px;
 }
 
 .sleep-day-row:hover:not(.future) {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-row-hover);
 }
 
 .sleep-day-row.future {
   opacity: 0.45;
 }
 
+/* An hour not slept: the hatched empty square, in the tracker's orange. */
 .sleep-cell {
+  display: block;
   position: relative;
   width: var(--sleep-cell);
-  height: var(--sleep-cell-h);
+  height: var(--sleep-cell);
   flex: 0 0 var(--sleep-cell);
-  border: none;
-  border-radius: 3px;
-  background: var(--heat-0);
+  border-radius: max(3px, calc(var(--sleep-cell) * 0.22));
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--sleep-hatch-ink, rgba(239, 105, 50, 0.3)) 0 1.5px,
+      transparent 1.5px 5px
+    ),
+    var(--sleep-hatch-base, rgba(247, 168, 120, 0.16));
   cursor: pointer;
-  padding: 0;
-  margin: 0;
   overflow: hidden;
 }
 
-.sleep-cell:hover:not(:disabled) {
-  filter: brightness(1.25);
+.sleep-day-row:not(.future) .sleep-cell:hover {
+  box-shadow: inset 0 0 0 1.5px var(--sleep-fill, #ef5a24);
 }
 
-.sleep-cell:disabled {
+.sleep-day-row.future .sleep-cell {
   cursor: default;
 }
 
@@ -3153,9 +3304,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 3px;
-  background: #e26ba0;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  border-radius: inherit;
+  background: var(--sleep-fill, #ef5a24);
 }
 
 /* Quality dot (colored circle) */
@@ -3169,8 +3319,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--sleep-dot, 22px);
+  height: var(--sleep-dot, 22px);
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -3278,7 +3428,7 @@
 }
 
 .sleep-time-row:focus-within {
-  border-color: #e26ba0;
+  border-color: var(--sleep-fill, #ef5a24);
 }
 
 .sleep-time-step {
@@ -3357,15 +3507,15 @@
 @media (max-width: 720px) {
   .heat-card {
     --heat-cell: 10px;
-    --heat-gap: 2px;
+    --heat-gap: 3px;
   }
 
   .sleep-card {
     --sleep-cell: 16px;
-    --sleep-cell-h: 16px;
-    --sleep-gap: 2px;
+    --sleep-gap: 3px;
     --sleep-num-w: 28px;
     --sleep-qual-w: 24px;
+    --sleep-dot: 18px;
   }
 
   .sleep-month-scroll {
@@ -3373,8 +3523,6 @@
   }
 
   .quality-dot {
-    width: 18px;
-    height: 18px;
     font-size: 10px;
   }
 }
@@ -4721,6 +4869,254 @@
   padding: 0;
   overflow: visible;
   flex: none;
+}
+
+/* ── The dashboard's look: frosted glass panels over a soft green backdrop ──
+   `.app--home` is set on the app shell while the home page is open, so the
+   backdrop also runs under the header. The tokens below are the whole
+   palette: the app's own ones retuned to green, plus the glass, the hatching
+   of empty squares and the sleep tracker's orange. Dark theme first (it is
+   the default), light theme over it. */
+.app--home {
+  --dash-radius: 20px;
+  --glass-blur: blur(18px) saturate(1.4);
+  --glass-bg: rgba(22, 36, 28, 0.52);
+  --glass-bg-strong: rgba(30, 46, 36, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 14px 34px -18px rgba(0, 0, 0, 0.7);
+  --dash-ink: #e3f4e8;
+  --dash-badge-ring: rgba(255, 255, 255, 0.12);
+  --dash-up: #4ade80;
+  --dash-down: #f87171;
+  --hatch-ink: rgba(74, 222, 128, 0.2);
+  --hatch-base: rgba(74, 222, 128, 0.045);
+  --sleep-hatch-ink: rgba(246, 120, 64, 0.3);
+  --sleep-hatch-base: rgba(246, 120, 64, 0.07);
+  --sleep-fill: #f26a2e;
+
+  --bg-primary: #17231c;
+  --bg-secondary: #141f19;
+  --bg-surface: #1f2d25;
+  --border: rgba(255, 255, 255, 0.09);
+  --accent-green: #3ccf72;
+  --track-bg: rgba(255, 255, 255, 0.05);
+  --surface-raised: #26382d;
+  --bg-row-hover: rgba(120, 230, 160, 0.06);
+
+  background:
+    radial-gradient(52% 44% at 50% 22%, rgba(46, 170, 96, 0.3), transparent 72%),
+    radial-gradient(34% 40% at 92% 8%, rgba(132, 204, 22, 0.16), transparent 70%),
+    radial-gradient(40% 46% at 4% 90%, rgba(20, 184, 166, 0.16), transparent 70%),
+    radial-gradient(30% 34% at 74% 96%, rgba(34, 197, 94, 0.14), transparent 70%),
+    #0c1510;
+}
+
+[data-theme='light'] .app--home {
+  --glass-bg: rgba(255, 255, 255, 0.52);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 1px 2px rgba(22, 84, 48, 0.05), 0 14px 34px -16px rgba(22, 84, 48, 0.24);
+  --dash-ink: #12261a;
+  --dash-badge-ring: rgba(18, 38, 26, 0.16);
+  --dash-up: #16a34a;
+  --dash-down: #dc4c4c;
+  --hatch-ink: rgba(34, 160, 90, 0.26);
+  --hatch-base: rgba(34, 160, 90, 0.06);
+  --sleep-hatch-ink: rgba(239, 98, 44, 0.3);
+  --sleep-hatch-base: rgba(250, 178, 140, 0.2);
+  --sleep-fill: #ee5a24;
+
+  --bg-primary: #f6fcf8;
+  --bg-secondary: #fbfefc;
+  --bg-surface: #edf7f0;
+  --text-primary: #12261a;
+  --text-secondary: #4b6555;
+  --text-dim: #88a092;
+  --border: rgba(22, 84, 48, 0.12);
+  --accent-green: #1f9d55;
+  --track-bg: rgba(22, 84, 48, 0.06);
+  --surface-raised: #ffffff;
+  --control-hover: rgba(22, 84, 48, 0.06);
+  --bg-row-hover: rgba(22, 84, 48, 0.05);
+  --heat-0: rgba(34, 160, 90, 0.08);
+  --heat-1: #c6edd3;
+  --heat-2: #8bd8a7;
+  --heat-3: #45bb74;
+  --heat-4: #1f9a52;
+
+  background:
+    radial-gradient(56% 46% at 50% 24%, rgba(134, 226, 162, 0.55), transparent 72%),
+    radial-gradient(36% 42% at 94% 6%, rgba(205, 242, 156, 0.7), transparent 70%),
+    radial-gradient(42% 48% at 3% 90%, rgba(146, 228, 204, 0.55), transparent 70%),
+    radial-gradient(30% 36% at 72% 98%, rgba(176, 236, 186, 0.55), transparent 70%),
+    linear-gradient(180deg, #f7fcf8 0%, #edf8f1 100%);
+}
+
+/* The header lets the backdrop through instead of sitting on it as a bar. */
+.app--home .header {
+  background: color-mix(in srgb, var(--bg-secondary) 45%, transparent);
+  border-bottom-color: var(--glass-border);
+}
+
+/* The dashboard is the stacking context its glass is painted in (see the
+   panels below), lifted over the header so a dialog opened from a panel
+   still covers the whole window. */
+.app--home .home-page {
+  position: relative;
+  z-index: 2;
+  padding-top: 20px;
+}
+
+/* Glass panels. The frosted layer is a pseudo-element behind the content
+   rather than the panel's own background: backdrop-filter on the panel itself
+   would make it the containing block of everything position: fixed inside it
+   — the sleep editor, the heatmap tooltip, the board's dialogs — and pin
+   those to the panel instead of the window. The panels stay without a
+   stacking context of their own, so their z-index: -1 layers all land in the
+   dashboard's: above its (empty) background, below every panel's content. */
+.app--home :is(.home-week-overtake, .card, .stat-card, .habit-card, .habits-empty, .home-panel--kanban, .home-panel--days) {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--dash-radius);
+}
+
+.app--home
+  :is(.home-week-overtake, .card, .stat-card, .habit-card, .habits-empty, .home-panel--kanban, .home-panel--days)::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  pointer-events: none;
+}
+
+.app--home .habits-empty {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.app--home :is(.home-panel--kanban, .home-panel--days) {
+  padding: 20px 22px;
+}
+
+.app--home .card {
+  padding: 20px 22px;
+}
+
+/* A habit card clips its contents (overflow: hidden), which would clip the
+   glass layer's shadow too, so the card casts it itself. */
+.app--home .habit-card {
+  box-shadow: var(--glass-shadow);
+}
+
+/* A habit card keeps its own colour on hover and once done, now over glass. */
+.app--home .habit-card:hover {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 35%, var(--glass-border));
+}
+
+.app--home .habit-card.done {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 45%, var(--glass-border));
+}
+
+.app--home .habit-card.done::before {
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 10%, var(--glass-bg));
+}
+
+/* Week strip: the empty hours are hatched like every other empty square. */
+.app--home .home-week-overtake {
+  padding: 16px 18px 18px;
+}
+
+.app--home .ot-block {
+  border-color: transparent;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(90deg, var(--hatch-ink) 0 1.5px, transparent 1.5px 4.5px),
+    var(--hatch-base);
+}
+
+/* Controls inside the panels become pills, like the cards' own. */
+.app--home :is(.btn-sleep-nav, .btn-heat-nav) {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.app--home :is(.btn-sleep-nav, .btn-heat-nav):hover {
+  background: var(--bg-secondary);
+}
+
+.app--home .dd-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--glass-bg-strong);
+  font-weight: 500;
+}
+
+.app--home .period-toggle {
+  border-radius: 999px;
+  background: var(--track-bg);
+  padding: 3px;
+}
+
+.app--home .period-toggle-btn {
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-weight: 500;
+}
+
+.app--home .period-toggle-btn.active {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+  color: var(--text-primary);
+}
+
+.app--home .sleep-info-total {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* Fewer, softer layers where blur costs the most: a phone repaints every
+   frosted panel on each scroll frame. */
+@media (pointer: coarse) {
+  .app--home {
+    --glass-blur: blur(10px);
+  }
+}
+
+/* Phones: tighter panels, and the summary cards shorter so all four are not
+   a whole screen of scrolling. */
+@media (max-width: 640px) {
+  .app--home {
+    --dash-radius: 16px;
+  }
+
+  .app--home :is(.card, .home-panel--kanban, .home-panel--days) {
+    padding: 16px 14px;
+  }
+
+  .stats-summary {
+    gap: 10px;
+  }
+
+  .stat-card-head {
+    margin-bottom: 12px;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
 }
 
 /* ===== Habit tracker (home page) — per-habit dial cards ===== */

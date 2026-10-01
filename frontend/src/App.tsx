@@ -615,7 +615,9 @@ function App() {
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
   return (
-    <div className="app">
+    // The home dashboard brings its own backdrop and glass panels — see
+    // `.app--home` in App.css.
+    <div className={page === 'home' ? 'app app--home' : 'app'}>
       <header className="header">
         <div className="header-brand">
           <IconStopwatch className="header-logo" size={22} />

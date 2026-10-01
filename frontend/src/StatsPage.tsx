@@ -22,7 +22,17 @@ import { RaceChart, WaveChart } from './ActivityCharts';
 import type { RaceSeries, WaveDay } from './ActivityCharts';
 import ChartSwitch from './ChartSwitch';
 import type { ChartSwitchOption } from './ChartSwitch';
-import { IconChartBars, IconChartRace, IconChartWave } from './icons';
+import {
+  IconArrowUpRight,
+  IconBed,
+  IconBriefcase,
+  IconCalendarCheck,
+  IconChartBars,
+  IconChartRace,
+  IconChartWave,
+  IconGrid,
+  IconMoon,
+} from './icons';
 import {
   entryWithRange,
   extendToHour,
@@ -34,11 +44,14 @@ import {
   sleepDuration,
 } from './sleep';
 import type { SleepData, SleepRange } from './sleep';
+import { avgSleepMin, fmtPercent, percentChange, yearFigures } from './yearSummary';
+import type { YearFigures } from './yearSummary';
 import * as api from './api';
 import { scrollChildToTop } from './scrollWithin';
 
 const WEEKS_TO_SHOW = 53; // ~1 year
 const HOURS_PER_DAY = 24;
+const HOURS = Array.from({ length: HOURS_PER_DAY }, (_, h) => h);
 const LOAD_MONTHS = 2; // months appended/prepended per scroll trigger
 const MAX_MONTHS = 24; // hard cap on buffered months
 const LOAD_TRIGGER_PX = 140; // scroll proximity that triggers loading another batch
@@ -49,7 +62,6 @@ const QUALITY_EMOJIS = ['—', '😞', '😕', '🙂', '😊', '😁'] as const;
 
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const MONTHS_FULL = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-const DOW_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const DOW_SHORT_MON = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']; // Monday-first, matches startOfWeek
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -412,45 +424,39 @@ function SleepTimePopover({ date, range, anchor, onChange, onClear, onClose }: {
   );
 }
 
-// Memoized, and handed the tracker's shared callbacks rather than per-row
-// closures: a month holds ~750 cell buttons and the buffer several months, so
-// an edit re-renders only the day it touched.
-const SleepDayRow = memo(function SleepDayRow({ date, dateKey: dk, entry, disabled, onPickHour, onCycleQuality }: {
+// The hour cells are plain spans, not buttons: a month is ~750 of them and the
+// buffer holds several months, so they carry no handler, no title and no form
+// control box of their own. One listener on the scroll area (see SleepTracker)
+// finds the day and hour from data-key / data-h instead. Memoized, so an edit
+// re-renders only the day it touched.
+const SleepDayRow = memo(function SleepDayRow({ date, dateKey: dk, entry, disabled, onCycleQuality }: {
   date: Date;
   dateKey: string;
   entry?: SleepData;
   disabled: boolean;
-  onPickHour: (dayKey: string, date: Date, hour: number, cell: DOMRect) => void;
   onCycleQuality: (dayKey: string) => void;
 }) {
   const range = rangeOf(entry);
   const qual = entry?.quality ?? null;
-  const spanTitle = range ? `${fmtClock(range.bed)}–${fmtClock(range.wake)} · ${fmtDurMin(sleepDuration(range))}` : null;
+  const spanTitle = range ? `${fmtClock(range.bed)}–${fmtClock(range.wake)} · ${fmtDurMin(sleepDuration(range))}` : undefined;
 
   return (
-    <div className={`sleep-day-row${disabled ? ' future' : ''}`} data-key={dk}>
+    <div className={`sleep-day-row${disabled ? ' future' : ''}`} data-key={dk} title={spanTitle}>
       <div className="sleep-day-num">
         {date.getDate()}
         <span className="sleep-day-mon">{MONTHS_SHORT[date.getMonth()].charAt(0)}</span>
       </div>
-      {Array.from({ length: HOURS_PER_DAY }, (_, h) => h).map((h) => {
+      {HOURS.map((h) => {
         const span = hourSpan(range, h);
         return (
-          <button
-            key={h}
-            type="button"
-            className={`sleep-cell${span ? ' checked' : ''}`}
-            disabled={disabled}
-            title={span && spanTitle ? spanTitle : `${h}:00`}
-            onClick={(e) => onPickHour(dk, date, h, e.currentTarget.getBoundingClientRect())}
-          >
+          <span key={h} className={`sleep-cell${span ? ' checked' : ''}`} data-h={h}>
             {span && (
               <span
                 className="sleep-cell-fill"
                 style={{ left: `${span.from * 100}%`, width: `${(span.to - span.from) * 100}%` }}
               />
             )}
-          </button>
+          </span>
         );
       })}
       <div className="qual-cell">
@@ -473,7 +479,7 @@ function SleepHourHeader() {
   return (
     <div className="sleep-hour-header">
       <div className="sleep-day-num" />
-      {Array.from({ length: HOURS_PER_DAY }, (_, h) => h).map((h) => (
+      {HOURS.map((h) => (
         <span key={h} className="sleep-hour-label">{h}</span>
       ))}
       <div className="qual-cell" />
@@ -481,16 +487,21 @@ function SleepHourHeader() {
   );
 }
 
-// A whole month: title + hour header + one row per day.
-const SleepMonth = memo(function SleepMonth({ block, entries, disabledFrom, onPickHour, onCycleQuality }: {
+// A whole month: title + hour header + one row per day. Months outside the
+// scroll area are skipped by the browser (content-visibility in the CSS);
+// --sleep-days lets it reserve about the right height for them meanwhile.
+const SleepMonth = memo(function SleepMonth({ block, entries, disabledFrom, onCycleQuality }: {
   block: MonthBlock;
   entries: Record<string, SleepData>;
   disabledFrom: Date;
-  onPickHour: (dayKey: string, date: Date, hour: number, cell: DOMRect) => void;
   onCycleQuality: (dayKey: string) => void;
 }) {
   return (
-    <div className="sleep-month" data-month={`${block.year}-${block.month}`}>
+    <div
+      className="sleep-month"
+      data-month={`${block.year}-${block.month}`}
+      style={{ '--sleep-days': block.days.length } as CSSProperties}
+    >
       <div className="sleep-month-title">{MONTHS_FULL[block.month]} {block.year}</div>
       <SleepHourHeader />
       {block.days.map((d) => (
@@ -500,7 +511,6 @@ const SleepMonth = memo(function SleepMonth({ block, entries, disabledFrom, onPi
           dateKey={d.key}
           entry={entries[d.key]}
           disabled={d.date.getTime() > disabledFrom.getTime()}
-          onPickHour={onPickHour}
           onCycleQuality={onCycleQuality}
         />
       ))}
@@ -603,7 +613,12 @@ export interface StatsData {
   setSelYear: (y: number) => void;
   availableYears: number[];
   heatData: { cells: HeatCellInfo[][]; monthMarks: { col: number; label: string }[]; colsCount: number };
-  summary: { totalWorkSec: number; avgSleep: number | null; daysWithSleep: number; totalDays: number };
+  summary: {
+    year: YearFigures; // the selected year, up to today when it is the current one
+    prev: YearFigures; // the year before, cut at the same date
+    totalDays: number;
+    through: string | null; // "MM-DD" both years are cut at; null for a past year
+  };
   yearTotalHrs: number;
   months: MonthBlock[];
   history: Record<string, DayStats>;
@@ -691,29 +706,17 @@ export function useStatsData(): StatsData {
     return arr;
   }, [selYear]);
 
-  // Summary for selected year
+  // Summary for the selected year, beside the year before it. The current
+  // year is only part-way through, so both are cut at today's date.
   const summary = useMemo(() => {
-    let totalWorkSec = 0;
-    let totalMin = 0;
-    let daysWithSleep = 0;
-
-    for (const [k, e] of Object.entries(sleepLog)) {
-      if (!e.hours.length && e.quality === null) continue;
-      const dt = parseKey(k);
-      if (dt.getFullYear() !== selYear) continue;
-      const w = history[k];
-      if (w) totalWorkSec += w.workSec;
-      daysWithSleep++;
-      totalMin += sleptMin(e);
-    }
-
+    const through = selYear === today.getFullYear() ? dateKey(today).slice(5) : null;
     return {
-      totalWorkSec,
-      avgSleep: daysWithSleep > 0 ? Math.round(totalMin / daysWithSleep) : null,
-      daysWithSleep,
+      year: yearFigures(selYear, history, sleepLog, through),
+      prev: yearFigures(selYear - 1, history, sleepLog, through),
       totalDays: yearDays.length,
+      through,
     };
-  }, [history, sleepLog, selYear, yearDays]);
+  }, [history, sleepLog, selYear, yearDays, today]);
 
   // Heatmap for current year (GitHub-style daily grid for all 52 weeks)
   const heatData = useMemo(
@@ -852,17 +855,17 @@ export function useStatsData(): StatsData {
     }
   }, [months]);
 
-  // Scroll the buffered view so the current month is the first one visible,
-  // then keep "today" in reach.
-  useEffect(() => {
-    const el = scrollRef.current;
-    const now = new Date();
-    const target = el?.querySelector<HTMLElement>(`[data-month="${now.getFullYear()}-${now.getMonth()}"]`);
-    if (el && target) scrollChildToTop(el, target);
-  }, []);
-
   const gotoMonth = useCallback((year: number, month: number) => {
     navGuardRef.current = true;
+    window.setTimeout(() => { navGuardRef.current = false; }, 120);
+    // A month already in the buffer is simply scrolled to: handing it to
+    // setMonths would change nothing, so no render — and no scroll — follows.
+    const el = scrollRef.current;
+    const loaded = el?.querySelector<HTMLElement>(`[data-month="${year}-${month}"]`);
+    if (el && loaded) {
+      scrollChildToTop(el, loaded);
+      return;
+    }
     pendingNavRef.current = { year, month };
     setMonths((prev) => {
       if (prev.some((b) => b.year === year && b.month === month)) return prev;
@@ -886,7 +889,6 @@ export function useStatsData(): StatsData {
       }
       return [...prev, ...added];
     });
-    window.setTimeout(() => { navGuardRef.current = false; }, 120);
   }, []);
 
   // ── Month navigation helpers (scroll to first visible month of target) ──
@@ -941,10 +943,15 @@ export function useStatsData(): StatsData {
 
 // ── Section 1: yearly activity heatmap ────────────────────────────────
 
+// Where the summary cards' corner arrow leads.
+const ACTIVITY_PANEL_ID = 'dash-activity';
+const SLEEP_PANEL_ID = 'dash-sleep';
+
 const HEAT_CELL_MIN = 10;
 const HEAT_CELL_MAX = 26;
-const HEAT_CELL_GAP = 3; // matches --heat-gap
+const HEAT_CELL_GAP = 4; // matches --heat-gap
 const HEAT_BODY_GAP = 6; // matches .heat-body's gap
+const HEAT_HOVER_ROOM = 8; // matches .heatmap's padding: the grid's box reaches this far past its last column
 
 // Grows the cell size to fill the available row width (up to a cap) instead
 // of leaving the card mostly empty when the selected year has few columns —
@@ -959,7 +966,7 @@ function useHeatCellSize(colsCount: number) {
     if (!container || colsCount === 0) return;
     const compute = () => {
       const daysWidth = daysRef.current?.getBoundingClientRect().width ?? 20;
-      const available = container.clientWidth - daysWidth - HEAT_BODY_GAP;
+      const available = container.clientWidth - daysWidth - HEAT_BODY_GAP - HEAT_HOVER_ROOM;
       const raw = Math.floor((available - (colsCount - 1) * HEAT_CELL_GAP) / colsCount);
       setCell(Math.min(HEAT_CELL_MAX, Math.max(HEAT_CELL_MIN, raw)));
     };
@@ -982,6 +989,12 @@ function habitDropdownOptions(habits: Habit[]): DropdownOption<string>[] {
     ...habits.map((h) => ({ value: h.id, label: `${h.emoji} ${h.name}` })),
   ];
 }
+
+// What the four filled shades mean — heatLevel's hour buckets for work, and
+// habitHeatLevel's share of the day's quota for a habit. An empty day is the
+// hatched square and needs no entry of its own.
+const WORK_LEGEND = ['до 1 ч', '1–2 ч', '2–4 ч', 'больше 4 ч'];
+const HABIT_LEGEND = ['до 25%', '25–50%', '50–99%', 'норма'];
 
 type Period = 'year' | 'week' | 'month';
 
@@ -1351,9 +1364,18 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
   );
 
   return (
-    <section className="card heat-card" style={cell ? ({ '--heat-cell': `${cell}px` } as CSSProperties) : undefined}>
+    <section
+      id={ACTIVITY_PANEL_ID}
+      className="card heat-card"
+      style={cell ? ({ '--heat-cell': `${cell}px` } as CSSProperties) : undefined}
+    >
       <div className="heat-header">
-        <h2 className="stats-title">🔥 {selectedHabit ? `${selectedHabit.emoji} ${selectedHabit.name}` : 'Активность'}</h2>
+        <h2 className="stats-title">
+          <span className="dash-badge" aria-hidden>
+            <IconGrid size={16} />
+          </span>
+          {selectedHabit ? `${selectedHabit.emoji} ${selectedHabit.name}` : 'Активность'}
+        </h2>
         <div className="heat-header-controls">
           {habits.length > 0 && (
             <Dropdown value={habitId} onChange={setHabitId} options={habitDropdownOptions(habits)} className="dd-habit" />
@@ -1362,6 +1384,17 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
           {period === 'year' && <YearSelector value={selYear} onChange={setSelYear} years={availableYears} />}
         </div>
       </div>
+
+      {period === 'year' && (
+        <div className="heat-legend">
+          {(selectedHabit ? HABIT_LEGEND : WORK_LEGEND).map((label, i) => (
+            <span key={label} className="heat-legend-item">
+              <span className={`heat-cell l${i + 1}`} />
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {period === 'year' && (
         <div className="heat-scroll" ref={scrollRef} onScroll={hide}>
@@ -1376,19 +1409,13 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
             ))}
           </div>
           <div className="heat-body">
+            {/* Columns run Monday to Sunday — see buildHeatGrid. */}
             <div className="heat-days" ref={daysRef}>
-              {DOW_LABELS.map((l, i) => (
-                <span key={i}>{l}</span>
+              {DOW_SHORT_MON.map((l) => (
+                <span key={l}>{l}</span>
               ))}
             </div>
             <HeatCells cells={effectiveHeatData.cells} title={title} onEnter={show} onMove={move} onLeave={hide} />
-          </div>
-          <div className="heat-legend">
-            <span>Меньше</span>
-            {[0, 1, 2, 3, 4].map((l) => (
-              <span key={l} className={`heat-cell l${l}`} />
-            ))}
-            <span>Больше</span>
           </div>
         </div>
       )}
@@ -1448,28 +1475,125 @@ export const ActivityHeatmap = memo(function ActivityHeatmap({ stats, habits, en
 
 // ── Section 2: yearly summary cards ────────────────────────────────────
 
+// Brings another panel of the dashboard into view. The dashboard is the
+// scroller, not the window, so only its own scrollTop moves — scrollIntoView
+// would drag every scrollable ancestor along too (see scrollWithin.ts).
+function revealPanel(id: string) {
+  const panel = document.getElementById(id);
+  const page = panel?.closest<HTMLElement>('.home-page');
+  if (!panel || !page) return;
+  const top = page.scrollTop + panel.getBoundingClientRect().top - page.getBoundingClientRect().top - 12;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  page.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+}
+
+// One figure of the summary: what it is, the number, and how it moved
+// against the year before.
+function StatTile({ icon, label, value, change, note, versus, panel }: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  change: number | null; // percent; null when there is nothing to compare
+  note: string; // beside the change, or alone when there is none
+  versus: string; // the stretch the change is measured over, on hover
+  panel: string; // the panel the corner arrow scrolls to
+}) {
+  return (
+    <article className="stat-card">
+      <header className="stat-card-head">
+        <span className="dash-badge" aria-hidden>
+          {icon}
+        </span>
+        <span className="stat-label">{label}</span>
+        <button
+          type="button"
+          className="dash-icon-btn"
+          title="Подробнее"
+          aria-label={`${label}: подробнее`}
+          onClick={() => revealPanel(panel)}
+        >
+          <IconArrowUpRight size={15} />
+        </button>
+      </header>
+      <span className="stat-value">{value}</span>
+      <span className="stat-change" title={versus}>
+        {change !== null && <b className={change < 0 ? 'down' : 'up'}>{fmtPercent(change)}</b>} {note}
+      </span>
+    </article>
+  );
+}
+
 export const ActivityStatsSummary = memo(function ActivityStatsSummary({ stats }: { stats: StatsData }) {
-  const { summary, yearTotalHrs } = stats;
+  const { summary, selYear } = stats;
+  const { year, prev, totalDays, through } = summary;
+  const prevYear = selYear - 1;
+  const [mm, dd] = (through ?? '').split('-').map(Number);
+  const versus = through
+    ? `С 1 января по ${dd} ${MONTHS_SHORT[mm - 1]}: ${selYear} против ${prevYear}`
+    : `${selYear} год против ${prevYear}`;
+
+  // The change against last year, and what to say beside it — or instead of
+  // it, when one of the two years has nothing logged.
+  const compare = (cur: number | null, before: number | null) => {
+    const change = percentChange(cur, before);
+    if (change !== null) return { change, note: `к ${prevYear} г.` };
+    return { change, note: before ? `за ${selYear} пока пусто` : `за ${prevYear} данных нет` };
+  };
+
+  const avg = avgSleepMin(year);
+  const sleepHrs = Math.round(year.sleepMin / 60);
+
   return (
     <div className="stats-summary-section">
-      <h2 className="stats-title">📊 Статистика активности</h2>
+      <h2 className="stats-title">
+        <span className="dash-badge" aria-hidden>
+          <IconChartBars size={16} />
+        </span>
+        Статистика активности
+      </h2>
       <div className="stats-summary">
-        <div className="stat-card">
-          <span className="stat-value">{fmtSumSec(summary.totalWorkSec)}</span>
-          <span className="stat-label">Работа за год</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-value">{summary.avgSleep !== null ? fmtDurMin(summary.avgSleep) : '—'}</span>
-          <span className="stat-label">Средний сон</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-value">{summary.daysWithSleep}/{summary.totalDays}</span>
-          <span className="stat-label">Дней со сном</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-value">{yearTotalHrs}</span>
-          <span className="stat-label">Часов сна всего</span>
-        </div>
+        <StatTile
+          icon={<IconBriefcase size={16} />}
+          label="Работа за год"
+          value={fmtSumSec(year.workSec)}
+          {...compare(year.workSec, prev.workSec)}
+          versus={versus}
+          panel={ACTIVITY_PANEL_ID}
+        />
+        <StatTile
+          icon={<IconMoon size={16} />}
+          label="Средний сон"
+          value={avg !== null ? fmtDurMin(avg) : '—'}
+          {...compare(avg, avgSleepMin(prev))}
+          versus={versus}
+          panel={SLEEP_PANEL_ID}
+        />
+        <StatTile
+          icon={<IconCalendarCheck size={16} />}
+          label="Дней со сном"
+          value={
+            <>
+              {year.daysWithSleep}
+              <small>/{totalDays}</small>
+            </>
+          }
+          {...compare(year.daysWithSleep, prev.daysWithSleep)}
+          versus={versus}
+          panel={SLEEP_PANEL_ID}
+        />
+        <StatTile
+          icon={<IconBed size={16} />}
+          label="Часов сна всего"
+          value={
+            <>
+              {sleepHrs}
+              <small> ч</small>
+            </>
+          }
+          {...compare(year.sleepMin, prev.sleepMin)}
+          versus={versus}
+          panel={SLEEP_PANEL_ID}
+        />
       </div>
     </div>
   );
@@ -1478,20 +1602,29 @@ export const ActivityStatsSummary = memo(function ActivityStatsSummary({ stats }
 // ── Section 3: sleep tracker — monthly scroll, 24h per day ─────────────
 
 const SLEEP_CELL_MIN = 16;
-const SLEEP_CELL_MAX = 48;
+const SLEEP_CELL_MAX = 32;
 
-// Widens the hour cells to span the card instead of leaving the grid huddled
-// against the left edge on a wide screen. The fixed parts of a row (the day
-// number, the quality dot, the gaps) are read from the stylesheet rather than
-// repeated here, so the breakpoint that shrinks them stays the one source of
-// truth. Falls back to the CSS default until measured.
-function useSleepCellWidth(scrollRef: React.RefObject<HTMLDivElement | null>) {
-  const [cell, setCell] = useState<number | null>(null);
+// Sizes the hour cells — squares — to the card: as large as the width allows,
+// up to a cap so a wide screen does not turn a month into a wall. Whatever
+// width the capped grid leaves over is split to both sides (the inset), so the
+// grid sits centred instead of huddled against the left edge. The fixed parts
+// of a row (the day number, the quality dot, the gaps) are read from the
+// stylesheet rather than repeated here, so the breakpoint that shrinks them
+// stays the one source of truth. Falls back to the CSS default until measured.
+//
+// Square cells make a month's height follow the card's width, so a resize
+// would leave the view somewhere else in the buffer. The month in view and how
+// far into it are noted before the size changes and restored after.
+function useSleepCellSize(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  const [size, setSize] = useState<{ cell: number; inset: number } | null>(null);
+  const sizeRef = useRef(size);
+  const viewRef = useRef<SleepView | null>(null);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const compute = () => {
+      if (el.clientWidth === 0) return; // not laid out (hidden): nothing to fit
       const cs = getComputedStyle(el);
       const num = (v: string, fallback: number) => parseFloat(cs.getPropertyValue(v)) || fallback;
       const fixed =
@@ -1499,9 +1632,15 @@ function useSleepCellWidth(scrollRef: React.RefObject<HTMLDivElement | null>) {
         parseFloat(cs.paddingRight) +
         num('--sleep-num-w', 34) +
         num('--sleep-qual-w', 30) +
-        num('--sleep-gap', 3) * (HOURS_PER_DAY + 1);
-      const raw = Math.floor((el.clientWidth - fixed) / HOURS_PER_DAY);
-      setCell(Math.min(SLEEP_CELL_MAX, Math.max(SLEEP_CELL_MIN, raw)));
+        num('--sleep-gap', 4) * (HOURS_PER_DAY + 1);
+      const free = el.clientWidth - fixed;
+      const cell = Math.min(SLEEP_CELL_MAX, Math.max(SLEEP_CELL_MIN, Math.floor(free / HOURS_PER_DAY)));
+      const inset = Math.max(0, Math.floor((free - cell * HOURS_PER_DAY) / 2));
+      const prev = sizeRef.current;
+      if (prev && prev.cell === cell && prev.inset === inset) return;
+      if (prev && prev.cell !== cell) viewRef.current = sleepView(el);
+      sizeRef.current = { cell, inset };
+      setSize(sizeRef.current);
     };
     compute();
     const ro = new ResizeObserver(compute);
@@ -1509,7 +1648,40 @@ function useSleepCellWidth(scrollRef: React.RefObject<HTMLDivElement | null>) {
     return () => ro.disconnect();
   }, [scrollRef]);
 
-  return cell;
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const view = viewRef.current;
+    viewRef.current = null;
+    if (el && view) restoreSleepView(el, view);
+  }, [size, scrollRef]);
+
+  return size;
+}
+
+// Where the sleep grid is scrolled to: a month, and the share of it above the
+// top edge. Rows all grow or shrink together, so the share survives a resize.
+interface SleepView {
+  month: string;
+  share: number;
+}
+
+// The months are the scroller's children, and each one's own box is known
+// even while its rows are skipped (content-visibility), so this stays cheap.
+function sleepView(el: HTMLElement): SleepView | null {
+  const top = el.getBoundingClientRect().top + el.clientTop;
+  for (const child of el.children) {
+    const box = child.getBoundingClientRect();
+    const month = (child as HTMLElement).dataset.month;
+    if (month && box.bottom > top) return { month, share: (top - box.top) / box.height };
+  }
+  return null;
+}
+
+function restoreSleepView(el: HTMLElement, view: SleepView) {
+  const month = el.querySelector<HTMLElement>(`[data-month="${view.month}"]`);
+  if (!month) return;
+  const box = month.getBoundingClientRect();
+  el.scrollTop += box.top + view.share * box.height - (el.getBoundingClientRect().top + el.clientTop);
 }
 
 // Which day's exact moments are open for editing, and where over the grid the
@@ -1524,17 +1696,37 @@ interface SleepEdit {
 export const SleepTracker = memo(function SleepTracker({ stats }: { stats: StatsData }) {
   const { months, sleepLog, today, pickHour, setRange, cycleQuality, scrollRef, onScroll, targetMonth, yearTotalHrs } =
     stats;
-  const cellWidth = useSleepCellWidth(scrollRef);
+  const cellSize = useSleepCellSize(scrollRef);
   const [edit, setEdit] = useState<SleepEdit | null>(null);
 
-  // A click on a cell does two things: it lays down the whole hours, and it
-  // opens the editor on what that left, so the minutes are one keystroke away.
-  // A click that emptied the day has nothing left to edit.
-  const onPickHour = useCallback(
-    (dayKey: string, date: Date, hour: number, cell: DOMRect) => {
-      const range = pickHour(dayKey, hour);
+  // Opens on the current month as the first one visible. Waits for the cells'
+  // measured size, which sets the height of every month above it.
+  const openedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!cellSize || openedRef.current) return;
+    openedRef.current = true;
+    targetMonth(0);
+  }, [cellSize, targetMonth]);
+
+  // The one click handler of the whole grid. A click on a cell does two
+  // things: it lays down the whole hours, and it opens the editor on what that
+  // left, so the minutes are one keystroke away. A click that emptied the day
+  // has nothing left to edit; a day still to come takes no sleep at all.
+  const onGridClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const cell = (e.target as Element).closest<HTMLElement>('.sleep-cell');
+      const row = cell?.parentElement;
+      const dayKey = row?.dataset.key;
+      if (!cell || !row || !dayKey || row.classList.contains('future')) return;
+      const range = pickHour(dayKey, Number(cell.dataset.h));
+      const box = cell.getBoundingClientRect();
       setEdit(
-        range && { dayKey, date, range, anchor: { x: cell.left + cell.width / 2, y: cell.top, bottom: cell.bottom } }
+        range && {
+          dayKey,
+          date: parseKey(dayKey),
+          range,
+          anchor: { x: box.left + box.width / 2, y: box.top, bottom: box.bottom },
+        }
       );
     },
     [pickHour]
@@ -1563,11 +1755,21 @@ export const SleepTracker = memo(function SleepTracker({ stats }: { stats: Stats
 
   return (
     <section
+      id={SLEEP_PANEL_ID}
       className="card sleep-card"
-      style={cellWidth !== null ? ({ '--sleep-cell': `${cellWidth}px` } as CSSProperties) : undefined}
+      style={
+        cellSize !== null
+          ? ({ '--sleep-cell': `${cellSize.cell}px`, '--sleep-inset': `${cellSize.inset}px` } as CSSProperties)
+          : undefined
+      }
     >
       <div className="sleep-header">
-        <h2 className="stats-title">😴 Трекер сна</h2>
+        <h2 className="stats-title">
+          <span className="dash-badge" aria-hidden>
+            <IconMoon size={16} />
+          </span>
+          Трекер сна
+        </h2>
         <div className="sleep-controls-top">
           <button
             type="button"
@@ -1596,14 +1798,13 @@ export const SleepTracker = memo(function SleepTracker({ stats }: { stats: Stats
         </div>
       </div>
 
-      <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScrollGrid}>
+      <div className="sleep-month-scroll" ref={scrollRef} onScroll={onScrollGrid} onClick={onGridClick}>
         {months.map((block) => (
           <SleepMonth
             key={block.key}
             block={block}
             entries={sleepLog}
             disabledFrom={today}
-            onPickHour={onPickHour}
             onCycleQuality={cycleQuality}
           />
         ))}

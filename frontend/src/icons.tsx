@@ -196,3 +196,43 @@ export const IconChartWave = (p: IconProps) => (
     <path d="M12.5 20.5h6" strokeWidth={2.5} />
   </Icon>
 );
+
+// The home dashboard's card badges.
+
+// Four squares — the activity heatmap.
+export const IconGrid = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.75" />
+  </Icon>
+);
+
+export const IconBriefcase = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="7" width="18" height="13" rx="2.5" />
+    <path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7M3 12.5h18" />
+  </Icon>
+);
+
+export const IconCalendarCheck = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
+    <path d="M3 9.5h18M8 2.5v4M16 2.5v4M9 15l2 2 4-4" />
+  </Icon>
+);
+
+export const IconBed = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 5v15M3 16h18v4M21 16v-3a3 3 0 0 0-3-3h-7.5v6" />
+    <circle cx="7" cy="12.5" r="1.75" />
+  </Icon>
+);
+
+// "Open the full view" — the summary cards' corner button.
+export const IconArrowUpRight = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 17 17 7M8.5 7H17v8.5" />
+  </Icon>
+);
