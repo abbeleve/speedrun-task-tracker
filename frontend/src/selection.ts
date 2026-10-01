@@ -3,15 +3,15 @@
 // A press on empty canvas is ambiguous: drawn away from where it started it
 // creates a block, held still on the spot for HOLD_MS it arms a *marquee*
 // instead — a rectangle swept over the grid that picks up every block it
-// touches, across day columns. With Ctrl (⌘) down there is nothing to wait
-// for: the press is a marquee from the start, on empty canvas or on a block,
+// touches, within the day where the press landed. With Ctrl (⌘) down there
+// is nothing to wait for: the press is a marquee from the start, on empty
+// canvas or on a block,
 // and adds to the batch already standing. What it picks then moves as one
 // batch, and can be declared a session of its own — or pulled out of the
 // sequence it sits in into a sequence of its own.
 
 import type { Task } from './types';
 import type { Chain } from './schedule';
-import { MIN_MS, dayStartMs, isScheduled, taskEndMs, taskStartMs } from './schedule';
 
 // How long the button has to be held before the marquee arms.
 export const HOLD_MS = 1000;
@@ -26,62 +26,67 @@ export function onTheSpot(fromX: number, fromY: number, x: number, y: number): b
   return Math.abs(x - fromX) <= HOLD_SLOP_PX && Math.abs(y - fromY) <= HOLD_SLOP_PX;
 }
 
-// The swept rectangle, in grid coordinates: whole day columns across, minutes
-// of the day down. Anchor and cursor are kept as they came in — the rectangle
-// is normalised where it is used, so dragging up or left works the same.
-export interface Band {
-  fromDayIdx: number;
-  toDayIdx: number;
-  fromMin: number;
-  toMin: number;
+// Grid-relative pixels keep the rectangle attached to the content when it
+// scrolls. The day stays fixed throughout the gesture.
+export interface Point {
+  x: number;
+  y: number;
 }
 
-export interface NormalBand {
-  fromDayIdx: number;
-  toDayIdx: number;
-  topMin: number;
-  bottomMin: number;
+export interface SelectionRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
-// The rectangle with its corners sorted and its columns clamped to the days
-// actually on screen.
-export function normalizeBand(band: Band, dayCount: number): NormalBand {
+export interface Marquee {
+  dayIdx: number;
+  anchor: Point;
+  cursor: Point;
+}
+
+// Overnight tasks can have a rendered segment in each day.
+export interface SelectionBlock extends SelectionRect {
+  taskId: string;
+  dayIdx: number;
+}
+
+// Confine both corners to the starting day, in columns and timeline rows.
+export function clampMarquee(marquee: Marquee, day: SelectionRect): Marquee {
+  const clamp = (point: Point): Point => ({
+    x: Math.max(day.left, Math.min(day.right, point.x)),
+    y: Math.max(day.top, Math.min(day.bottom, point.y)),
+  });
+  return { ...marquee, anchor: clamp(marquee.anchor), cursor: clamp(marquee.cursor) };
+}
+
+export function marqueeRect({ anchor, cursor }: Marquee): SelectionRect {
   return {
-    fromDayIdx: Math.max(0, Math.min(band.fromDayIdx, band.toDayIdx)),
-    toDayIdx: Math.min(dayCount - 1, Math.max(band.fromDayIdx, band.toDayIdx)),
-    topMin: Math.min(band.fromMin, band.toMin),
-    bottomMin: Math.max(band.fromMin, band.toMin),
+    left: Math.min(anchor.x, cursor.x),
+    right: Math.max(anchor.x, cursor.x),
+    top: Math.min(anchor.y, cursor.y),
+    bottom: Math.max(anchor.y, cursor.y),
   };
 }
 
-// Every scheduled block the rectangle touches, ordered by start. A block is
-// tested against the window the rectangle covers *in each column it spans*, so
-// one that spills past midnight is caught by sweeping either the column it
-// starts in or the one it runs into. Backlog tasks have no slot and are never
-// picked up.
-export function tasksInBand(tasks: Task[], days: string[], band: Band): Task[] {
-  const { fromDayIdx, toDayIdx, topMin, bottomMin } = normalizeBand(band, days.length);
-  const picked = new Map<string, Task>();
-  for (let i = fromDayIdx; i <= toDayIdx; i++) {
-    const base = dayStartMs(days[i]);
-    const fromMs = base + topMin * MIN_MS;
-    const toMs = base + bottomMin * MIN_MS;
-    if (toMs <= fromMs) continue;
-    for (const task of tasks) {
-      if (picked.has(task.id) || !isScheduled(task)) continue;
-      if (taskStartMs(task) < toMs && taskEndMs(task) > fromMs) picked.set(task.id, task);
-    }
-  }
-  return [...picked.values()].sort(
-    (a, b) => taskStartMs(a) - taskStartMs(b) || a.id.localeCompare(b.id)
-  );
+// Test actual rendered rectangles, including parallel lanes, reminder rails
+// and the minimum visible size of short blocks. Touching only an edge, or
+// sweeping a rectangle with no area, does not pick anything.
+export function tasksInMarquee(blocks: SelectionBlock[], marquee: Marquee): string[] {
+  const rect = marqueeRect(marquee);
+  if (rect.right <= rect.left || rect.bottom <= rect.top) return [];
+  return [...new Set(blocks.filter((block) =>
+    block.dayIdx === marquee.dayIdx &&
+    block.left < rect.right && block.right > rect.left &&
+    block.top < rect.bottom && block.bottom > rect.top
+  ).map((block) => block.taskId))];
 }
 
-// What the marquee holds once it covers `band`: the batch it started from plus
-// every block it touches. Rebuilt from `baseIds` on each move, so shrinking the
-// rectangle lets go of what it swept but never of what was picked before.
-export function sweep(tasks: Task[], days: string[], band: Band, baseIds: string[]): Set<string> {
-  return new Set([...baseIds, ...tasksInBand(tasks, days, band).map((t) => t.id)]);
+// Rebuild from the original batch on every move: shrinking the rectangle
+// releases swept blocks while keeping everything selected before the drag.
+export function sweep(blocks: SelectionBlock[], marquee: Marquee, baseIds: string[]): Set<string> {
+  return new Set([...baseIds, ...tasksInMarquee(blocks, marquee)]);
 }
 
 // A Ctrl (⌘) click on a block: in the batch it goes out, otherwise it comes in.

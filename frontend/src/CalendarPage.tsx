@@ -29,11 +29,12 @@ import {
   taskEndMs,
   taskStartMs,
 } from './schedule';
-import type { Band } from './selection';
+import type { Marquee, Point, SelectionBlock, SelectionRect } from './selection';
 import {
   HOLD_MS,
   chainOfSelection,
-  normalizeBand,
+  clampMarquee,
+  marqueeRect,
   onTheSpot,
   splitPatches,
   sweep,
@@ -241,9 +242,7 @@ type Gesture = (
   // touches (see selection.ts).
   | {
       kind: 'lasso';
-      anchorDayIdx: number;
-      anchorMin: number;
-      band: Band;
+      marquee: Marquee;
       baseIds: string[];
       // Ctrl-pressed on a block and not yet dragged off the spot: let go here
       // it is a Ctrl+click that toggles that block; only a drag makes it a
@@ -1019,6 +1018,29 @@ function CalendarPage({
     [visibleDays, pxPerMin, timeline]
   );
 
+  const marqueeGeometry = useCallback((dayIdx: number) => {
+    const grid = columnsRef.current;
+    if (!grid) return null;
+    const day = Array.from(grid.querySelectorAll<HTMLElement>('.cal-col[data-day], .tl-row[data-day]'))
+      .find((element) => element.dataset.day === visibleDays[dayIdx]);
+    if (!day) return null;
+    const origin = grid.getBoundingClientRect();
+    const relativeRect = (rect: DOMRect): SelectionRect => ({
+      left: rect.left - origin.left,
+      top: rect.top - origin.top,
+      right: rect.right - origin.left,
+      bottom: rect.bottom - origin.top,
+    });
+    const blocks: SelectionBlock[] = Array.from(
+      day.querySelectorAll<HTMLElement>('.cal-block[data-task-id], .cal-reminder[data-reminder-id]')
+    ).map((element) => ({
+      ...relativeRect(element.getBoundingClientRect()),
+      taskId: (element.dataset.taskId ?? element.dataset.reminderId)!,
+      dayIdx,
+    }));
+    return { origin, bounds: relativeRect(day.getBoundingClientRect()), blocks };
+  }, [visibleDays]);
+
   const setGestureState = useCallback((next: Gesture | null) => {
     gestureRef.current = next;
     if (!next) lastPointer.current = null;
@@ -1142,14 +1164,14 @@ function CalendarPage({
         // The selection is rebuilt on every move, so the rings follow the
         // rectangle live — by the time the button comes up there is nothing
         // left to commit.
-        const band: Band = {
-          fromDayIdx: g.anchorDayIdx,
-          toDayIdx: slot.dayIdx,
-          fromMin: g.anchorMin,
-          toMin: slot.min,
-        };
-        setGestureState({ ...g, band, pending: null });
-        setSelection(sweep(store.tasks, visibleDays, band, g.baseIds));
+        const geometry = marqueeGeometry(g.marquee.dayIdx);
+        if (!geometry) return;
+        const marquee = clampMarquee({
+          ...g.marquee,
+          cursor: { x: e.clientX - geometry.origin.left, y: e.clientY - geometry.origin.top },
+        }, geometry.bounds);
+        setGestureState({ ...g, marquee, pending: null });
+        setSelection(sweep(geometry.blocks, marquee, g.baseIds));
       } else if (g.kind === 'multi') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
@@ -1261,29 +1283,30 @@ function CalendarPage({
     cancelHold,
     draftTask,
     store,
-    visibleDays,
+    marqueeGeometry,
     openDialog,
     openSession,
   ]);
 
-  // The lasso, anchored at a point of the grid and building on `baseIds`.
+  // Anchor at the exact pointer position within the starting day.
   const armLasso = useCallback(
     (
-      slot: { dayIdx: number; min: number },
+      dayIdx: number,
+      pointer: Point,
       baseIds: string[],
       pending: { taskId: string; x: number; y: number } | null = null
     ) => {
-      const { dayIdx, min } = slot;
+      const geometry = marqueeGeometry(dayIdx);
+      if (!geometry) return;
+      const anchor = { x: pointer.x - geometry.origin.left, y: pointer.y - geometry.origin.top };
       setGestureState({
         kind: 'lasso',
-        anchorDayIdx: dayIdx,
-        anchorMin: min,
-        band: { fromDayIdx: dayIdx, toDayIdx: dayIdx, fromMin: min, toMin: min },
+        marquee: clampMarquee({ dayIdx, anchor, cursor: anchor }, geometry.bounds),
         baseIds,
         pending,
       });
     },
-    [setGestureState]
+    [setGestureState, marqueeGeometry]
   );
 
   // A press on the canvas starts as a block being drawn. Held on the spot for
@@ -1321,7 +1344,7 @@ function CalendarPage({
       e.preventDefault();
       cancelHold();
       if (e.ctrlKey || e.metaKey) {
-        armLasso(slot, [...selectedRef.current]);
+        armLasso(slot.dayIdx, { x: e.clientX, y: e.clientY }, [...selectedRef.current]);
         return;
       }
       const anchorMin = snap(slot.min);
@@ -1343,7 +1366,7 @@ function CalendarPage({
         if (!held || held.kind !== 'create' || held.moved) return;
         const baseIds = additive ? [...selectedRef.current] : [];
         setSelection(new Set(baseIds));
-        armLasso(slot, baseIds);
+        armLasso(slot.dayIdx, { x: held.anchorX, y: held.anchorY }, baseIds);
       }, HOLD_MS);
     },
     [slotAt, setGestureState, setSelection, cancelHold, armLasso, holdTouch]
@@ -1369,7 +1392,8 @@ function CalendarPage({
       // here that adds every block it touches, without the hold the bare canvas
       // needs.
       if (!touch && (e.ctrlKey || e.metaKey)) {
-        armLasso(slot, [...selectedRef.current], { taskId: task.id, x: e.clientX, y: e.clientY });
+        armLasso(slot.dayIdx, { x: e.clientX, y: e.clientY }, [...selectedRef.current],
+          { taskId: task.id, x: e.clientX, y: e.clientY });
         return;
       }
       // Grabbing any block of a selected batch drags the whole batch; grabbing
@@ -1428,6 +1452,10 @@ function CalendarPage({
   const startResize = useCallback(
     (e: React.PointerEvent, task: Task) => {
       if (e.button !== 0) return;
+      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey)) {
+        startMove(e, task);
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       setGestureState({
@@ -1437,12 +1465,17 @@ function CalendarPage({
         lengthMin: Math.round(task.plannedTime / 60),
       });
     },
-    [setGestureState]
+    [setGestureState, startMove]
   );
 
   const startResizeTop = useCallback(
     (e: React.PointerEvent, task: Task) => {
-      if (e.button !== 0 || task.pinned) return;
+      if (e.button !== 0) return;
+      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey)) {
+        startMove(e, task);
+        return;
+      }
+      if (task.pinned) return;
       e.preventDefault();
       e.stopPropagation();
       setGestureState({
@@ -1454,7 +1487,7 @@ function CalendarPage({
         lengthMin: task.plannedTime / 60,
       });
     },
-    [setGestureState]
+    [setGestureState, startMove]
   );
 
   // Right-drag anywhere on the canvas selects a time band to zoom into —
@@ -1675,7 +1708,7 @@ function CalendarPage({
             style={{ left: GUTTER_PX }}
           >
             {visibleDays.map((day) => renderColumn(day))}
-            {g?.kind === 'lasso' && !g.pending && renderMarquee(g.band)}
+            {g?.kind === 'lasso' && !g.pending && renderMarquee(g.marquee)}
           </div>
           {g?.kind === 'zoom' && (
             <div
@@ -1690,28 +1723,15 @@ function CalendarPage({
     );
   };
 
-  // The rectangle being swept over the grid. It takes whole day columns
-  // across — the columns are the only horizontal geometry the grid has — and
-  // reports what it is holding while it is dragged.
-  const renderMarquee = (band: Band) => {
-    const lo = Math.max(0, Math.min(band.fromDayIdx, band.toDayIdx));
-    const hi = Math.min(visibleDays.length - 1, Math.max(band.fromDayIdx, band.toDayIdx));
-    const topMin = Math.min(band.fromMin, band.toMin);
-    const bottomMin = Math.max(band.fromMin, band.toMin);
-    const colWidth = 100 / visibleDays.length;
+  // Both orientations draw the same rectangle in grid pixels.
+  const renderMarquee = (marquee: Marquee) => {
+    const { left, right, top, bottom } = marqueeRect(marquee);
     return (
       <div
         className="cal-marquee"
-        style={{
-          left: `${lo * colWidth}%`,
-          width: `${(hi - lo + 1) * colWidth}%`,
-          top: minToPx(topMin),
-          height: Math.max(2, lenToPx(bottomMin - topMin)),
-        }}
+        style={{ left, top, width: right - left, height: bottom - top }}
       >
-        <span>
-          {hhmm(topMin)}–{hhmm(bottomMin)} · {selectedIds.size}
-        </span>
+        <span>Выделено · {selectedIds.size}</span>
       </div>
     );
   };
@@ -2397,7 +2417,7 @@ function CalendarPage({
             {/* The same minute on the other days, faint: today's own row
                 carries the real now line. */}
             {showNow && <div className="tl-now-guide" style={{ left: minToPx(nowMin) }} />}
-            {g?.kind === 'lasso' && !g.pending && renderTimelineMarquee(g.band)}
+            {g?.kind === 'lasso' && !g.pending && renderMarquee(g.marquee)}
             {g?.kind === 'zoom' && (
               <div
                 className="cal-zoom-select cal-zoom-select--across"
@@ -2755,29 +2775,6 @@ function CalendarPage({
           <span className="cal-now-dot" />
         </div>
       </>
-    );
-  };
-
-  // The lasso in the timeline: whole rows down, minutes across.
-  const renderTimelineMarquee = (band: Band) => {
-    const { rows } = timeline!;
-    const { fromDayIdx, toDayIdx, topMin, bottomMin } = normalizeBand(band, visibleDays.length);
-    const top = rows.tops[fromDayIdx];
-    const bottom = rows.tops[toDayIdx] + rows.heights[toDayIdx];
-    return (
-      <div
-        className="cal-marquee"
-        style={{
-          left: minToPx(topMin),
-          width: Math.max(2, lenToPx(bottomMin - topMin)),
-          top,
-          height: bottom - top,
-        }}
-      >
-        <span>
-          {hhmm(topMin)}–{hhmm(bottomMin)} · {selectedIds.size}
-        </span>
-      </div>
     );
   };
 
@@ -3535,6 +3532,7 @@ function CalendarPage({
               Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
               Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
               С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
+              Рамка выделяет только задетые блоки внутри одного дня — параллельные можно выбрать по отдельности.
               Ctrl + клик по блоку — добавить его в пачку или убрать
             </p>
             <p className="cal-backlog-hint cal-backlog-hint--touch">
