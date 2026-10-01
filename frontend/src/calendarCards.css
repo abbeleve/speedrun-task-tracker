@@ -1,133 +1,27 @@
-/* ===== Calendar — the card design =====
-   The second look for the calendar (see calendarDesign.ts), laid over the
-   classic rules in calendar.css whenever the page carries .cal-cards: a white
-   (or near-black) sheet with no column rules, big "18 / вт" day numbers,
+/* ===== Calendar — the card design for the sheet =====
+   The second look for what is drawn on the calendar sheet (see
+   calendarDesign.ts), laid over the classic rules in calendar.css whenever
+   the page carries .cal-cards: no column rules, big "18 / вт" day numbers,
    today as a soft band, and every block a rounded pastel card with dark ink.
-   Popovers and the view switches are dark in both themes. Every rule here is
-   scoped to .cal-cards, so the classic design is untouched without it. */
+   The page around the sheet (toolbar, HUD, backlog, popovers) is the same in
+   both designs and lives in calendar.css. Every rule here is scoped to
+   .cal-cards, so the classic sheet is untouched without it. */
 
 .cal-cards {
-  --cal-sheet: var(--bg-secondary);
-  --cal-ink: #f4f4f5;
-  --cal-ink-inverse: #111113;
   --cal-line: rgba(255, 255, 255, 0.055);
   --cal-today: rgba(150, 136, 255, 0.075);
   --cal-day-dim: #4b4e57;
   --cal-card-ink: #18181b;
   --cal-card-radius: 16px;
-  --cal-panel-radius: 22px;
-  --cal-panel-shadow: none;
-  --cal-pop-bg: #2a2b30;
-  --cal-pop-ink: #f4f4f5;
-  --cal-pop-dim: #a1a1aa;
-  --cal-pop-border: rgba(255, 255, 255, 0.08);
-  --cal-pop-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55);
-  --cal-seg-track: #0d0d0f;
-  --cal-seg-border: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] .cal-cards {
-  --cal-sheet: #ffffff;
-  --cal-ink: #111113;
-  --cal-ink-inverse: #ffffff;
   --cal-line: #eeeef2;
   --cal-today: #f2f1fb;
   --cal-day-dim: #c6c6cd;
-  --cal-panel-shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 8px 24px -12px rgba(16, 16, 24, 0.12);
-  --cal-pop-bg: #1c1c1f;
-  --cal-pop-border: transparent;
-  --cal-seg-track: #18181b;
-  --cal-seg-border: transparent;
 }
 
-/* A card's fill: the task's own hue, lifted to a bright pastel so dark ink
-   always reads on it. Browsers without relative colours get a tint instead. */
-.cal-cards .cal-block,
-.cal-cards .cal-backlog-card,
-.cal-cards .cal-chip {
-  --card-fill: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
-}
-
-@supports (color: oklch(from red l c h)) {
-  .cal-cards .cal-block,
-  .cal-cards .cal-backlog-card,
-  .cal-cards .cal-chip {
-    --card-fill: oklch(from var(--task-color, #3498db) clamp(0.8, l, 0.9) min(c, 0.16) h);
-  }
-}
-
-/* ── toolbar ─────────────────────────────────────────────────── */
-
-.cal-cards .cal-title {
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  color: var(--cal-ink);
-  margin-left: 10px;
-}
-
-.cal-cards .cal-btn {
-  border-radius: 999px;
-}
-
-.cal-cards .cal-btn--primary {
-  background: var(--cal-ink);
-  border-color: var(--cal-ink);
-  color: var(--cal-ink-inverse);
-}
-
-/* The calendar's own switches: a dark pill track with a white pill in it. */
-.cal-cards .cal-toolbar .cal-seg {
-  padding: 4px;
-  border-color: var(--cal-seg-border);
-  border-radius: 999px;
-  background: var(--cal-seg-track);
-}
-
-.cal-cards .cal-toolbar .cal-seg button {
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .cal-cards .cal-toolbar .cal-seg button:not(.active):not(:disabled):hover {
-    color: #fff;
-  }
-}
-
-.cal-cards .cal-toolbar .cal-seg button.active {
-  background: #fff;
-  color: #111113;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-/* ── HUD ─────────────────────────────────────────────────────── */
-
-.cal-cards .cal-hud {
-  padding: 12px 20px;
-  border: none;
-  border-radius: var(--cal-panel-radius);
-  background: var(--cal-sheet);
-  box-shadow: var(--cal-panel-shadow);
-}
-
-.cal-cards .cal-hud-value,
-.cal-cards .cal-hud-week-value {
-  font-family: var(--font-display);
-}
-
-/* ── sheet, day header, grid ─────────────────────────────────── */
-
-.cal-cards .cal-sheet,
-.cal-cards .cal-month {
-  border: none;
-  border-radius: var(--cal-panel-radius);
-  background: var(--cal-sheet);
-  box-shadow: var(--cal-panel-shadow);
-}
+/* ── day header, grid ────────────────────────────────────────── */
 
 /* The header keeps the grid's scrollbar gutter too, so today's band runs
    straight down from its date into its column. */
@@ -330,7 +224,6 @@
 /* A user-built gradient wins over the fill, done or not, as it does in the
    classic rules. */
 .cal-cards .cal-block.task-color-flow,
-.cal-cards .cal-backlog-card.task-color-flow,
 .cal-cards .cal-chip.task-color-flow {
   background-image: var(--task-gradient);
 }
@@ -526,93 +419,6 @@
   margin-top: 0;
 }
 
-/* ── hover and reminder cards ────────────────────────────────── */
-
-.cal-cards .cal-hover-card {
-  border-radius: 16px;
-  border: 1px solid var(--cal-pop-border);
-  background: var(--cal-pop-bg);
-  color: var(--cal-pop-ink);
-  box-shadow: var(--cal-pop-shadow);
-  padding: 11px 13px;
-}
-
-.cal-cards .cal-hover-card-head {
-  gap: 7px;
-  color: var(--cal-pop-ink);
-}
-
-/* The task's colour, as the dot in front of its name. */
-.cal-cards .cal-hover-card-head::before {
-  content: '';
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 0.4em;
-  border-radius: 50%;
-  background: var(--task-color, #3498db);
-}
-
-.cal-cards .cal-hover-card-focus {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-.cal-cards .cal-hover-card-focus-title span {
-  color: var(--cal-pop-ink);
-}
-
-.cal-cards .cal-hover-card-motivation,
-.cal-cards .cal-hover-card-time,
-.cal-cards .cal-hover-card-desc,
-.cal-cards .cal-hover-card .cal-hover-deadline {
-  color: var(--cal-pop-dim);
-}
-
-/* Dark like the block's hover card; the edge turned towards the rail it
-   belongs to carries the reminder's colour. */
-.cal-cards .cal-reminder-detail-card {
-  border: 1px solid var(--cal-pop-border);
-  border-radius: 14px;
-  background: var(--cal-pop-bg);
-  color: var(--cal-pop-ink);
-  box-shadow: var(--cal-pop-shadow);
-  padding: 10px 12px;
-}
-
-.cal-cards .cal-reminder-detail-card.right {
-  box-shadow: inset 3px 0 0 var(--task-color, #3498db), var(--cal-pop-shadow);
-}
-
-.cal-cards .cal-reminder-detail-card.left {
-  box-shadow: inset -3px 0 0 var(--task-color, #3498db), var(--cal-pop-shadow);
-}
-
-.cal-cards .cal-reminder-detail-card.below {
-  box-shadow: inset 0 3px 0 var(--task-color, #3498db), var(--cal-pop-shadow);
-}
-
-.cal-cards .cal-reminder-detail-card.above {
-  box-shadow: inset 0 -3px 0 var(--task-color, #3498db), var(--cal-pop-shadow);
-}
-
-.cal-cards .cal-reminder-detail-card.expired {
-  border-style: dashed;
-}
-
-.cal-cards .cal-gap-detail-card {
-  background: color-mix(in srgb, var(--accent-gold) 12%, var(--cal-pop-bg));
-}
-
-.cal-cards .cal-reminder-detail-name {
-  color: var(--cal-pop-ink);
-}
-
-.cal-cards .cal-reminder-detail-time,
-.cal-cards .cal-reminder-detail-desc,
-.cal-cards .cal-reminder-detail-desc.empty {
-  color: var(--cal-pop-dim);
-}
-
 /* ── now line & lead band ────────────────────────────────────── */
 
 /* An ink hairline with a short bar across its start, like a pin in the day. */
@@ -722,71 +528,6 @@
 .cal-cards .cal-chip-name {
   color: inherit;
   font-weight: 600;
-}
-
-/* ── backlog rail ────────────────────────────────────────────── */
-
-.cal-cards .cal-backlog {
-  gap: 8px;
-  border-color: transparent;
-  border-radius: var(--cal-panel-radius);
-  background: var(--cal-sheet);
-  box-shadow: var(--cal-panel-shadow);
-  padding: 12px;
-}
-
-.cal-cards .cal-backlog.drop-target {
-  background: var(--accent-dim, rgba(52, 152, 219, 0.15));
-  border-color: var(--accent, #3498db);
-  border-style: dashed;
-}
-
-.cal-cards .cal-backlog-head h3 {
-  font-family: var(--font-display);
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--cal-ink);
-}
-
-/* Same dark pill track as the toolbar switches. */
-.cal-cards .cal-backlog-tabs {
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--cal-seg-border);
-  border-radius: 999px;
-  background: var(--cal-seg-track);
-}
-
-.cal-cards .cal-backlog-tabs button {
-  padding: 5px 4px;
-  border: 0;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.72);
-  font-weight: 500;
-  transition: background-color 150ms ease, color 150ms ease;
-}
-
-.cal-cards .cal-backlog-tabs button.active {
-  background: #fff;
-  color: #111113;
-  font-weight: 600;
-}
-
-.cal-cards .cal-backlog-list {
-  gap: 6px;
-}
-
-.cal-cards .cal-backlog-card {
-  gap: 7px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--card-fill);
-  color: var(--cal-card-ink);
-  font-size: 0.78rem;
-}
-
-.cal-cards .cal-backlog-card .cal-chip-time {
-  font-weight: 500;
 }
 
 /* ── timeline ────────────────────────────────────────────────── */
@@ -955,10 +696,6 @@
 /* ── phones ──────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  .cal-cards .cal-title {
-    font-size: 1.15rem;
-  }
-
   /* Narrow columns: the weekday drops under the number. */
   .cal-cards .cal-day-head {
     flex-direction: column;

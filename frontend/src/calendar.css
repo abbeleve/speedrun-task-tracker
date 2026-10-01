@@ -1,5 +1,54 @@
 /* ===== Calendar — the wall-clock plan ===== */
 
+/* The page around the sheet: white (or near-black) rounded panels without
+   rules, dark pill switches, and dark popovers in both themes. What is drawn
+   on the sheet itself is classic here and the card design in
+   calendarCards.css (see calendarDesign.ts). */
+:root,
+[data-theme="dark"] {
+  --cal-sheet: var(--bg-secondary);
+  --cal-ink: #f4f4f5;
+  --cal-ink-inverse: #111113;
+  --cal-panel-radius: 22px;
+  --cal-panel-shadow: none;
+  --cal-pop-bg: #2a2b30;
+  --cal-pop-ink: #f4f4f5;
+  --cal-pop-dim: #a1a1aa;
+  --cal-pop-border: rgba(255, 255, 255, 0.08);
+  --cal-pop-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55);
+  --cal-seg-track: #0d0d0f;
+  --cal-seg-border: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] {
+  --cal-sheet: #ffffff;
+  --cal-ink: #111113;
+  --cal-ink-inverse: #ffffff;
+  --cal-panel-shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 8px 24px -12px rgba(16, 16, 24, 0.12);
+  --cal-pop-bg: #1c1c1f;
+  --cal-pop-border: transparent;
+  --cal-seg-track: #18181b;
+  --cal-seg-border: transparent;
+}
+
+/* A card's fill: the task's own hue, lifted to a bright pastel so dark ink
+   always reads on it. Browsers without relative colours get a tint instead.
+   The backlog always uses it; the sheet's blocks and chips only in the card
+   design. */
+.cal-block,
+.cal-backlog-card,
+.cal-chip {
+  --card-fill: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
+}
+
+@supports (color: oklch(from red l c h)) {
+  .cal-block,
+  .cal-backlog-card,
+  .cal-chip {
+    --card-fill: oklch(from var(--task-color, #3498db) clamp(0.8, l, 0.9) min(c, 0.16) h);
+  }
+}
+
 .cal-page {
   display: flex;
   flex-direction: column;
@@ -27,10 +76,13 @@
 }
 
 .cal-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-left: 6px;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--cal-ink);
+  margin-left: 10px;
   text-transform: capitalize;
   white-space: nowrap;
   overflow: hidden;
@@ -38,11 +90,11 @@
 }
 
 .cal-btn {
-  background: var(--bg-secondary);
+  background: var(--cal-sheet);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
+  border-radius: 999px;
+  padding: 6px 14px;
   font-family: var(--font-sans);
   font-size: 0.85rem;
   cursor: pointer;
@@ -63,15 +115,15 @@
 }
 
 .cal-btn--icon {
-  padding: 6px 10px;
+  padding: 6px 11px;
   line-height: 1;
   font-size: 1rem;
 }
 
 .cal-btn--primary {
-  background: var(--accent-blue);
-  border-color: var(--accent-blue);
-  color: #fff;
+  background: var(--cal-ink);
+  border-color: var(--cal-ink);
+  color: var(--cal-ink-inverse);
   font-weight: 600;
 }
 
@@ -131,6 +183,32 @@
   box-shadow: var(--shadow-pill);
 }
 
+/* The calendar's own switches: a dark pill track with a white pill in it. */
+.cal-toolbar .cal-seg {
+  padding: 4px;
+  border-color: var(--cal-seg-border);
+  border-radius: 999px;
+  background: var(--cal-seg-track);
+}
+
+.cal-toolbar .cal-seg button {
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-toolbar .cal-seg button:not(.active):not(:disabled):hover {
+    color: #fff;
+  }
+}
+
+.cal-toolbar .cal-seg button.active {
+  background: #fff;
+  color: #111113;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 /* ── HUD: the overtake read-out ──────────────────────────────── */
 
 /* The product's headline number. It is the largest type on the page and the
@@ -140,10 +218,10 @@
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  padding: 12px 20px;
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
 }
 
 .cal-hud-main {
@@ -160,7 +238,7 @@
 }
 
 .cal-hud-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: clamp(1.75rem, 2.4vw, 2.25rem);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -182,7 +260,7 @@
 }
 
 .cal-hud-week-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -225,9 +303,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
   overflow: hidden;
 }
 
@@ -905,12 +983,12 @@
 .cal-hover-card {
   position: fixed;
   z-index: 50;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--task-color, #3498db);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow);
-  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--cal-pop-border);
+  background: var(--cal-pop-bg);
+  color: var(--cal-pop-ink);
+  box-shadow: var(--cal-pop-shadow);
+  padding: 11px 13px;
   pointer-events: none;
   animation: cal-hover-card-in 140ms ease-out both;
   /* The name/description/time must show in full — this only guards against
@@ -932,16 +1010,27 @@
 .cal-hover-card-head {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 7px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
+}
+
+/* The task's colour, as the dot in front of its name. */
+.cal-hover-card-head::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.4em;
+  border-radius: 50%;
+  background: var(--task-color, #3498db);
 }
 
 .cal-hover-card-focus {
   margin: -1px -2px 9px;
   padding: 3px 2px 9px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .cal-hover-card-focus-title {
@@ -953,14 +1042,14 @@
 }
 
 .cal-hover-card-focus-title span {
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .cal-hover-card-motivation {
   margin-top: 4px;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-size: 0.73rem;
   font-style: italic;
   line-height: 1.35;
@@ -975,14 +1064,14 @@
 .cal-hover-card-time {
   margin-top: 3px;
   font-size: 0.72rem;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-variant-numeric: tabular-nums;
 }
 
 .cal-hover-card-desc {
   margin-top: 5px;
   font-size: 0.74rem;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1015,24 +1104,31 @@
   stroke-width: 1.5;
 }
 
+.cal-hover-card .cal-hover-deadline {
+  color: var(--cal-pop-dim);
+}
+
+/* Dark like the block's hover card; the edge turned towards the rail it
+   belongs to carries the reminder's colour. */
 .cal-reminder-detail-card {
   position: fixed;
   z-index: 49;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow);
-  padding: 9px 10px;
+  border: 1px solid var(--cal-pop-border);
+  border-radius: 14px;
+  background: var(--cal-pop-bg);
+  color: var(--cal-pop-ink);
+  box-shadow: var(--cal-pop-shadow);
+  padding: 10px 12px;
   pointer-events: none;
   animation: cal-hover-card-in 140ms ease-out both;
 }
 
 .cal-reminder-detail-card.right {
-  border-left: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 3px 0 0 var(--task-color, #3498db), var(--cal-pop-shadow);
 }
 
 .cal-reminder-detail-card.left {
-  border-right: 3px solid var(--task-color, #3498db);
+  box-shadow: inset -3px 0 0 var(--task-color, #3498db), var(--cal-pop-shadow);
 }
 
 .cal-reminder-detail-card.expired {
@@ -1041,7 +1137,7 @@
 }
 
 .cal-gap-detail-card {
-  background: color-mix(in srgb, var(--accent-gold) 7%, var(--bg-secondary));
+  background: color-mix(in srgb, var(--accent-gold) 12%, var(--cal-pop-bg));
 }
 
 .cal-reminder-detail-main {
@@ -1058,7 +1154,7 @@
 .cal-reminder-detail-name {
   flex: 1;
   min-width: 0;
-  color: var(--text-primary);
+  color: var(--cal-pop-ink);
   font-size: 0.8rem;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -1066,14 +1162,14 @@
 
 .cal-reminder-detail-time {
   margin: 3px 0 0 22px;
-  color: var(--text-dim);
+  color: var(--cal-pop-dim);
   font: 0.68rem var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .cal-reminder-detail-desc {
   margin: 5px 0 0 22px;
-  color: var(--text-secondary);
+  color: var(--cal-pop-dim);
   font-size: 0.73rem;
   line-height: 1.35;
   white-space: pre-wrap;
@@ -1081,7 +1177,8 @@
 }
 
 .cal-reminder-detail-desc.empty {
-  color: var(--text-dim);
+  color: var(--cal-pop-dim);
+  opacity: 0.7;
   font-style: italic;
 }
 
@@ -1134,9 +1231,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
   overflow: hidden;
 }
 
@@ -1278,11 +1375,12 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  padding: 8px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--cal-panel-radius);
+  background: var(--cal-sheet);
+  box-shadow: var(--cal-panel-shadow);
+  padding: 12px;
   min-height: 0;
   transition: background 0.1s, border-color 0.1s;
 }
@@ -1290,6 +1388,7 @@
 .cal-backlog.drop-target {
   background: var(--accent-dim, rgba(52, 152, 219, 0.15));
   border-color: var(--accent, #3498db);
+  border-style: dashed;
 }
 
 .cal-backlog-head {
@@ -1299,31 +1398,40 @@
 }
 
 .cal-backlog-head h3 {
-  font-size: 0.85rem;
-  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cal-ink);
 }
 
+/* Same dark pill track as the toolbar switches. */
 .cal-backlog-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--cal-seg-border);
+  background: var(--cal-seg-track);
 }
 
 .cal-backlog-tabs button {
   flex: 1;
-  padding: 7px 4px;
+  padding: 5px 4px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.72);
   font: inherit;
   font-size: 0.76rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .cal-backlog-tabs button.active {
-  border-bottom-color: var(--accent-blue);
-  color: var(--text-primary);
-  font-weight: 700;
+  background: #fff;
+  color: #111113;
+  font-weight: 600;
 }
 
 .cal-backlog-hint {
@@ -1335,7 +1443,7 @@
 .cal-backlog-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   overflow-y: auto;
   min-height: 0;
 }
@@ -1343,13 +1451,26 @@
 .cal-backlog-card {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 6px;
-  border-radius: 4px;
-  background: var(--task-color, #3498db);
-  color: var(--text-primary);
-  font-size: 0.76rem;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--card-fill);
+  color: #18181b;
+  font-size: 0.78rem;
   cursor: grab;
+}
+
+/* The chip parts are dressed for the month grid; on a backlog card they take
+   the card's own ink. */
+.cal-backlog-card .cal-chip-name {
+  color: inherit;
+  font-weight: 600;
+}
+
+.cal-backlog-card .cal-chip-time {
+  color: inherit;
+  opacity: 0.7;
+  font-weight: 500;
 }
 
 .cal-backlog-card:active {
@@ -2569,7 +2690,7 @@
   }
 
   .cal-title {
-    font-size: 0.95rem;
+    font-size: 1.15rem;
   }
 
   .cal-seg--views {
@@ -3182,11 +3303,11 @@
 }
 
 .cal-reminder-detail-card.below {
-  border-top: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 0 3px 0 var(--task-color, #3498db), var(--cal-pop-shadow);
 }
 
 .cal-reminder-detail-card.above {
-  border-bottom: 3px solid var(--task-color, #3498db);
+  box-shadow: inset 0 -3px 0 var(--task-color, #3498db), var(--cal-pop-shadow);
 }
 
 /* Peeks: a hovered timeline row opens the hover card (.cal-hover-card) of

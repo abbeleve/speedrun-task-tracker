@@ -1,8 +1,9 @@
-// How the calendar is drawn — the same grid and gestures either way.
+// How the calendar sheet is drawn — the same grid and gestures either way,
+// inside the same toolbar, HUD and backlog.
 //
-//   classic — the original look: ruled columns, small solid blocks
-//   cards   — a borderless sheet with big day numbers and every block a
-//             rounded pastel card (calendarCards.css)
+//   classic — the original sheet: ruled columns, small solid blocks
+//   cards   — no rules, big day numbers and every block a rounded pastel
+//             card (calendarCards.css)
 //
 // The choice belongs to the account (/api/prefs), so it follows the user to
 // another device; a copy is kept in localStorage only so the calendar opens
