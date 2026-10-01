@@ -12,7 +12,7 @@
   --cal-today: rgba(150, 136, 255, 0.075);
   --cal-day-dim: #4b4e57;
   --cal-card-ink: #18181b;
-  --cal-card-radius: 16px;
+  --cal-card-radius: 22px;
 }
 
 [data-theme="light"] .cal-cards {
@@ -504,8 +504,8 @@
 
 .cal-cards .cal-chip {
   background: var(--card-fill);
-  border-radius: 8px;
-  padding: 2px 7px;
+  border-radius: 999px;
+  padding: 2px 8px;
   font-weight: 500;
   color: var(--cal-card-ink);
 }
@@ -650,8 +650,8 @@
 .cal-cards .cal-block--across {
   gap: 1px;
   border-width: 0 2px;
-  padding: 3px 10px;
-  border-radius: 14px;
+  padding: 3px 12px;
+  border-radius: 20px;
   box-shadow: none;
 }
 

@@ -31,22 +31,13 @@
   --cal-seg-border: transparent;
 }
 
-/* A card's fill: the task's own hue, lifted to a bright pastel so dark ink
-   always reads on it. Browsers without relative colours get a tint instead.
-   The backlog always uses it; the sheet's blocks and chips only in the card
+/* A card's fill: the task's own colour, exactly as it was picked. The
+   backlog always uses it; the sheet's blocks and chips only in the card
    design. */
 .cal-block,
 .cal-backlog-card,
 .cal-chip {
-  --card-fill: color-mix(in srgb, var(--task-color, #3498db) 68%, white);
-}
-
-@supports (color: oklch(from red l c h)) {
-  .cal-block,
-  .cal-backlog-card,
-  .cal-chip {
-    --card-fill: oklch(from var(--task-color, #3498db) clamp(0.8, l, 0.9) min(c, 0.16) h);
-  }
+  --card-fill: var(--task-color, #3498db);
 }
 
 .cal-page {
@@ -1452,8 +1443,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  padding: 8px 12px;
+  border-radius: 16px;
   background: var(--card-fill);
   color: #18181b;
   font-size: 0.78rem;
