@@ -8,7 +8,7 @@ import type { ActivityChart } from './activityChart';
 import type { CalLayout } from './calendarLayout';
 import type { ColorPreset } from './colorPresets';
 import type { SleepData } from './sleep';
-import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
+import type { DayState, DayStats, Deadline, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
 
@@ -161,6 +161,21 @@ export async function loadDayDates(): Promise<string[]> {
 
 export async function loadDays(): Promise<Record<string, DayState>> {
   return apiFetch('/days');
+}
+
+// Deadlines belong to the account, not to the day holding their work blocks.
+export async function loadDeadlines(): Promise<Deadline[]> {
+  return apiFetch('/deadlines');
+}
+
+export async function saveDeadline(deadline: Deadline): Promise<void> {
+  await apiFetch(`/deadlines/${encodeURIComponent(deadline.id)}`, {
+    method: 'PUT', body: JSON.stringify(deadline),
+  });
+}
+
+export async function deleteDeadline(id: string): Promise<void> {
+  await apiFetch(`/deadlines/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 // ── Sleep log ──────────────────────────────────────────────────────

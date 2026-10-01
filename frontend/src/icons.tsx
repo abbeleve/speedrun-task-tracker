@@ -41,6 +41,12 @@ export const IconCalendar = (p: IconProps) => (
   </Icon>
 );
 
+export const IconFlag = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0" />
+  </Icon>
+);
+
 // The calendar's two layouts, for the switch in its toolbar: a column per day
 // with blocks stacked down it, or a row per day with blocks laid along it.
 export const IconLayoutColumns = (p: IconProps) => (

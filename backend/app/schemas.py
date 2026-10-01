@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -98,6 +99,17 @@ class DayTask(BaseModel):
     # Optional link to a habit: completing this task grows that habit's daily
     # progress (time habits add the block's duration; count habits add 1).
     habitId: Optional[str] = None
+    deadlineId: Optional[str] = None
+
+
+class DeadlineIn(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=200, pattern=r'\S')
+    description: Optional[str] = None
+    dueDay: date
+    # Local minutes from midnight; None = the whole due day is available.
+    dueTime: Optional[int] = Field(default=None, ge=0, lt=1440)
+    completedAt: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class RunIn(BaseModel):

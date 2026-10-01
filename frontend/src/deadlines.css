@@ -1,0 +1,77 @@
+/* A deadline is a milestone, never a work slot or an automatic reminder. */
+.cal-deadlines-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.cal-upcoming-deadlines { display: flex; gap: 8px; flex-wrap: wrap; flex: none; }
+.cal-upcoming-deadline { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 0; max-width: 420px; border: 1px solid var(--border); border-left: 3px solid var(--deadline-tone); border-radius: var(--radius); color: var(--text-primary); background: var(--bg-secondary); padding: 7px 9px; text-align: left; font: inherit; cursor: pointer; }
+.cal-upcoming-deadline-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.cal-upcoming-deadline-copy strong { font-size: .78rem; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cal-upcoming-deadline-copy small { font-size: .68rem; color: var(--text-secondary); }
+.cal-upcoming-deadline-status { max-width: 135px; font-size: .68rem; color: var(--deadline-tone); }
+.cal-deadline-flag, .cal-task-deadline-badge, .cal-upcoming-deadline, .cal-month-deadline { --deadline-tone: var(--text-secondary); }
+.cal-deadline-flag.soon, .cal-task-deadline-badge.soon, .cal-upcoming-deadline.soon, .cal-month-deadline.soon { --deadline-tone: color-mix(in srgb, var(--accent-gold) 60%, var(--text-primary)); }
+.cal-deadline-flag.overdue, .cal-task-deadline-badge.overdue, .cal-upcoming-deadline.overdue, .cal-month-deadline.overdue,
+.cal-deadline-flag.plan-late, .cal-task-deadline-badge.plan-late, .cal-upcoming-deadline.plan-late { --deadline-tone: color-mix(in srgb, var(--accent-red) 75%, var(--text-primary)); }
+.cal-deadline-flag.done, .cal-task-deadline-badge.done, .cal-month-deadline.done { --deadline-tone: var(--text-secondary); }
+.cal-deadline-flag { position: absolute; z-index: 8; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; border: 0; border-radius: 4px; padding: 4px; font: inherit; font-size: .68rem; color: var(--deadline-tone); background: var(--bg-secondary); cursor: pointer; min-height: 22px; white-space: nowrap; }
+.cal-deadline-flag::before { content: ''; position: absolute; right: 100%; top: 50%; width: 8px; border-top: 2px solid var(--deadline-tone); }
+.cal-deadline-flag.across { transform: translateX(-50%); }
+.cal-deadline-flag.across::before { right: 50%; top: auto; bottom: 100%; height: 6px; width: 0; border-top: 0; border-left: 2px solid var(--deadline-tone); }
+.cal-deadline-flag.across.date-only { transform: none; }
+.cal-deadline-flag.at-start:not(.across) { transform: none; }
+.cal-deadline-flag.at-start:not(.across)::before { top: 0; }
+.cal-deadline-flag.at-end:not(.across) { transform: translateY(-100%); }
+.cal-deadline-flag.at-end:not(.across)::before { top: auto; bottom: 0; }
+.cal-deadline-flag.across.at-start { transform: none; }
+.cal-deadline-flag.across.at-start::before { right: auto; left: 0; }
+.cal-deadline-flag.across.at-end { transform: translateX(-100%); }
+.cal-deadline-flag.across.at-end::before { right: 0; }
+.cal-deadline-flag.date-only::before { display: none; }
+.cal-col.has-deadlines .cal-col-body { right: calc(var(--deadline-inset) + 28px); }
+.cal-page--day .cal-col.has-deadlines .cal-col-body, .cal-page--3day .cal-col.has-deadlines .cal-col-body { right: calc(var(--deadline-inset) + 60px); }
+.cal-page--week .cal-deadline-flag:not(.across):not(.date-only) .cal-deadline-flag-label { display: none; }
+.cal-date-deadlines { display: flex; flex: none; border-bottom: 1px solid var(--border); min-height: 29px; }
+.cal-date-deadlines > div { flex: 1; min-width: 0; display: flex; justify-content: center; }
+.cal-date-deadlines .cal-deadline-flag { position: static; transform: none; }
+.cal-task-deadline-badge { display: inline-flex; align-items: center; gap: 2px; flex: none; min-width: 0; max-width: 105px; padding: 1px 3px; border: 0; border-radius: 3px; font: inherit; font-size: .62rem; color: var(--deadline-tone); background: var(--bg-secondary); cursor: pointer; }
+.cal-task-deadline-badge span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cal-task-deadline-badge.icon-only span { display: none; }
+.cal-block.deadline-compact .cal-block-emoji { display: none; }
+.cal-block--across.compact .cal-task-deadline-badge { position: static; padding: 0; }
+.cal-block--across.compact .cal-task-deadline-badge svg { width: 10px; height: 10px; }
+.cal-hover-deadline { display: flex; gap: 5px; align-items: center; font-size: .75rem; color: var(--text-secondary); margin-top: 6px; }
+.cal-hover-deadline svg { flex: none; }
+.cal-month-deadline { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; text-align: left; border: 0; border-left: 2px solid var(--deadline-tone); border-radius: 3px; background: var(--bg-secondary); color: var(--text-primary); padding: 4px; cursor: pointer; }
+.cal-month-deadline > span { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .7rem; }
+.cal-month-deadline > small { color: var(--deadline-tone); font-size: .64rem; white-space: nowrap; }
+.cal-month-deadline-more { border: 0; background: transparent; color: var(--text-secondary); text-align: left; font: inherit; font-size: .68rem; cursor: pointer; }
+.cal-month-deadline > svg { color: var(--deadline-tone); flex: none; }
+.cal-deadline-guides { position: fixed; z-index: 9; pointer-events: none; overflow: hidden; }
+.cal-deadline-guides path { fill: none; stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; }
+.cal-deadline-backdrop { z-index: 130; }
+.cal-deadline-modal { display: flex; flex-direction: column; gap: 12px; }
+.cal-deadline-modal h3 { margin: 0; flex: 1; font-size: 1rem; }
+.cal-deadline-fields { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cal-deadline-status { margin: 0; color: var(--text-secondary); font-size: .8rem; }
+.cal-deadline-status.overdue { color: var(--accent-red); }
+.cal-deadline-linked h4 { margin: 0 0 8px; font-size: .8rem; font-weight: 500; }
+.cal-deadline-linked-task, .cal-deadline-list-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; font: inherit; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); text-align: left; cursor: pointer; margin-bottom: 6px; }
+.cal-deadline-linked-task > span { min-width: 0; overflow-wrap: anywhere; }
+.cal-deadline-linked-task small { color: var(--text-secondary); flex: none; }
+.cal-deadline-list-item > span:first-of-type { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cal-deadline-list-item strong { font-size: .83rem; }
+.cal-deadline-list-item small, .cal-deadline-list-item > span:last-child { color: var(--text-secondary); font-size: .75rem; }
+.cal-deadline-list-item.overdue > span:last-child { color: var(--accent-red); }
+.cal-deadline-list-item > svg { flex: none; }
+.cal-deadline-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.cal-deadline-link-row { align-items: end; }
+.cal-deadline-error { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--accent-red); font-size: .8rem; }
+@media (max-width: 600px) {
+  .cal-upcoming-deadline { max-width: none; flex-basis: 100%; padding: 5px 8px; }
+  .cal-upcoming-deadline-copy { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cal-upcoming-deadline-status { max-width: 110px; }
+  .cal-month-deadline > small { display: none; }
+  .cal-task-deadline-badge:not(.icon-only) { max-width: 65px; }
+}
+@media (pointer: coarse) {
+  .cal-deadline-flag::after { content: ''; position: absolute; inset: -11px; }
+  .cal-upcoming-deadline, .cal-deadline-list-item, .cal-deadline-linked-task { min-height: 44px; }
+}

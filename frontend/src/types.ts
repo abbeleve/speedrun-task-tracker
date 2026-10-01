@@ -77,6 +77,17 @@ export interface Task {
   // grows that habit's daily progress: a time habit gains the block's duration,
   // a count habit gains 1.
   habitId?: string | null;
+  // Deliverable shared across days; work completion never closes it.
+  deadlineId?: string | null;
+}
+
+export interface Deadline {
+  id: string;
+  name: string;
+  description: string | null;
+  dueDay: string; // local YYYY-MM-DD
+  dueTime: number | null; // minutes from midnight; null = date only
+  completedAt: number | null; // epoch ms, explicitly closed by the user
 }
 
 // Minutes from midnight a freshly planned task defaults to, when nothing

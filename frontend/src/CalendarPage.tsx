@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Habit, Task, TaskTemplate, TaskType } from './types';
+import type { Deadline, Habit, Task, TaskTemplate, TaskType } from './types';
 import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
 import * as api from './api';
 import type { CalLayout } from './calendarLayout';
 import { adoptServerLayout, cacheLayout, cachedLayout } from './calendarLayout';
 import type { DayStore } from './dayStore';
-import { IconLayoutColumns, IconLayoutRows } from './icons';
+import type { DeadlineStore } from './deadlineStore';
+import { deadlineClusters, deadlineLabel, deadlinePlanLate, deadlineState, openDeadlines } from './deadlines';
+import DeadlineDialog, { DeadlineList } from './DeadlineDialog';
+import DeadlineGuides from './DeadlineGuides';
+import { IconFlag, IconLayoutColumns, IconLayoutRows } from './icons';
 import type { Chain, DaySegment, ScheduleGap } from './schedule';
 import type { Box } from './timeline';
 import {
@@ -95,6 +99,7 @@ export type CalView = 'day' | '3day' | 'week' | 'month';
 
 interface CalendarPageProps {
   store: DayStore;
+  deadlineStore: DeadlineStore;
   now: number;
   credit: CreditSnapshot;
   chains: Chain[];
@@ -256,6 +261,7 @@ type Gesture = (
 
 function CalendarPage({
   store,
+  deadlineStore,
   now,
   credit,
   chains,
@@ -306,6 +312,13 @@ function CalendarPage({
     return saved === null ? !isPhoneScreen() : saved !== 'false';
   });
   const [backlogTab, setBacklogTab] = useState<'tasks' | 'templates'>('tasks');
+  const [deadlineEditor, setDeadlineEditor] = useState<{
+    deadline: Deadline; isNew: boolean; onCreated?: (id: string) => void;
+  } | null>(null);
+  // [] opens all deadlines; a cluster opens only its own entries.
+  const [deadlinePicker, setDeadlinePicker] = useState<string[] | null>(null);
+  const [hoveredDeadlineId, setHoveredDeadlineId] = useState<string | null>(null);
+  const deadlineFlagRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const [templates, setTemplates] = useState<TaskTemplate[] | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
@@ -516,6 +529,19 @@ function CalendarPage({
 
   const today = todayKey();
   const tasks = store.tasks;
+  const deadlines = deadlineStore.deadlines;
+  const deadlineById = useMemo(() => new Map(deadlines.map((item) => [item.id, item])), [deadlines]);
+  const pendingDeadlines = useMemo(() => openDeadlines(deadlines), [deadlines]);
+  const latePlans = useMemo(() => new Set(deadlines.filter((item) => deadlinePlanLate(item, tasks)).map((item) => item.id)), [deadlines, tasks]);
+  const openDeadline = (deadline: Deadline) => {
+    setDeadlinePicker(null);
+    setHoveredDeadlineId(null);
+    setDeadlineEditor({ deadline, isNew: false });
+  };
+  const createDeadline = (dueDay = anchor, name = '', onCreated?: (id: string) => void) => {
+    setDeadlinePicker(null);
+    setDeadlineEditor({ deadline: { id: `d-${newTaskId()}`, name, description: null, dueDay, dueTime: null, completedAt: null }, isNew: true, onCreated });
+  };
   const reminderTasks = useMemo(() => tasks.filter(isReminder), [tasks]);
   // Everything that is drawn as a block — reminders get rails of their own.
   const blockTasks = useMemo(() => tasks.filter((t) => !isReminder(t)), [tasks]);
@@ -541,11 +567,13 @@ function CalendarPage({
       reminderRailCount(daySegments(reminderTasks, day, minBlockMin))
     );
     const rows = layoutRows(
-      lanes.map((n, i) => rowContentHeight(n, rails[i])),
+      lanes.map((n, i) => rowContentHeight(n, rails[i])
+        + (deadlines.some((item) => item.dueDay === visibleDays[i] && item.dueTime !== null) ? 28 : 0)
+        + (deadlines.some((item) => item.dueDay === visibleDays[i] && item.dueTime === null) ? 28 : 0)),
       Math.max(0, scrollerSize.height - TL_RULER_PX)
     );
     return { lanes, rails, rows };
-  }, [horizontal, visibleDays, blockTasks, reminderTasks, minBlockMin, scrollerSize.height]);
+  }, [horizontal, visibleDays, blockTasks, reminderTasks, deadlines, minBlockMin, scrollerSize.height]);
   // Read by the scroll-into-view effect below without making it re-run (and
   // jump the sheet) on every edit that changes a row's height.
   const timelineRef = useRef(timeline);
@@ -1987,6 +2015,49 @@ function CalendarPage({
     };
   };
 
+  const pickDeadline = (items: Deadline[]) => {
+    if (items.length === 1) openDeadline(items[0]);
+    else setDeadlinePicker(items.map((item) => item.id));
+  };
+  const deadlineBadge = (task: Task, compact = false) => {
+    const deadline = task.deadlineId ? deadlineById.get(task.deadlineId) : null;
+    if (!deadline) return null;
+    const label = `${deadline.name} · ${deadlineLabel(deadline)} · ${deadline.completedAt !== null ? 'закрыт' : deadlineState(deadline, now) === 'overdue' ? 'просрочен' : 'открыт'}`;
+    return <button type="button" className={`cal-task-deadline-badge ${deadlineState(deadline, now)}${compact ? ' icon-only' : ''}${latePlans.has(deadline.id) ? ' plan-late' : ''}`}
+      aria-label={label} title={label} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openDeadline(deadline); }}>
+      <IconFlag size={12} /><span>{deadline.completedAt !== null ? '✓' : deadlineLabel(deadline, deadline.dueDay !== task.day)}</span>
+    </button>;
+  };
+  const deadlineFlag = (items: Deadline[], style: React.CSSProperties, across: boolean, dateOnly = false) => {
+    const deadline = items[0];
+    const states = items.map((item) => deadlineState(item, now));
+    const state = states.every((value) => value === 'done') ? 'done' : states.includes('overdue') ? 'overdue' : states.includes('soon') ? 'soon' : 'open';
+    const edge = dateOnly ? '' : deadline.dueTime! < (across ? 40 : 12) / pxPerMin ? 'at-start' : deadline.dueTime! > DAY_MIN - (across ? 40 : 12) / pxPerMin ? 'at-end' : '';
+    const label = items.map((item) => `${item.name} · ${deadlineLabel(item)} · ${item.completedAt !== null ? 'закрыт' : deadlineState(item, now) === 'overdue' ? 'просрочен' : latePlans.has(item.id) ? 'план выходит за срок' : 'открыт'}`).join('\n');
+    return <button key={items.map((item) => item.id).join(':')} type="button"
+      ref={(element) => { for (const item of items) { if (element) deadlineFlagRefs.current.set(item.id, element); else deadlineFlagRefs.current.delete(item.id); } }}
+      className={`cal-deadline-flag ${across ? 'across' : ''} ${dateOnly ? 'date-only' : ''} ${edge} ${state}${items.some((item) => latePlans.has(item.id)) ? ' plan-late' : ''}`}
+      style={style} title={label} aria-label={label} data-deadline-edge={edge}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerEnter={(event) => { if (event.pointerType === 'mouse') setHoveredDeadlineId(deadline.id); }}
+      onPointerLeave={() => setHoveredDeadlineId(null)} onFocus={() => setHoveredDeadlineId(deadline.id)} onBlur={() => setHoveredDeadlineId(null)}
+      onClick={(event) => { event.stopPropagation(); pickDeadline(items); }}>
+      <IconFlag size={14} /><span className="cal-deadline-flag-label">{items.length > 1 ? items.length : deadline.completedAt !== null ? '✓' : dateOnly ? 'Весь день' : hhmm(deadline.dueTime!)}</span>
+    </button>;
+  };
+  const renderDeadlineFlags = (day: string, across: boolean) => {
+    const dateOnly = deadlines.filter((item) => item.dueDay === day && item.dueTime === null);
+    const reminders = reminderRailCount(daySegments(reminderTasks, day, minBlockMin));
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const markerGap = coarse ? (across ? 96 : 44) : (across ? 80 : 28);
+    return <>
+      {deadlineClusters(deadlines, day, markerGap / pxPerMin).map((cluster) => deadlineFlag(cluster.deadlines,
+        across ? { left: minToPx(cluster.minute), bottom: 10 + reminders * TL_REMINDER_PX + (dateOnly.length ? 28 : 0) }
+          : { top: minToPx(cluster.minute), right: 2 + reminders * 11 }, across))}
+      {across && dateOnly.length > 0 && deadlineFlag(dateOnly, { left: 6, bottom: 10 + reminders * TL_REMINDER_PX }, true, true)}
+    </>;
+  };
+
   // One saved block, in a day column or in a timeline row (`across`). Where
   // it goes and whether its times fit come from `place`, given the length it
   // is drawn at (live while its end is being dragged); its state, its ✓ and
@@ -2027,10 +2098,12 @@ function CalendarPage({
       <div
         key={task.id}
         data-task-id={task.id}
+        data-task-end={seg.endsHere ? "true" : "false"}
         className={[
           'cal-block',
           across ? 'cal-block--across' : '',
           compact ? 'compact' : '',
+          task.deadlineId && deadlineById.has(task.deadlineId) && (!showMeta || compact) ? 'deadline-compact' : '',
           done ? 'done' : '',
           justCompleted ? 'completing' : '',
           active ? 'active' : '',
@@ -2062,6 +2135,7 @@ function CalendarPage({
         <div className="cal-block-head">
           <span className="cal-block-emoji">{task.emoji}</span>
           <span className="cal-block-name">{task.name || 'Без названия'}</span>
+          {deadlineBadge(task, !showMeta || compact)}
           {task.pinned && (
             <span className="cal-block-pin" title="Закреплено — снимите флажок в редакторе, чтобы перенести">
               📌
@@ -2175,7 +2249,8 @@ function CalendarPage({
     return (
       <div
         key={day}
-        className={`cal-col${isToday ? ' today' : ''}`}
+        className={`cal-col${isToday ? ' today' : ''}${deadlines.some((item) => item.dueDay === day && item.dueTime !== null) ? ' has-deadlines' : ''}`}
+        style={{ '--deadline-inset': `${reminderRailCount(daySegments(reminderTasks, day, minBlockMin)) * 11}px` } as React.CSSProperties}
         data-day={day}
         // Hover cards are for a mouse: a tap fires enter events too, and would
         // leave a card standing over the editor it opens.
@@ -2279,6 +2354,7 @@ function CalendarPage({
           />
         ))}
 
+        {renderDeadlineFlags(day, false)}
         <div className="cal-col-body">
         {segments.map((seg) =>
           renderBlock(seg, day, false, (lengthMin) => {
@@ -2751,6 +2827,7 @@ function CalendarPage({
           />
         )}
 
+        {renderDeadlineFlags(day, true)}
         {isToday && renderTimelineNow()}
       </div>
     );
@@ -2845,6 +2922,7 @@ function CalendarPage({
         <div className="cal-hover-card-time">
           {hhmm(task.start ?? 0)}–{wallTime(taskEndMs(task))}
         </div>
+        {task.deadlineId && deadlineById.has(task.deadlineId) && <div className="cal-hover-deadline"><IconFlag size={14} />{deadlineById.get(task.deadlineId)!.name} · {deadlineLabel(deadlineById.get(task.deadlineId)!)}</div>}
         {task.description && (
           <div className="cal-hover-card-desc">{task.description}</div>
         )}
@@ -3261,6 +3339,7 @@ function CalendarPage({
             const sorted = dayTasks
               .filter((t) => !isReminder(t))
               .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+            const dayDeadlines = deadlines.filter((item) => item.dueDay === day).sort((a, b) => Number(a.completedAt !== null) - Number(b.completedAt !== null));
             const endOfDay = dayStartMs(day) + DAY_MIN * MIN_MS;
             const dayCredit = computeCredit(creditGroups(dayTasks), endOfDay);
             // An expired reminder is completed too, and a break can be closed,
@@ -3293,6 +3372,8 @@ function CalendarPage({
                   )}
                 </div>
                 <div className="cal-cell-list">
+                  {dayDeadlines.slice(0, 2).map((item) => <button type="button" key={`deadline-${item.id}`} className={`cal-month-deadline ${deadlineState(item, now)}`} onClick={(event) => { event.stopPropagation(); openDeadline(item); }} title={`${item.name} · ${deadlineLabel(item)}`}><IconFlag size={12} /><span>{item.completedAt !== null ? '✓ ' : ''}{item.name}</span><small>{deadlineLabel(item, false)}</small></button>)}
+                  {dayDeadlines.length > 2 && <button type="button" className="cal-month-deadline-more" onClick={(event) => { event.stopPropagation(); pickDeadline(dayDeadlines); }}>Ещё {dayDeadlines.length - 2} дедлайна</button>}
                   {sorted.slice(0, 3).map((task) => (
                     <button
                       key={task.id}
@@ -3353,7 +3434,7 @@ function CalendarPage({
     selectedTasks.length < 2 ? 'Выдели хотя бы два блока' : 'Эти блоки уже отдельная сессия';
 
   return (
-    <div className="cal-page">
+    <div className={`cal-page cal-page--${view}`}>
       <div className="cal-toolbar">
         <div className="cal-nav">
           <button type="button" className="cal-btn" onClick={() => setAnchor(today)}>
@@ -3377,6 +3458,7 @@ function CalendarPage({
             </button>
           )}
         </div>
+        <button type="button" className="cal-btn cal-deadlines-toggle" disabled={!deadlineStore.ready} onClick={() => setDeadlinePicker([])}><IconFlag size={16} /> Дедлайны{pendingDeadlines.length > 0 ? ` · ${pendingDeadlines.length}` : ''}</button>
         <div className="cal-seg cal-seg--views">
           {(['day', '3day', 'week', 'month'] as CalView[]).map((v) => (
             <button
@@ -3464,6 +3546,20 @@ function CalendarPage({
         </div>
       </div>
 
+      {deadlineStore.error && <div className="cal-deadline-error" role="alert">{deadlineStore.error}<button type="button" className="cal-btn" onClick={() => { void deadlineStore.reload(); }}>Повторить</button></div>}
+      {pendingDeadlines.length > 0 && <div className="cal-upcoming-deadlines" aria-label="Открытые дедлайны">
+        {pendingDeadlines.slice(0, 3).map((deadline) => {
+          const linked = tasks.filter((task) => task.deadlineId === deadline.id);
+          const allDone = linked.length > 0 && linked.every(isDone);
+          const state = deadlineState(deadline, now);
+          return <button type="button" key={deadline.id} className={`cal-upcoming-deadline ${state}${latePlans.has(deadline.id) ? ' plan-late' : ''}`} onClick={() => openDeadline(deadline)}>
+            <IconFlag size={16} /><span className="cal-upcoming-deadline-copy"><strong title={deadline.name}>{deadline.name}</strong><small>{deadlineLabel(deadline)}</small></span>
+            <span className="cal-upcoming-deadline-status">{state === 'overdue' ? 'Просрочен' : latePlans.has(deadline.id) ? 'План выходит за срок' : allDone ? 'Блоки закрыты · дедлайн открыт' : 'Открыт'}</span>
+          </button>;
+        })}
+        {pendingDeadlines.length > 3 && <button type="button" className="cal-btn" onClick={() => setDeadlinePicker([])}>Ещё {pendingDeadlines.length - 3}</button>}
+      </div>}
+
       <div className="cal-body">
         {/* Keyed apart, so flipping the layout mounts a fresh scroller
             instead of reusing the columns' header as the timeline's. */}
@@ -3499,6 +3595,9 @@ function CalendarPage({
                 );
               })}
             </div>
+            {visibleDays.some((day) => deadlines.some((item) => item.dueDay === day && item.dueTime === null)) && <div className="cal-date-deadlines" style={{ paddingLeft: GUTTER_PX }}>
+              {visibleDays.map((day) => <div key={day}>{(() => { const items = deadlines.filter((item) => item.dueDay === day && item.dueTime === null); return items.length ? deadlineFlag(items, {}, false, true) : null; })()}</div>)}
+            </div>}
             {renderGrid()}
           </div>
         )}
@@ -3558,6 +3657,7 @@ function CalendarPage({
                   <span className="cal-chip-emoji">{task.emoji}</span>
                   <span className="cal-chip-name">{task.name}</span>
                   <span className="cal-chip-time">{dur(task.plannedTime)}</span>
+                  {deadlineBadge(task, true)}
                   {task.pinned && <span className="cal-backlog-pin" title="Закреплено">📌</span>}
                   <button
                     type="button"
@@ -3612,6 +3712,7 @@ function CalendarPage({
         </aside>}
       </div>
 
+      <DeadlineGuides key={`${view}-${anchor}-${zoomLenMin}`} deadlineId={hoveredDeadlineId ?? hoverCard?.task.deadlineId ?? (selectedIds.size === 1 ? tasks.find((task) => selectedIds.has(task.id))?.deadlineId : null) ?? null} tasks={tasks} scroller={scrollerRef} flags={deadlineFlagRefs} across={horizontal} />
       {renderHoverCard()}
       {renderDayReminderCard()}
 
@@ -3633,6 +3734,8 @@ function CalendarPage({
             dialog.task.sessionId ? () => leaveSession(dialog.task) : undefined
           }
           habits={habits}
+          deadlines={deadlines}
+          onCreateDeadline={(day, name, onCreated) => createDeadline(day, name, onCreated)}
           onPreview={setPreview}
           onSave={saveFromDialog}
           onDelete={dialog.isNew ? undefined : deleteFromDialog}
@@ -3640,6 +3743,17 @@ function CalendarPage({
           onClose={closeDialog}
         />
       )}
+
+      {deadlinePicker !== null && <DeadlineList deadlines={deadlinePicker.length ? deadlines.filter((item) => deadlinePicker.includes(item.id)) : deadlines} now={now} onOpen={openDeadline} onCreate={() => createDeadline()} onClose={() => setDeadlinePicker(null)} />}
+      {deadlineEditor && <DeadlineDialog key={deadlineEditor.deadline.id} deadline={deadlineEditor.deadline} isNew={deadlineEditor.isNew} tasks={tasks} now={now}
+        onSave={async (deadline) => { await deadlineStore.upsert(deadline); deadlineEditor.onCreated?.(deadline.id); }}
+        onDelete={async () => {
+          await deadlineStore.remove(deadlineEditor.deadline.id);
+          store.patchTasks(tasks.filter((task) => task.deadlineId === deadlineEditor.deadline.id).map((task) => ({ id: task.id, patch: { deadlineId: null } })));
+        }}
+        onOpenTask={(task) => { setDeadlineEditor(null); openDialog(task, false); }}
+        onAddTask={() => { const task = { ...draftTask(anchor, 9 * 60, 60), name: deadlineEditor.deadline.name, deadlineId: deadlineEditor.deadline.id }; setDeadlineEditor(null); openDialog(task, true); }}
+        onClose={() => setDeadlineEditor(null)} />}
 
       {sessionPop && popChain && (
         <SessionPopover

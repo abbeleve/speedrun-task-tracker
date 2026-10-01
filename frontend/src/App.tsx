@@ -9,6 +9,7 @@ import { primeMotivationImages } from './motivation';
 import HomePage from './HomePage';
 import CalendarPage from './CalendarPage';
 import { useDayStore } from './dayStore';
+import { useDeadlines } from './deadlineStore';
 import { useHabits } from './habitStore';
 import type { Chain } from './schedule';
 import {
@@ -47,6 +48,7 @@ import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
 import './App.css';
 import './calendar.css';
+import './deadlines.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
@@ -85,6 +87,7 @@ function wallTime(ms: number): string {
 function App() {
   const { user, logout } = useAuth();
   const store = useDayStore();
+  const deadlines = useDeadlines();
   const habits = useHabits();
 
   const [now, setNow] = useState(() => Date.now());
@@ -742,6 +745,7 @@ function App() {
       {page === 'calendar' && (
         <CalendarPage
           store={store}
+          deadlineStore={deadlines}
           now={now}
           credit={credit}
           chains={chains}
