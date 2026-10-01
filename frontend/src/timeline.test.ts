@@ -9,6 +9,7 @@ import {
   TL_ROW_PAD_PX,
   blockDetail,
   cardsBelow,
+  cardsThatFit,
   dropPath,
   hourLabelStep,
   hoverCardUnder,
@@ -260,12 +261,12 @@ describe('pickPeeks', () => {
     rect: { left, right: left + width, top, bottom: top + 42 },
   });
 
-  it('takes the first three on screen, left to right', () => {
+  it('takes every one on screen, left to right', () => {
     const picked = pickPeeks(
       [block('d', 700), block('a', 150), block('c', 500), block('b', 300), block('e', 900)],
       visible
     );
-    expect(picked.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(picked.map((p) => p.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 
   it('skips blocks scrolled out of sight, but keeps one half on screen', () => {
@@ -275,9 +276,19 @@ describe('pickPeeks', () => {
     );
     expect(picked.map((p) => p.id)).toEqual(['half']);
   });
+});
 
-  it('takes as many as asked for', () => {
-    expect(pickPeeks([block('a', 150), block('b', 300)], visible, 1).map((p) => p.id)).toEqual(['a']);
+describe('cardsThatFit', () => {
+  it('counts the cards that fit side by side with their gaps', () => {
+    expect(cardsThatFit(1600, 260, 8)).toBe(6);
+    // The last card needs no gap after it.
+    expect(cardsThatFit(3 * 260 + 2 * 8, 260, 8)).toBe(3);
+    expect(cardsThatFit(3 * 260 + 2 * 8 - 1, 260, 8)).toBe(2);
+  });
+
+  it('fits none in too little room', () => {
+    expect(cardsThatFit(200, 260, 8)).toBe(0);
+    expect(cardsThatFit(-50, 260, 8)).toBe(0);
   });
 });
 

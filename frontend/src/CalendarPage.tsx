@@ -60,6 +60,7 @@ import {
   layoutRows,
   linkPath,
   peekBand,
+  cardsThatFit,
   pickPeeks,
   reminderRailCount,
   rowAt,
@@ -1771,8 +1772,8 @@ function CalendarPage({
   };
 
   // The timeline's version of showDayReminders. In the 3-day and week views
-  // it opens the same reminder and break cards; in every view it also names
-  // the first few blocks too short to show their own name (see pickPeeks).
+  // it opens the same reminder and break cards; in every view it also opens
+  // the hover cards of the blocks too short to show their own name.
   // Where each rail and the break sit is already known from the row's
   // geometry; which names are cut short is read straight off the row's own
   // blocks — one pass over a handful of elements that are laid out already.
@@ -3097,14 +3098,25 @@ function CalendarPage({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    const peekCards = peeks.flatMap(({ taskId, rect }) => {
-      const task = tasks.find((t) => t.id === taskId);
-      return task ? [{ key: `peek:${task.id}`, task, rect }] : [];
-    });
+    // As many as fit across the screen at the card's own width, from the
+    // left (one at least, narrowed on a very narrow screen).
+    const peekRoom = { left: row.left, right: vw - 8 };
+    const peekCards = peeks
+      .flatMap(({ taskId, rect }) => {
+        const task = tasks.find((t) => t.id === taskId);
+        return task ? [{ key: `peek:${task.id}`, task, rect }] : [];
+      })
+      .slice(
+        0,
+        Math.max(
+          1,
+          cardsThatFit(peekRoom.right - peekRoom.left, HOVER_CARD_WIDTH, DAY_REMINDER_STACK_GAP)
+        )
+      );
     // Each left under its block's, as the block's own card opens.
     const peekLine = spreadCards(
       peekCards.map(({ rect }) => rect.left + HOVER_CARD_WIDTH / 2),
-      { left: row.left, right: vw - 8 },
+      peekRoom,
       HOVER_CARD_WIDTH,
       Math.min(DAY_REMINDER_CARD_MIN_WIDTH, vw - 16),
       DAY_REMINDER_STACK_GAP

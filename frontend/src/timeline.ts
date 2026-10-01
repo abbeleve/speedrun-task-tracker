@@ -224,17 +224,11 @@ export type Box = { left: number; right: number; top: number; bottom: number };
 // ── peeks: the names a block has no room for ───────────────────────
 
 // A hovered row also opens the hover card of each block too short to show
-// its own name in full. Only the first few on screen get one — the row
-// points out what it cannot show, it does not list the whole day.
-export const TL_PEEK_LIMIT = 3;
+// its own name in full — as many as fit across the screen side by side.
 
-// The blocks that get a peek: of those whose name is hidden or cut short,
-// the first `limit` that are on screen, left to right.
-export function pickPeeks<T extends { rect: Box }>(
-  hidden: T[],
-  visible: Box,
-  limit = TL_PEEK_LIMIT
-): T[] {
+// The blocks that could get a peek: of those whose name is hidden or cut
+// short, the ones on screen, left to right.
+export function pickPeeks<T extends { rect: Box }>(hidden: T[], visible: Box): T[] {
   return hidden
     .filter(
       ({ rect }) =>
@@ -243,8 +237,12 @@ export function pickPeeks<T extends { rect: Box }>(
         rect.bottom > visible.top &&
         rect.top < visible.bottom
     )
-    .sort((a, b) => a.rect.left - b.rect.left)
-    .slice(0, limit);
+    .sort((a, b) => a.rect.left - b.rect.left);
+}
+
+// How many cards `width` wide fit side by side, `gap` apart, in `room`.
+export function cardsThatFit(room: number, width: number, gap: number): number {
+  return Math.max(0, Math.floor((room + gap) / (width + gap)));
 }
 
 // ── a day's detail cards ───────────────────────────────────────────
