@@ -22,6 +22,8 @@ import { RaceChart, WaveChart } from './ActivityCharts';
 import type { RaceSeries, WaveDay } from './ActivityCharts';
 import ChartSwitch from './ChartSwitch';
 import type { ChartSwitchOption } from './ChartSwitch';
+import Dropdown from './Dropdown';
+import type { DropdownOption } from './Dropdown';
 import {
   IconArrowUpRight,
   IconBed,
@@ -517,75 +519,6 @@ const SleepMonth = memo(function SleepMonth({ block, entries, disabledFrom, onCy
     </div>
   );
 });
-
-// ── Themed dropdown ──────────────────────────────────────────────────
-// Replaces a native <select>: on several platforms the browser's own option
-// popup is OS-chrome and ignores the app's dark/light theme, so this renders
-// its own menu instead, styled like the rest of the UI everywhere.
-
-interface DropdownOption<T extends string> {
-  value: T;
-  label: ReactNode;
-}
-
-function Dropdown<T extends string>({ value, onChange, options, className }: {
-  value: T;
-  onChange: (v: T) => void;
-  options: DropdownOption<T>[];
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocPointer = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const current = options.find((o) => o.value === value) ?? options[0];
-
-  return (
-    <div className={`dd${className ? ` ${className}` : ''}`} ref={rootRef}>
-      <button
-        type="button"
-        className="dd-btn"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="dd-btn-label">{current?.label}</span>
-        <span className="dd-caret" aria-hidden>▾</span>
-      </button>
-      {open && (
-        <div className="dd-menu" role="listbox">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={`dd-option${o.value === value ? ' selected' : ''}`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function YearSelector({ value, onChange, years }: {
   value: number;

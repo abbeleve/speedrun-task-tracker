@@ -8,6 +8,7 @@ import type { ActivityChart } from './activityChart';
 import type { CalDesign } from './calendarDesign';
 import type { CalLayout } from './calendarLayout';
 import type { ColorPreset } from './colorPresets';
+import type { DashPalette } from './dashPalette';
 import type { SleepData } from './sleep';
 import type { DayState, DayStats, Deadline, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
@@ -266,6 +267,8 @@ export interface Prefs {
   activityChart?: ActivityChart;
   calendarLayout?: CalLayout;
   calendarDesign?: CalDesign;
+  dashPalette?: string; // id of the home page's palette (see dashPalette.ts)
+  dashPalettes?: DashPalette[]; // the palettes the user made
 }
 
 export async function loadPrefs(): Promise<Prefs> {

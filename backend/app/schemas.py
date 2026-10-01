@@ -215,10 +215,21 @@ class HabitIn(BaseModel):
 # hours across).
 # `calendarDesign` is how the calendar is drawn: 'classic' (ruled columns,
 # solid blocks) or 'cards' (a borderless sheet of rounded pastel cards).
+# `dashPalette` is the id of the home page's colour palette — one of the
+# app's own or one the user made — and `dashPalettes` the ones the user made.
+class DashPaletteIn(BaseModel):
+    id: str = Field(pattern=r'^u-[a-z0-9]{1,24}$')
+    name: str = Field(min_length=1, max_length=30, pattern=r'\S')
+    base: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+    accent: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+
+
 class PrefsIn(BaseModel):
     activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
     calendarLayout: Optional[str] = Field(default=None, pattern=r'^(vertical|horizontal)$')
     calendarDesign: Optional[str] = Field(default=None, pattern=r'^(classic|cards)$')
+    dashPalette: Optional[str] = Field(default=None, pattern=r'^[a-z0-9-]{1,40}$')
+    dashPalettes: Optional[List[DashPaletteIn]] = Field(default=None, max_length=24)
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

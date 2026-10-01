@@ -48,6 +48,9 @@ import {
 import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
+import { paletteStyle } from './dashPalette';
+import { useDashPalette } from './useDashPalette';
+import PalettePicker from './PalettePicker';
 import './App.css';
 import './calendar.css';
 import './deadlines.css';
@@ -104,6 +107,11 @@ function App() {
     const saved = localStorage.getItem('speedrun_theme');
     return saved !== null ? saved === 'dark' : true;
   });
+
+  // The home page's colours (see dashPalette.ts).
+  const palette = useDashPalette();
+  const shownPalette = palette.current;
+  const paletteVars = useMemo(() => paletteStyle(shownPalette), [shownPalette]);
 
   const [view, setView] = useState<'timeline' | 'spiral' | 'list' | 'story'>(() => {
     const saved = localStorage.getItem('speedrun_view');
@@ -615,9 +623,12 @@ function App() {
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
   return (
-    // The home dashboard brings its own backdrop and glass panels — see
-    // `.app--home` in App.css.
-    <div className={page === 'home' ? 'app app--home' : 'app'}>
+    // The home dashboard brings its own backdrop and glass panels, coloured
+    // from the chosen palette — see `.app--home` in App.css.
+    <div
+      className={page === 'home' ? 'app app--home' : 'app'}
+      style={page === 'home' ? (paletteVars as React.CSSProperties) : undefined}
+    >
       <header className="header">
         <div className="header-brand">
           <IconStopwatch className="header-logo" size={22} />
@@ -653,6 +664,7 @@ function App() {
         </nav>
 
         <div className="header-tools">
+          {page === 'home' && <PalettePicker store={palette} />}
           <button
             type="button"
             className="icon-btn"

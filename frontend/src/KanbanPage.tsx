@@ -22,6 +22,8 @@ import {
 } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { todayKey } from './history';
+import Dropdown from './Dropdown';
+import { IconCalendar, IconCheck, IconClose, IconLayoutColumns, IconPlay, IconPlus, IconUndo } from './icons';
 
 interface KanbanPageProps {
   // Day a new task is planned for by default (normally today).
@@ -259,10 +261,19 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
     moveTaskTo(task, col);
   };
 
+  const title = (
+    <h2 className="stats-title kanban-title">
+      <span className="dash-badge" aria-hidden>
+        <IconLayoutColumns size={16} />
+      </span>
+      Kanban
+    </h2>
+  );
+
   if (days === null) {
     return (
       <div className="kanban-page">
-        <h2 className="kanban-title">🗂 Kanban</h2>
+        {title}
         <p className="kanban-empty">{error ?? 'Загрузка…'}</p>
       </div>
     );
@@ -271,28 +282,24 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
   return (
     <div className="kanban-page">
       <div className="kanban-top">
-        <h2 className="kanban-title">🗂 Kanban</h2>
+        {title}
         <div className="kanban-filters">
-          <label className="kanban-filter">
-            День:
-            <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
-              <option value="">все</option>
-              {dayOptions.map((d) => (
-                <option key={d} value={d}>
-                  {d === today ? `сегодня (${fmtDay(d)})` : fmtDay(d)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn btn-add btn-add-sm"
-            onClick={() => setShowAdd(true)}
-          >
-            ＋ Создать
+          <Dropdown
+            value={dayFilter}
+            onChange={setDayFilter}
+            title="Показать задачи дня"
+            options={[
+              { value: '', label: 'Все дни' },
+              ...dayOptions.map((d) => ({ value: d, label: d === today ? `Сегодня, ${fmtDay(d)}` : fmtDay(d) })),
+            ]}
+          />
+          <button type="button" className="pill-btn" onClick={onOpenCalendar}>
+            <IconCalendar size={15} />
+            В календарь
           </button>
-          <button type="button" className="btn btn-stats-nav" onClick={onOpenCalendar}>
-            📅 В календарь
+          <button type="button" className="pill-btn pill-btn--primary" onClick={() => setShowAdd(true)}>
+            <IconPlus size={15} />
+            Создать
           </button>
         </div>
       </div>
@@ -557,11 +564,12 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                       {status === 'open' && movable && (
                         <button
                           type="button"
-                          className="btn btn-complete"
+                          className="kanban-act kanban-act--go"
                           onClick={() => moveTaskTo(task, 'in-progress')}
                           title="Поставить на таймлайн"
+                          aria-label="Поставить на таймлайн"
                         >
-                          ▶
+                          <IconPlay size={13} />
                         </button>
                       )}
                       {status === 'open' && !movable && (
@@ -572,30 +580,33 @@ function KanbanPage({ activeDay, onOpenCalendar }: KanbanPageProps) {
                       {status === 'in-progress' && (
                         <button
                           type="button"
-                          className="btn btn-complete"
+                          className="kanban-act kanban-act--go"
                           onClick={() => moveTaskTo(task, 'done')}
                           title="Отметить выполненной"
+                          aria-label="Отметить выполненной"
                         >
-                          ✓
+                          <IconCheck size={15} />
                         </button>
                       )}
                       {status === 'done' && (
                         <button
                           type="button"
-                          className="btn btn-undo"
+                          className="kanban-act"
                           onClick={() => moveTaskTo(task, 'in-progress')}
                           title="Вернуть в работу"
+                          aria-label="Вернуть в работу"
                         >
-                          ↩
+                          <IconUndo size={15} />
                         </button>
                       )}
                       <button
                         type="button"
-                        className="btn btn-remove"
+                        className="kanban-act kanban-act--remove"
                         onClick={() => removeTask(task)}
                         title="Удалить"
+                        aria-label="Удалить"
                       >
-                        ✕
+                        <IconClose size={13} />
                       </button>
                     </div>
                   </div>
