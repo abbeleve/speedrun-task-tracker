@@ -65,6 +65,22 @@ export const IconLayoutRows = (p: IconProps) => (
   </Icon>
 );
 
+// The calendar's two designs: a ruled grid of small blocks, or loose
+// rounded cards.
+export const IconDesignClassic = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3.5" width="18" height="17" rx="1.5" />
+    <path d="M3 9.25h18M3 14.75h18M12 3.5v17" />
+  </Icon>
+);
+
+export const IconDesignCards = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="8" height="11" rx="3" />
+    <rect x="13" y="10" width="8" height="11" rx="3" />
+  </Icon>
+);
+
 export const IconHome = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3.5 10.5 12 3.5l8.5 7" />

@@ -213,9 +213,12 @@ class HabitIn(BaseModel):
 # `calendarLayout` is how the calendar's day / 3-day / week grid runs:
 # 'vertical' (a column per day, hours down) or 'horizontal' (a row per day,
 # hours across).
+# `calendarDesign` is how the calendar is drawn: 'classic' (ruled columns,
+# solid blocks) or 'cards' (a borderless sheet of rounded pastel cards).
 class PrefsIn(BaseModel):
     activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
     calendarLayout: Optional[str] = Field(default=None, pattern=r'^(vertical|horizontal)$')
+    calendarDesign: Optional[str] = Field(default=None, pattern=r'^(classic|cards)$')
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

@@ -5,6 +5,7 @@
 
 import { todayKey } from './history';
 import type { ActivityChart } from './activityChart';
+import type { CalDesign } from './calendarDesign';
 import type { CalLayout } from './calendarLayout';
 import type { ColorPreset } from './colorPresets';
 import type { SleepData } from './sleep';
@@ -264,6 +265,7 @@ export function saveColorPresets(presets: ColorPreset[]): Promise<void> {
 export interface Prefs {
   activityChart?: ActivityChart;
   calendarLayout?: CalLayout;
+  calendarDesign?: CalDesign;
 }
 
 export async function loadPrefs(): Promise<Prefs> {

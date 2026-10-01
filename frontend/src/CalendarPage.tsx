@@ -4,12 +4,14 @@ import { DEFAULT_COLOR, TASK_COLORS, TASK_EMOJIS } from './types';
 import * as api from './api';
 import type { CalLayout } from './calendarLayout';
 import { adoptServerLayout, cacheLayout, cachedLayout } from './calendarLayout';
+import type { CalDesign } from './calendarDesign';
+import { adoptServerDesign, cacheDesign, cachedDesign } from './calendarDesign';
 import type { DayStore } from './dayStore';
 import type { DeadlineStore } from './deadlineStore';
 import { deadlineClusters, deadlineLabel, deadlinePlanLate, deadlineState, openDeadlines } from './deadlines';
 import DeadlineDialog, { DeadlineList } from './DeadlineDialog';
 import DeadlineGuides from './DeadlineGuides';
-import { IconFlag, IconLayoutColumns, IconLayoutRows } from './icons';
+import { IconDesignCards, IconDesignClassic, IconFlag, IconLayoutColumns, IconLayoutRows } from './icons';
 import type { Chain, DaySegment, ScheduleGap } from './schedule';
 import type { Box } from './timeline';
 import {
@@ -283,14 +285,24 @@ function CalendarPage({
   // switch has been flipped here in the meantime.
   const [layout, setLayout] = useState<CalLayout>(() => cachedLayout());
   const layoutPicked = useRef(false);
+  // Classic or cards (see calendarDesign.ts), kept the same way as the layout.
+  const [design, setDesign] = useState<CalDesign>(() => cachedDesign());
+  const designPicked = useRef(false);
   useEffect(() => {
     let active = true;
     void api.loadPrefs().then(
       (prefs) => {
-        const next = adoptServerLayout(prefs, layoutPicked.current);
-        if (!active || !next) return;
-        setLayout(next);
-        cacheLayout(next);
+        if (!active) return;
+        const nextLayout = adoptServerLayout(prefs, layoutPicked.current);
+        if (nextLayout) {
+          setLayout(nextLayout);
+          cacheLayout(nextLayout);
+        }
+        const nextDesign = adoptServerDesign(prefs, designPicked.current);
+        if (nextDesign) {
+          setDesign(nextDesign);
+          cacheDesign(nextDesign);
+        }
       },
       (error) => console.error('Failed to load display preferences', error)
     );
@@ -304,6 +316,14 @@ function CalendarPage({
     cacheLayout(next);
     api.savePrefs({ calendarLayout: next }).catch((error) => {
       console.error('Failed to save the calendar layout', error);
+    });
+  }, []);
+  const chooseDesign = useCallback((next: CalDesign) => {
+    designPicked.current = true;
+    setDesign(next);
+    cacheDesign(next);
+    api.savePrefs({ calendarDesign: next }).catch((error) => {
+      console.error('Failed to save the calendar design', error);
     });
   }, []);
   // The month is a grid of cells either way.
@@ -2537,8 +2557,8 @@ function CalendarPage({
           setView('day');
         }}
       >
-        <span className="tl-day-num">{d}</span>
         <span className="tl-day-name">{WEEKDAYS[weekday]}</span>
+        <span className="tl-day-num">{d}</span>
         {reminderCount > 0 && <span className="cal-day-reminder-badge">🔔 {reminderCount}</span>}
       </button>
     );
@@ -3442,7 +3462,7 @@ function CalendarPage({
     selectedTasks.length < 2 ? 'Выдели хотя бы два блока' : 'Эти блоки уже отдельная сессия';
 
   return (
-    <div className={`cal-page cal-page--${view}`}>
+    <div className={`cal-page cal-page--${view}${design === 'cards' ? ' cal-cards' : ''}`}>
       <div className="cal-toolbar">
         <div className="cal-nav">
           <button type="button" className="cal-btn" onClick={() => setAnchor(today)}>
@@ -3501,6 +3521,28 @@ function CalendarPage({
               disabled={view === 'month'}
               onClick={() => {
                 if (layout !== value) chooseLayout(value);
+              }}
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+        <div className="cal-seg cal-seg--design" role="group" aria-label="Дизайн календаря">
+          {(
+            [
+              ['classic', 'Классический дизайн', <IconDesignClassic key="classic" size={16} />],
+              ['cards', 'Дизайн карточками', <IconDesignCards key="cards" size={16} />],
+            ] as const
+          ).map(([value, label, icon]) => (
+            <button
+              key={value}
+              type="button"
+              className={design === value ? 'active' : ''}
+              aria-pressed={design === value}
+              aria-label={label}
+              title={label}
+              onClick={() => {
+                if (design !== value) chooseDesign(value);
               }}
             >
               {icon}
@@ -3594,8 +3636,8 @@ function CalendarPage({
                       setView('day');
                     }}
                   >
-                    <span className="cal-day-num">{d}</span>
                     <span className="cal-day-name">{WEEKDAYS[(date.getDay() + 6) % 7]}</span>
+                    <span className="cal-day-num">{d}</span>
                     {(view === '3day' || view === 'week') && reminderCount > 0 && (
                       <span className="cal-day-reminder-badge">🔔 {reminderCount}</span>
                     )}

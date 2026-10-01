@@ -49,6 +49,8 @@ import { useAuth } from './auth';
 import './App.css';
 import './calendar.css';
 import './deadlines.css';
+// After the classic rules, which it overrides under .cal-cards.
+import './calendarCards.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
