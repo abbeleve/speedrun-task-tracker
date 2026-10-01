@@ -34,6 +34,7 @@ import {
   taskColorStyle,
 } from './taskAppearance';
 import { deadlineLabel } from './deadlines';
+import TimeInput from './TimeInput';
 import './TaskPreset.css';
 
 export interface DialogAnchor {
@@ -94,14 +95,15 @@ function minutesToSec(minutes: string): number {
 }
 
 function fromTimeInput(value: string, fallback: number): number {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return fallback;
   const [h, m] = value.split(':').map(Number);
   if (!isFinite(h) || !isFinite(m)) return fallback;
   return Math.max(0, Math.min(DAY_MIN - 1, h * 60 + m));
 }
 
-// Local wall-clock timestamp ↔ <input type="datetime-local"> string. Seconds
-// are kept (not just hh:mm) so re-saving the dialog without touching this
-// field never quietly rounds a real finishedAt down to the minute — the
+// Local wall-clock timestamp ↔ date and 24-hour time fields. Seconds
+// are kept (not just HH:mm) so re-saving the dialog without touching these
+// fields never quietly rounds a real finishedAt down to the minute — the
 // overtake engine is sensitive to exactly that precision.
 function toDatetimeInput(ms: number): string {
   const d = new Date(ms);
@@ -536,12 +538,11 @@ function TaskDialog({
           </label>
           <label className="cal-field">
             <span>Начало</span>
-            <input
-              type="time"
+            <TimeInput
               value={time}
               disabled={pinned}
+              required
               onChange={(e) => setTime(e.target.value)}
-              step={300}
             />
           </label>
           <label className="cal-field cal-field--sm">
@@ -1019,10 +1020,19 @@ function TaskDialog({
                 <label className="cal-field cal-field--grow">
                   <span>Когда закрыта</span>
                   <input
-                    type="datetime-local"
-                    step={1}
-                    value={finishedInput}
-                    onChange={(e) => setFinishedInput(e.target.value)}
+                    type="date"
+                    required
+                    value={finishedInput.split('T')[0]}
+                    onChange={(e) => setFinishedInput(`${e.target.value}T${finishedInput.split('T')[1]}`)}
+                  />
+                </label>
+                <label className="cal-field">
+                  <span>Время закрытия</span>
+                  <TimeInput
+                    seconds
+                    required
+                    value={finishedInput.split('T')[1]}
+                    onChange={(e) => setFinishedInput(`${finishedInput.split('T')[0]}T${e.target.value}`)}
                   />
                 </label>
                 <button

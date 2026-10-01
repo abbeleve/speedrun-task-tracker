@@ -1646,6 +1646,10 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 22%, transparent);
 }
 
+.cal-time-input {
+  font-variant-numeric: tabular-nums;
+}
+
 .cal-modal-description {
   resize: vertical;
   min-height: 44px;

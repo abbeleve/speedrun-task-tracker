@@ -4,6 +4,7 @@ import type { Deadline, Task } from './types';
 import { deadlineLabel, deadlineState, openDeadlines } from './deadlines';
 import { isDone } from './schedule';
 import { IconFlag } from './icons';
+import TimeInput from './TimeInput';
 
 // These dialogs can open above the work-block editor. Capture Escape and trap
 // focus in the top dialog, then restore the block editor's focus on dismissal.
@@ -108,7 +109,7 @@ export default function DeadlineDialog({ deadline, isNew, tasks, now, onSave, on
       <fieldset disabled={busy} className="cal-deadline-fields">
         <label className="cal-field"><span>Название результата</span><input value={name} maxLength={200} required onChange={(event) => setName(event.target.value)} /></label>
         <label className="cal-field"><span>Описание</span><textarea value={description} rows={2} onChange={(event) => setDescription(event.target.value)} /></label>
-        <div className="cal-modal-row"><label className="cal-field cal-field--grow"><span>Срок</span><input type="date" value={day} required onChange={(event) => setDay(event.target.value)} /></label>{timed && <label className="cal-field"><span>Время</span><input type="time" value={time} required onChange={(event) => setTime(event.target.value)} /></label>}</div>
+        <div className="cal-modal-row"><label className="cal-field cal-field--grow"><span>Срок</span><input type="date" value={day} required onChange={(event) => setDay(event.target.value)} /></label>{timed && <label className="cal-field"><span>Время</span><TimeInput value={time} required onChange={(event) => setTime(event.target.value)} /></label>}</div>
         <label className="cal-check"><input type="checkbox" checked={timed} onChange={(event) => setTimed(event.target.checked)} /><span>Указать время</span></label>
         {!isNew && <><p className={`cal-deadline-status ${deadlineState(deadline, now)}`}>{deadline.completedAt !== null ? '✓ Дедлайн закрыт' : deadlineState(deadline, now) === 'overdue' ? 'Просрочен · дедлайн остаётся открытым' : 'Дедлайн открыт'}</p>
           <div className="cal-deadline-linked"><h4>Рабочие блоки · {complete} из {linked.length} закрыто</h4>{linked.map((task) => <button type="button" key={task.id} className="cal-deadline-linked-task" onClick={() => onOpenTask(task)}><span>{isDone(task) ? '✓' : '○'} {task.emoji} {task.name}</span><small>{task.day}</small></button>)}
