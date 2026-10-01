@@ -15,6 +15,12 @@
   color-scheme: light;
 }
 
+:root {
+  /* The scrollbars' thickness — see below; layouts that keep room for one
+     (the home dashboard) read it from here. */
+  --scrollbar-size: 10px;
+}
+
 html {
   /* Phones: no grey flash over every tapped control, no font inflation in
      landscape, and no pull-to-refresh or page bounce behind the app's own
@@ -42,6 +48,51 @@ body {
   height: 100dvh !important;
   overflow: hidden !important;
   background: var(--bg-page, var(--bg-primary, #1a1a2e));
+}
+
+/* One scrollbar for every scroll area in the app: a slim rounded thumb on an
+   invisible track, in the theme's colours (--scrollbar-thumb, set per theme
+   in App.css). The thumb sits inside a transparent border, so it reads thin
+   but is still easy to grab, and it fills out under the pointer. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  min-width: 40px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--scrollbar-thumb, rgba(127, 127, 127, 0.35));
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background-color: var(--scrollbar-thumb-hover, rgba(127, 127, 127, 0.55));
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active, rgba(127, 127, 127, 0.7));
+}
+
+/* Firefox has no scrollbar pseudo-elements, only the standard properties —
+   and Chromium, given those, would drop everything above, hence the guard. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, rgba(127, 127, 127, 0.35)) transparent;
+  }
 }
 
 /* iOS Safari zooms into any field whose text is under 16px and never zooms

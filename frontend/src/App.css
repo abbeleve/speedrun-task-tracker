@@ -42,6 +42,10 @@
   --surface-raised: #2b2d31;
   --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --control-hover: rgba(255, 255, 255, 0.06);
+  /* Scrollbar thumb (see index.css): resting, under the pointer, dragged. */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.42);
 }
 
 [data-theme="light"] {
@@ -77,6 +81,9 @@
   --surface-raised: #ffffff;
   --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   --control-hover: rgba(0, 0, 0, 0.05);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
+  --scrollbar-thumb-active: rgba(0, 0, 0, 0.44);
 }
 
 * {
@@ -1454,24 +1461,7 @@
   }
 }
 
-/* ===== Scrollbar ===== */
-.timeline-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.timeline-container::-webkit-scrollbar-track {
-  background: var(--bg-primary);
-}
-
-.timeline-container::-webkit-scrollbar-thumb {
-  background: var(--bg-surface);
-  border-radius: 3px;
-}
-
-.timeline-container::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-purple);
-}
-
+/* Scrollbars are styled once for the whole app — see index.css. */
 
 .task-planned-clickable {
   cursor: pointer;
@@ -4525,23 +4515,6 @@
   overflow-y: auto;
 }
 
-.kanban-cards::-webkit-scrollbar {
-  width: 6px;
-}
-
-.kanban-cards::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.kanban-cards::-webkit-scrollbar-thumb {
-  background: var(--bg-surface);
-  border-radius: 3px;
-}
-
-.kanban-cards::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-blue);
-}
-
 .kanban-col-empty {
   color: var(--text-dim);
   font-size: 0.85rem;
@@ -4752,13 +4725,19 @@
 }
 
 /* ===== Home dashboard: activity, habits, stats, sleep, kanban, days ===== */
+/* The whole width of the window. The dashboard is its own scroller, so it
+   reaches out over the shell's side gutter (the same clamp as .app's
+   --app-gutter, taken against the viewport) and pads it back in: the
+   scrollbar sits at the window's edge while the panels line up with the
+   header above them. Room for the scrollbar is always kept and taken off the
+   right padding, so both edges match the header's. */
 .home-page {
+  --home-bleed: clamp(0px, calc((100vw - var(--app-min-width, 1200px)) / 2), 50px);
   flex: 1;
   overflow-y: auto;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px 20px 32px;
+  scrollbar-gutter: stable;
+  margin: 0 calc(-1 * var(--home-bleed));
+  padding: 16px calc(var(--home-bleed) + 20px - var(--scrollbar-size, 0px)) 32px calc(var(--home-bleed) + 20px);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -4902,6 +4881,9 @@
   --track-bg: rgba(255, 255, 255, 0.05);
   --surface-raised: #26382d;
   --bg-row-hover: rgba(120, 230, 160, 0.06);
+  --scrollbar-thumb: rgba(150, 230, 180, 0.18);
+  --scrollbar-thumb-hover: rgba(150, 230, 180, 0.32);
+  --scrollbar-thumb-active: rgba(150, 230, 180, 0.45);
 
   background:
     radial-gradient(52% 44% at 50% 22%, rgba(46, 170, 96, 0.3), transparent 72%),
@@ -4938,6 +4920,9 @@
   --surface-raised: #ffffff;
   --control-hover: rgba(22, 84, 48, 0.06);
   --bg-row-hover: rgba(22, 84, 48, 0.05);
+  --scrollbar-thumb: rgba(22, 84, 48, 0.22);
+  --scrollbar-thumb-hover: rgba(22, 84, 48, 0.38);
+  --scrollbar-thumb-active: rgba(22, 84, 48, 0.5);
   --heat-0: rgba(34, 160, 90, 0.08);
   --heat-1: #c6edd3;
   --heat-2: #8bd8a7;
