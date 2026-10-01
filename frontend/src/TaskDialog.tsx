@@ -559,6 +559,19 @@ function TaskDialog({
           </label>
         </div>
 
+        {deadlines && type !== 'reminder' && (
+          <div className="cal-modal-row cal-deadline-link-row">
+            <label className="cal-field cal-field--grow"><span>Дедлайн результата</span>
+              <select value={deadlineId} onChange={(event) => setDeadlineId(event.target.value)}>
+                <option value="">— без дедлайна —</option>
+                {deadlineId && !deadlines.some((item) => item.id === deadlineId) && <option value={deadlineId}>Дедлайн недоступен</option>}
+                {deadlines.map((item) => <option key={item.id} value={item.id}>{item.completedAt !== null ? '✓ ' : '⚑ '}{item.name} · {deadlineLabel(item)}</option>)}
+              </select>
+            </label>
+            {onCreateDeadline && <button type="button" className="cal-btn" onClick={() => onCreateDeadline(day, name, setDeadlineId)}>＋ Новый дедлайн</button>}
+          </div>
+        )}
+
         <div className="cal-modal-row">
           <label className="cal-check">
             <input
@@ -977,19 +990,6 @@ function TaskDialog({
             окно закрывается. Закрытие окна считается выполнением: повторяющееся
             напоминание тогда же создаёт следующую копию.
           </p>
-        )}
-
-        {deadlines && type !== 'reminder' && (
-          <div className="cal-modal-row cal-deadline-link-row">
-            <label className="cal-field cal-field--grow"><span>Дедлайн результата</span>
-              <select value={deadlineId} onChange={(event) => setDeadlineId(event.target.value)}>
-                <option value="">— без дедлайна —</option>
-                {deadlineId && !deadlines.some((item) => item.id === deadlineId) && <option value={deadlineId}>Дедлайн недоступен</option>}
-                {deadlines.map((item) => <option key={item.id} value={item.id}>{item.completedAt !== null ? '✓ ' : '⚑ '}{item.name} · {deadlineLabel(item)}</option>)}
-              </select>
-            </label>
-            {onCreateDeadline && <button type="button" className="cal-btn" onClick={() => onCreateDeadline(day, name, setDeadlineId)}>＋ Новый</button>}
-          </div>
         )}
 
         {habits && habits.length > 0 && type !== 'reminder' && (

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import CalendarPage from './CalendarPage';
 import DeadlineDialog from './DeadlineDialog';
+import TaskDialog from './TaskDialog';
 import type { Deadline, Task } from './types';
 import type { DayStore } from './dayStore';
 import { buildChains, buildGroups } from './schedule';
@@ -61,5 +62,22 @@ describe('deadline calendar presentation', () => {
     expect(html).toContain('дедлайн ещё открыт');
     expect(html).toContain('Закрыть дедлайн');
     expect(html).toContain('Запланировать блок');
+  });
+});
+
+describe('task deadline controls', () => {
+  it('offers a deadline for a new task even before any deadlines exist', () => {
+    const html = renderToStaticMarkup(<TaskDialog task={{ ...work('2026-10-01'), deadlineId: null, finishedAt: null, status: 'in-progress' }} isNew={true} deadlines={[]} onCreateDeadline={() => {}} onSave={() => {}} onClose={() => {}} />);
+    expect(html).toContain('Дедлайн результата');
+    expect(html).toContain('— без дедлайна —');
+    expect(html).toContain('Новый дедлайн');
+    expect(html.indexOf('Дедлайн результата')).toBeLessThan(html.indexOf('Цвет и аватар'));
+  });
+  it('shows the linked result and its due time in an existing task editor', () => {
+    const html = renderToStaticMarkup(<TaskDialog task={work('2026-10-01')} isNew={false} deadlines={[deadline]} onCreateDeadline={() => {}} onSave={() => {}} onClose={() => {}} />);
+    expect(html).toContain('value="launch" selected=""');
+    expect(html).toContain('Launch website');
+    expect(html).toContain('18:00');
+    expect(html).toContain('Дедлайн результата');
   });
 });
