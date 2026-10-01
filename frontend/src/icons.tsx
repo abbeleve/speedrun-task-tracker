@@ -130,6 +130,14 @@ export const IconList = (p: IconProps) => (
   </Icon>
 );
 
+export const IconStory = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M16 3H8a4 4 0 0 0 0 8h8a4 4 0 0 1 0 8H8" />
+    <circle cx="16" cy="3" r="1.5" />
+    <circle cx="8" cy="19" r="1.5" />
+  </Icon>
+);
+
 export const IconPlay = (p: IconProps) => (
   <Icon {...p}>
     <path d="M7.5 4.5v15l12-7.5Z" />

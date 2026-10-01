@@ -5,6 +5,7 @@ import { DEFAULT_COLOR } from './types';
 import { formatTime, formatDelta } from './format';
 import { SpiralThermometer } from './SpiralThermometer';
 import { ListView } from './ListView';
+import { StoryView } from './StoryView';
 import { primeMotivationImages } from './motivation';
 import HomePage from './HomePage';
 import CalendarPage from './CalendarPage';
@@ -39,6 +40,7 @@ import {
   IconPlay,
   IconRewind,
   IconSpiral,
+  IconStory,
   IconStopwatch,
   IconSun,
   IconThermometer,
@@ -103,13 +105,13 @@ function App() {
     return saved !== null ? saved === 'dark' : true;
   });
 
-  const [view, setView] = useState<'timeline' | 'spiral' | 'list'>(() => {
+  const [view, setView] = useState<'timeline' | 'spiral' | 'list' | 'story'>(() => {
     const saved = localStorage.getItem('speedrun_view');
-    return saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
+    return saved === 'story' ? 'story' : saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
   });
 
   // 'calendar' = the plan (main screen), 'home' = kanban + sessions + stats,
-  // 'tracker' = one sequence opened in the thermometer/spiral/list views.
+  // 'tracker' = one sequence opened in the thermometer/spiral/list/story views.
   const [page, setPage] = useState<'calendar' | 'home' | 'tracker'>('calendar');
 
   // The sequence currently open in the tracker, addressed by one of its tasks
@@ -702,6 +704,17 @@ function App() {
                 <IconList size={16} />
                 <span className="view-toggle-label">Список</span>
               </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${view === 'story' ? 'active' : ''}`}
+                onClick={() => setView('story')}
+                aria-label="Путь"
+                aria-pressed={view === 'story'}
+                title="Путь секвенции с вдохновляющими изображениями"
+              >
+                <IconStory size={16} />
+                <span className="view-toggle-label">Путь</span>
+              </button>
             </div>
 
             {openChain && (
@@ -802,6 +815,19 @@ function App() {
                 <p>Секвенция пуста</p>
                 <p className="hint">Поставь задачи подряд в календаре и открой их здесь.</p>
               </div>
+            ) : view === 'story' ? (
+              <StoryView
+                tasks={runTasks}
+                cumulativeTimes={cumulativeTimes}
+                elapsedSec={elapsedSec}
+                sessionState={sessionState}
+                currentTaskIdx={currentTaskIdx}
+                deltaMs={currentDeltaMs}
+                onCompleteTask={completeTask}
+                onUncompleteTask={uncompleteTask}
+                onSeek={seek}
+                formatEnd={formatEnd}
+              />
             ) : view === 'list' ? (
               <ListView
                 tasks={runTasks}
