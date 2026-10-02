@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { SessionState, Task } from './types';
 import { formatDelta, formatTime } from './format';
@@ -7,6 +7,8 @@ import { taskDeltaMs } from './listDelta';
 import { progressPct } from './listProgress';
 import { useMotivationImages } from './motivation';
 import { pageStoryImages, storyImage } from './storyImages';
+import { storyRailPath } from './storyRail';
+import type { RailFrame } from './storyRail';
 import { IconRewind, IconStopwatch } from './icons';
 import './StoryView.css';
 
@@ -36,6 +38,66 @@ function StoryPicture({ src, emoji }: { src: string | null; emoji: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Until the row is measured (and when rendering without layout), assume a
+// desktop row whose square picture sets its height.
+const FALLBACK_FRAME: RailFrame = { width: 1000, height: 500, inset: 22, picture: 456 };
+
+// The route's stretch for one step, drawn in the row's own pixels so the bend
+// stays a true half-circle around the square picture at any width.
+function StoryRail({ first, reverse, pct, maskId }: { first: boolean; reverse: boolean; pct: number; maskId: string }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [frame, setFrame] = useState<RailFrame>(FALLBACK_FRAME);
+  useLayoutEffect(() => {
+    const step = ref.current?.parentElement;
+    const picture = step?.querySelector<HTMLElement>('.story-picture');
+    if (!step || !picture) return;
+    const measure = () => {
+      // The picture's offset parent is the step content, flush with the row.
+      const width = step.clientWidth;
+      const size = picture.offsetWidth;
+      const next = {
+        width, height: step.clientHeight, picture: size,
+        inset: reverse ? width - picture.offsetLeft - size : picture.offsetLeft,
+      };
+      setFrame((prev) => (prev.width === next.width && prev.height === next.height
+        && prev.inset === next.inset && prev.picture === next.picture ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(step);
+    return () => ro.disconnect();
+  }, [reverse]);
+  const arc = storyRailPath(frame, reverse, first);
+  return (
+    <svg ref={ref} className="story-line" viewBox={`0 0 ${frame.width} ${frame.height}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        {/* Normalize the reveal in path coordinates, independently of
+            the fixed-width rail stroke on phones and taller rows. */}
+        <mask id={maskId} maskUnits="userSpaceOnUse" x="-10" y="-10" width={frame.width + 20} height={frame.height + 20}>
+          <path
+            className="story-line-reveal"
+            d={arc}
+            fill="none"
+            stroke="white"
+            strokeWidth={48}
+            strokeLinecap="butt"
+            pathLength={100}
+            strokeDasharray="100 100"
+            strokeDashoffset={100 - pct}
+          />
+        </mask>
+      </defs>
+      <path className="story-line-track" d={arc} />
+      <path
+        className="story-line-fill"
+        d={arc}
+        mask={pct < 100 ? `url(#${maskId})` : undefined}
+        visibility={pct > 0 ? 'visible' : 'hidden'}
+      />
+    </svg>
   );
 }
 
@@ -76,40 +138,12 @@ export function StoryView({
           const deltaClass = delta !== null && delta < 0 ? 'ahead' : delta !== null && delta > 0 ? 'behind' : '';
           const reverse = idx % 2 === 1;
           const fillMaskId = `${routeMaskId}-${idx}`;
-          const arc = reverse
-            ? 'M 860 0 A 130 130 0 0 1 860 260 H 140'
-            : `${idx === 0 ? 'M 480 0 H 140' : 'M 140 0'} A 130 130 0 0 0 140 260 H 860`;
           return (
             <li key={task.id}
               className={`story-step${reverse ? ' story-step--reverse' : ''}${active ? ' story-step--active' : ''}${done ? ' story-step--done' : ''}`}
               aria-current={active ? 'step' : undefined}
               style={{ '--story-task-color': task.color } as CSSProperties}>
-              <svg className="story-line" viewBox="0 0 1000 260" preserveAspectRatio="none" aria-hidden="true">
-                <defs>
-                  {/* Normalize the reveal in path coordinates, independently of
-                      the fixed-width rail stroke on phones and taller rows. */}
-                  <mask id={fillMaskId} maskUnits="userSpaceOnUse" x="-10" y="-10" width="1020" height="280">
-                    <path
-                      className="story-line-reveal"
-                      d={arc}
-                      fill="none"
-                      stroke="white"
-                      strokeWidth={48}
-                      strokeLinecap="butt"
-                      pathLength={100}
-                      strokeDasharray="100 100"
-                      strokeDashoffset={100 - pct}
-                    />
-                  </mask>
-                </defs>
-                <path className="story-line-track" d={arc} />
-                <path
-                  className="story-line-fill"
-                  d={arc}
-                  mask={pct < 100 ? `url(#${fillMaskId})` : undefined}
-                  visibility={pct > 0 ? 'visible' : 'hidden'}
-                />
-              </svg>
+              <StoryRail first={idx === 0} reverse={reverse} pct={pct} maskId={fillMaskId} />
               <div className="story-step-content">
                 <StoryPicture src={storyImage(deck, idx)} emoji={task.emoji} />
                 <div className="story-info">
