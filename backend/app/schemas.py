@@ -1,6 +1,7 @@
+from datetime import date
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class RegisterIn(BaseModel):
@@ -98,6 +99,17 @@ class DayTask(BaseModel):
     # Optional link to a habit: completing this task grows that habit's daily
     # progress (time habits add the block's duration; count habits add 1).
     habitId: Optional[str] = None
+    deadlineId: Optional[str] = None
+
+
+class DeadlineIn(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=200, pattern=r'\S')
+    description: Optional[str] = None
+    dueDay: date
+    # Local minutes from midnight; None = the whole due day is available.
+    dueTime: Optional[int] = Field(default=None, ge=0, lt=1440)
+    completedAt: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class RunIn(BaseModel):
@@ -201,9 +213,32 @@ class HabitIn(BaseModel):
 # `calendarLayout` is how the calendar's day / 3-day / week grid runs:
 # 'vertical' (a column per day, hours down) or 'horizontal' (a row per day,
 # hours across).
+# `calendarDesign` is how the calendar is drawn: 'classic' (ruled columns,
+# solid blocks) or 'cards' (a borderless sheet of rounded pastel cards).
+# `dashPalette` is the id of the home page's colour palette — one of the
+# app's own or one the user made — and `dashPalettes` the ones the user made.
+class DashPaletteIn(BaseModel):
+    id: str = Field(pattern=r'^u-[a-z0-9]{1,24}$')
+    name: str = Field(min_length=1, max_length=30, pattern=r'\S')
+    base: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+    accent: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
+
+
+# `dashGlass` says which of the other pages wear the home page's look (the
+# palette's backdrop and glass panels) — the calendar, the sequence tracker.
+class DashGlassIn(BaseModel):
+    calendar: StrictBool
+    tracker: StrictBool
+
+
 class PrefsIn(BaseModel):
     activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
     calendarLayout: Optional[str] = Field(default=None, pattern=r'^(vertical|horizontal)$')
+    calendarDesign: Optional[str] = Field(default=None, pattern=r'^(classic|cards)$')
+    dashPalette: Optional[str] = Field(default=None, pattern=r'^[a-z0-9-]{1,40}$')
+    dashPalettes: Optional[List[DashPaletteIn]] = Field(default=None, max_length=24)
+    dashGlass: Optional[DashGlassIn] = None
+    dashBackdropSeed: Optional[int] = Field(default=None, strict=True, ge=0, le=4294967295)
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

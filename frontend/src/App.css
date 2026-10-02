@@ -42,6 +42,10 @@
   --surface-raised: #2b2d31;
   --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --control-hover: rgba(255, 255, 255, 0.06);
+  /* Scrollbar thumb (see index.css): resting, under the pointer, dragged. */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.42);
 }
 
 [data-theme="light"] {
@@ -77,6 +81,9 @@
   --surface-raised: #ffffff;
   --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   --control-hover: rgba(0, 0, 0, 0.05);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
+  --scrollbar-thumb-active: rgba(0, 0, 0, 0.44);
 }
 
 * {
@@ -1454,24 +1461,7 @@
   }
 }
 
-/* ===== Scrollbar ===== */
-.timeline-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.timeline-container::-webkit-scrollbar-track {
-  background: var(--bg-primary);
-}
-
-.timeline-container::-webkit-scrollbar-thumb {
-  background: var(--bg-surface);
-  border-radius: 3px;
-}
-
-.timeline-container::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-purple);
-}
-
+/* Scrollbars are styled once for the whole app — see index.css. */
 
 .task-planned-clickable {
   cursor: pointer;
@@ -2302,45 +2292,136 @@
 
 /* ===== Stats page: daily activity heatmap + sleep tracker ===== */
 
+/* A card's title: a round badge with the card's icon, then its name. */
 .stats-title {
-  font-size: 1.2rem;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   margin: 0;
+}
+
+.dash-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--glass-bg-strong, var(--bg-surface));
+  border: 1px solid var(--dash-badge-ring, var(--border));
+  color: var(--dash-ink, var(--text-primary));
+}
+
+/* A card's quiet corner action: a small round button with an arrow. */
+.dash-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong, var(--bg-surface));
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
+}
+
+.dash-icon-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.dash-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.dash-icon-btn:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
 }
 
 .stats-summary-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
+/* Four figures, each its own card: four abreast on a wide screen, two by
+   two on a narrower one, stacked on a phone. */
 .stats-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
 
 .stat-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  min-width: 0;
 }
 
-.stat-value {
-  font-family: var(--font-mono);
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--text-primary);
+.stat-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 
 .stat-label {
-  font-size: 0.8rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value {
+  font-family: var(--font-sans);
+  font-size: 2.1rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.stat-value small {
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-dim);
+}
+
+/* "+12,5% к 2025 г." under the number. */
+.stat-change {
+  margin-top: 6px;
+  font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+.stat-change b {
+  font-weight: 600;
+}
+
+.stat-change .up {
+  color: var(--dash-up, var(--accent-green));
+}
+
+.stat-change .down {
+  color: var(--dash-down, var(--accent-red));
 }
 
 .card {
@@ -2350,22 +2431,41 @@
   padding: 18px 20px;
 }
 
+/* An empty square: diagonal hatching over a faint tint, the way an unfilled
+   slot reads at a glance without competing with the filled ones. Used by the
+   heatmap's empty days, the week / month bar tracks and the sleep grid. */
+.heat-cell.l0,
+.heat-bar-track {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--hatch-ink, var(--heat-0)) 0 1.5px,
+      transparent 1.5px 5px
+    ),
+    var(--hatch-base, var(--heat-0));
+}
+
 /* --- Heatmap --- */
 
 .heat-card {
   --heat-cell: 13px;
-  --heat-gap: 3px;
+  --heat-gap: 4px;
+  --heat-days-w: 22px; /* the weekday column */
 }
 
+/* The bottom padding takes the grid's hover room (see .heatmap), which would
+   otherwise hang past the end and scroll. */
 .heat-scroll {
   overflow-x: auto;
+  padding-bottom: 8px;
 }
 
+/* Starts where the cells do: past the weekday column and the body's gap. */
 .heat-months {
   display: grid;
   gap: var(--heat-gap);
-  margin-left: calc(var(--heat-cell) + 22px + var(--heat-gap));
-  height: 16px;
+  margin-left: calc(var(--heat-days-w) + 6px);
+  height: 18px;
   font-size: 10px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -2380,10 +2480,12 @@
   display: grid;
   grid-template-rows: repeat(7, var(--heat-cell));
   gap: var(--heat-gap);
+  align-items: center;
   font-size: 10px;
   color: var(--text-secondary);
   text-align: right;
-  min-width: 20px;
+  width: var(--heat-days-w);
+  flex: none;
 }
 
 .heatmap {
@@ -2410,14 +2512,15 @@
   display: inline-block;
 }
 
+/* Rounded in proportion to their size, like the squares of a planner. */
 .heatmap .heat-cell {
   width: 100%;
   height: 100%;
   position: relative;
+  border-radius: max(3px, calc(var(--heat-cell) * 0.22));
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-.heat-cell.l0 { background: var(--heat-0); }
 .heat-cell.l1 { background: var(--heat-1); }
 .heat-cell.l2 { background: var(--heat-2); }
 .heat-cell.l3 { background: var(--heat-3); }
@@ -2428,32 +2531,48 @@
 }
 
 .heatmap .heat-cell:not(.future):hover {
-  transform: scale(1.6);
+  transform: scale(1.5);
   z-index: 3;
-  box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px var(--border), 0 4px 10px rgba(0, 0, 0, 0.18);
 }
 
+/* What the four filled shades mean, above the grid. */
 .heat-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 10px;
-  font-size: 10px;
+  gap: 6px 18px;
+  margin: -2px 0 14px;
+  font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+.heat-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.heat-legend .heat-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
 }
 
 /* --- Sleep tracker --- */
 
 .sleep-card {
-  /* Hour cell width — recomputed in JS to span the card; the value here is the
-     fallback used until the grid has been measured. Its height stays put so a
-     wide card does not also become a tall one. */
+  /* Hour cell size (cells are square) and the inset that centres the grid —
+     both recomputed in JS to fit the card; these are the fallbacks used until
+     the grid has been measured. */
   --sleep-cell: 22px;
-  --sleep-cell-h: 22px;
-  --sleep-gap: 3px;
+  --sleep-inset: 0px;
+  --sleep-gap: 4px;
   --sleep-num-w: 34px;
   --sleep-qual-w: 30px;
+  --sleep-dot: 22px;
+  /* A day's row: the tallest of a cell and the quality dot, plus the gap. */
+  --sleep-row-h: calc(max(var(--sleep-cell), var(--sleep-dot)) + var(--sleep-gap));
   position: relative;
 }
 
@@ -2967,8 +3086,7 @@
   position: relative;
   width: 100%;
   height: 150px;
-  background: var(--heat-0);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: flex-end;
   overflow: visible;
@@ -3044,17 +3162,29 @@
 /* The scrollable window — one month fits comfortably, more are buffered above
    and below and filled in as the user scrolls. */
 .sleep-month-scroll {
-  max-height: 560px;
+  max-height: 600px;
   overflow-y: auto;
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  padding: 12px;
+  border-radius: 14px;
+  padding: 0 4px 8px;
 }
 
+/* Only the months in (or near) the scroll area are laid out and painted: the
+   buffer holds up to two years of them, ~17 000 cells, and the rest are
+   skipped until they scroll into reach. Until a month has been drawn once it
+   holds the height of its rows (--sleep-days comes from SleepTracker); after
+   that the browser remembers the real one. */
 .sleep-month {
   min-width: max-content;
+  content-visibility: auto;
+  contain-intrinsic-height: auto calc(var(--sleep-days, 31) * var(--sleep-row-h) + 58px);
+}
+
+/* The grid's parts all start at the inset, so the capped grid sits centred. */
+.sleep-month-title,
+.sleep-hour-header,
+.sleep-day-row {
+  margin-left: var(--sleep-inset);
 }
 
 /* Hour labels appear in a separate track above a month's rows, so they only
@@ -3066,11 +3196,15 @@
   gap: var(--sleep-gap);
 }
 
+/* Frosted, so the rows passing under it stay faintly visible. */
 .sleep-hour-header {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
   padding: 4px 0 6px;
 }
 
@@ -3086,9 +3220,10 @@
 
 .sleep-month-title {
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-primary);
-  margin: 6px 0 4px;
+  margin-top: 6px;
+  margin-bottom: 4px;
 }
 
 /* The fixed number column ("1 я", "2 я" …) aligned before the cells. */
@@ -3110,39 +3245,45 @@
   margin-left: 2px;
 }
 
-/* One day = 24 square cells. Each cell is a flex squarish button. */
+/* One day = 24 square cells, a gap's height apart. */
 .sleep-day-row {
-  padding: 1.5px 0;
-  border-radius: 4px;
+  height: var(--sleep-row-h);
+  padding: calc(var(--sleep-gap) / 2) 0;
+  border-radius: 8px;
 }
 
 .sleep-day-row:hover:not(.future) {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-row-hover);
 }
 
 .sleep-day-row.future {
   opacity: 0.45;
 }
 
+/* An hour not slept: the hatched empty square, in the tracker's orange. */
 .sleep-cell {
+  display: block;
   position: relative;
   width: var(--sleep-cell);
-  height: var(--sleep-cell-h);
+  height: var(--sleep-cell);
   flex: 0 0 var(--sleep-cell);
-  border: none;
-  border-radius: 3px;
-  background: var(--heat-0);
+  border-radius: max(3px, calc(var(--sleep-cell) * 0.22));
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--sleep-hatch-ink, rgba(239, 105, 50, 0.3)) 0 1.5px,
+      transparent 1.5px 5px
+    ),
+    var(--sleep-hatch-base, rgba(247, 168, 120, 0.16));
   cursor: pointer;
-  padding: 0;
-  margin: 0;
   overflow: hidden;
 }
 
-.sleep-cell:hover:not(:disabled) {
-  filter: brightness(1.25);
+.sleep-day-row:not(.future) .sleep-cell:hover {
+  box-shadow: inset 0 0 0 1.5px var(--sleep-fill, #ef5a24);
 }
 
-.sleep-cell:disabled {
+.sleep-day-row.future .sleep-cell {
   cursor: default;
 }
 
@@ -3153,9 +3294,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 3px;
-  background: #e26ba0;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  border-radius: inherit;
+  background: var(--sleep-fill, #ef5a24);
 }
 
 /* Quality dot (colored circle) */
@@ -3169,8 +3309,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--sleep-dot, 22px);
+  height: var(--sleep-dot, 22px);
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -3278,7 +3418,7 @@
 }
 
 .sleep-time-row:focus-within {
-  border-color: #e26ba0;
+  border-color: var(--sleep-fill, #ef5a24);
 }
 
 .sleep-time-step {
@@ -3357,15 +3497,15 @@
 @media (max-width: 720px) {
   .heat-card {
     --heat-cell: 10px;
-    --heat-gap: 2px;
+    --heat-gap: 3px;
   }
 
   .sleep-card {
     --sleep-cell: 16px;
-    --sleep-cell-h: 16px;
-    --sleep-gap: 2px;
+    --sleep-gap: 3px;
     --sleep-num-w: 28px;
     --sleep-qual-w: 24px;
+    --sleep-dot: 18px;
   }
 
   .sleep-month-scroll {
@@ -3373,8 +3513,6 @@
   }
 
   .quality-dot {
-    width: 18px;
-    height: 18px;
     font-size: 10px;
   }
 }
@@ -4064,18 +4202,63 @@
   margin-bottom: 16px;
 }
 
-.kanban-title {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
 .kanban-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+/* The dashboard's buttons (the board's header, the palette popover): pills,
+   the main action of a group filled in the page's colour. */
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong, var(--bg-surface));
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease, filter 150ms ease, transform 120ms var(--ease-out);
+}
+
+.pill-btn:hover {
+  background: var(--bg-secondary);
+}
+
+.pill-btn:active {
+  transform: scale(0.97);
+}
+
+.pill-btn--primary {
+  border-color: transparent;
+  background: var(--dash-primary, var(--accent-green));
+  color: var(--dash-primary-ink, #fff);
+  font-weight: 600;
+}
+
+.pill-btn--primary:hover {
+  background: var(--dash-primary, var(--accent-green));
+  filter: brightness(1.08);
+}
+
+.pill-btn:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+.pill-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+  transform: none;
 }
 
 .kanban-filter {
@@ -4302,148 +4485,171 @@
   width: 64px;
 }
 
+/* Three lanes side by side, each a recessed tray the cards sit in. */
 .kanban-board {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
+  gap: 14px;
 }
 
 .kanban-col {
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--border);
-  padding: 0 18px;
   min-height: 160px;
-  transition: background 0.15s;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border, var(--border));
+  background: var(--kanban-lane, var(--track-bg));
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
-.kanban-col:first-child {
-  border-left: none;
-  padding-left: 0;
-}
-
-.kanban-col:last-child {
-  padding-right: 0;
-}
-
+/* A card dragged over a lane lights it up in the page's accent. */
 .kanban-col.drag-over {
-  background: var(--bg-row-hover);
+  border-color: color-mix(in srgb, var(--accent-green) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 10%, var(--kanban-lane, var(--track-bg)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-green) 30%, transparent);
 }
 
 .kanban-col-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 10px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 2px 4px 12px;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text-primary);
 }
 
 .kanban-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex: 0 0 auto;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .kanban-dot--open {
+  color: var(--accent-blue);
   background: var(--accent-blue);
 }
 
 .kanban-dot--in-progress {
+  color: var(--accent-gold);
   background: var(--accent-gold);
 }
 
 .kanban-dot--done {
+  color: var(--accent-green);
   background: var(--accent-green);
 }
 
+/* How many cards a lane holds, as a small pill at its right. */
 .kanban-count {
   margin-left: auto;
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: var(--text-dim);
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--glass-bg-strong, var(--bg-surface));
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
 }
 
 .kanban-cards {
   display: flex;
   flex-direction: column;
+  gap: 8px;
   /* Cap the column at roughly 5–6 cards; the rest scroll inside it so the
-     board stops stretching and pushing the rest of the page down. */
-  max-height: 460px;
+     board stops stretching and pushing the rest of the page down. The
+     padding gives the cards' shadows and hover lift room inside the clip. */
+  max-height: 480px;
   overflow-y: auto;
+  margin: -4px;
+  padding: 4px;
 }
 
-.kanban-cards::-webkit-scrollbar {
-  width: 6px;
-}
-
-.kanban-cards::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.kanban-cards::-webkit-scrollbar-thumb {
-  background: var(--bg-surface);
-  border-radius: 3px;
-}
-
-.kanban-cards::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-blue);
-}
-
+/* An empty lane: the hatched square of every other empty slot on the page. */
 .kanban-col-empty {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(135deg, var(--hatch-ink, var(--border)) 0 1.5px, transparent 1.5px 6px),
+    var(--hatch-base, transparent);
   color: var(--text-dim);
-  font-size: 0.85rem;
-  text-align: center;
-  padding: 8px 0;
+  font-size: 0.82rem;
 }
 
 .kanban-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 4px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 4px;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--glass-bg-strong, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   cursor: grab;
-  transition: background 0.12s;
-}
-
-.kanban-cards .kanban-card:last-child {
-  border-bottom: none;
+  transition: transform 0.15s var(--ease-out), box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .kanban-card:hover {
-  background: var(--bg-row-hover);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--task-color, var(--accent-green)) 35%, var(--border));
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.3);
+}
+
+/* A short bar on the card's left edge: gold while it waits for its day,
+   blue when it is offered for the active one. */
+.kanban-card.locked,
+.kanban-card.offered {
+  overflow: hidden;
+}
+
+.kanban-card.locked::before,
+.kanban-card.offered::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
 }
 
 .kanban-card.locked {
   cursor: default;
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent-gold) 75%, transparent);
 }
 
-.kanban-card.offered {
-  box-shadow: inset 2px 0 0 var(--accent-blue);
+.kanban-card.locked::before {
+  background: color-mix(in srgb, var(--accent-gold) 80%, transparent);
+}
+
+.kanban-card.offered::before {
+  background: var(--accent-blue);
 }
 
 .kanban-card.dragging {
   opacity: 0.5;
 }
 
+/* The task's emoji in a round badge of its own colour. */
 .kanban-card-emoji {
-  font-size: 1rem;
-  width: 26px;
-  height: 26px;
+  font-size: 1.05rem;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: color-mix(in srgb, var(--task-color, var(--accent-blue)) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--task-color, var(--accent-blue)) 30%, transparent);
   flex: 0 0 auto;
 }
 
@@ -4486,7 +4692,7 @@
 .kanban-card-name {
   color: var(--text-primary);
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4496,17 +4702,26 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 0.75rem;
+  gap: 6px;
+  font-size: 0.74rem;
   color: var(--text-secondary);
 }
 
+.kanban-card-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The day the task is planned for, as a small chip; today's in the accent. */
 .kanban-day-badge {
-  color: var(--text-dim);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--track-bg);
+  color: var(--text-secondary);
 }
 
 .kanban-day-badge.is-today {
-  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  color: var(--accent-green);
   font-weight: 600;
 }
 
@@ -4528,6 +4743,53 @@
   opacity: 1;
 }
 
+/* A card's actions: small round icon buttons. Moving it on is the accent,
+   removing it turns red under the pointer. */
+.kanban-act {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 120ms var(--ease-out);
+}
+
+.kanban-act:hover {
+  background: var(--control-hover);
+  color: var(--text-primary);
+}
+
+.kanban-act:active {
+  transform: scale(0.92);
+}
+
+.kanban-act--go {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  color: var(--accent-green);
+}
+
+.kanban-act--go:hover {
+  background: var(--accent-green);
+  color: var(--dash-primary-ink, #fff);
+}
+
+.kanban-act--remove:hover {
+  border-color: color-mix(in srgb, var(--accent-red) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  color: var(--accent-red);
+}
+
+.kanban-act:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 1px;
+}
+
 /* Without a hover the actions would be invisible yet still tappable — a tap
    on the right of a card could delete it unseen. Show them outright, sized
    for a finger: ▶ / ✓ / ↩ are also how a card changes column on a touch
@@ -4537,16 +4799,10 @@
     opacity: 1;
   }
 
-  .kanban-card-actions .btn {
-    min-width: 32px;
-    min-height: 32px;
-    justify-content: center;
+  .kanban-act {
+    width: 34px;
+    height: 34px;
   }
-}
-
-.kanban-card-actions .btn {
-  padding: 2px 6px;
-  font-size: 0.85rem;
 }
 
 .kanban-lock {
@@ -4589,28 +4845,26 @@
 @media (max-width: 720px) {
   .kanban-board {
     grid-template-columns: 1fr;
-    gap: 20px;
-  }
-
-  .kanban-col {
-    border-left: none;
-    padding: 0;
-  }
-
-  .kanban-col:not(:first-child) {
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
+    gap: 12px;
   }
 }
 
 /* ===== Home dashboard: activity, habits, stats, sleep, kanban, days ===== */
+/* The panels keep to a 1200px column (1160px inside its padding), centred on
+   the window. The dashboard is its own scroller, and it spans the whole
+   window — reaching out over the shell's side gutter (the same clamp as
+   .app's --app-gutter, taken against the viewport) — so its scrollbar sits at
+   the window's edge rather than beside the column; the column is then padded
+   back in. Room for the scrollbar is always kept and taken off the right
+   padding, so the column stays centred. */
 .home-page {
+  --home-bleed: clamp(0px, calc((100vw - var(--app-min-width, 1200px)) / 2), 50px);
+  --home-side: max(calc(var(--home-bleed) + 20px), calc((100vw - 1160px) / 2));
   flex: 1;
   overflow-y: auto;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px 20px 32px;
+  scrollbar-gutter: stable;
+  margin: 0 calc(-1 * var(--home-bleed));
+  padding: 16px calc(var(--home-side) - var(--scrollbar-size, 0px)) 32px var(--home-side);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -4721,6 +4975,707 @@
   padding: 0;
   overflow: visible;
   flex: none;
+}
+
+/* ── The dashboard's look: frosted glass panels over a soft tinted backdrop ──
+   `.app--glass` is set on the app shell while a page wearing the look is open
+   — the home page always, the calendar and the tracker when the user has
+   switched it on for them (see dashPalette.ts) — so the backdrop also runs
+   under the header. The whole palette is worked out from the two colours of
+   the chosen palette preset, which App sets inline on the shell:
+     --dash-base    the page's own hue: backdrop, glass tint, heatmap shades,
+                    hatching and buttons;
+     --dash-accent  a second colour: the sleep tracker's squares, small
+                    labels and marks.
+   The app's own tokens are retuned from those, plus the glass, the hatching
+   of empty squares and the sleep tracker's colours. Dark theme first (it is
+   the default), light theme over it. What the home page's panels do with
+   them follows under `.app--home`; the calendar and the tracker are dressed
+   in glass.css. */
+.app--glass {
+  --dash-base: #22a35a;
+  --dash-accent: #ee5a24;
+  /* A light and a deep version of the hue, for dark and light grounds. */
+  --dash-light: color-mix(in srgb, var(--dash-base) 72%, white);
+  --dash-deep: color-mix(in srgb, var(--dash-base) 40%, #0b0f0d);
+
+  --dash-radius: 20px;
+  --glass-blur: blur(18px) saturate(1.4);
+  --glass-bg: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 14%, #101512) 55%, transparent);
+  --glass-bg-strong: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 16%, #151b17) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 14px 34px -18px rgba(0, 0, 0, 0.7);
+  --dash-ink: color-mix(in srgb, var(--dash-light) 25%, #eef2ef);
+  --dash-badge-ring: rgba(255, 255, 255, 0.12);
+  --dash-primary: var(--dash-light);
+  --dash-primary-ink: #0a0f0c;
+  --dash-up: var(--dash-light);
+  --dash-down: #f87171;
+  --hatch-ink: color-mix(in srgb, var(--dash-light) 22%, transparent);
+  --hatch-base: color-mix(in srgb, var(--dash-light) 5%, transparent);
+  --sleep-fill: color-mix(in srgb, var(--dash-accent) 90%, white);
+  --sleep-hatch-ink: color-mix(in srgb, var(--dash-accent) 34%, transparent);
+  --sleep-hatch-base: color-mix(in srgb, var(--dash-accent) 8%, transparent);
+  --kanban-lane: rgba(255, 255, 255, 0.025);
+
+  --bg-primary: color-mix(in srgb, var(--dash-base) 10%, #111512);
+  --bg-secondary: color-mix(in srgb, var(--dash-base) 8%, #0e1210);
+  --bg-surface: color-mix(in srgb, var(--dash-base) 14%, #171c19);
+  --border: rgba(255, 255, 255, 0.09);
+  --track-bg: rgba(255, 255, 255, 0.05);
+  --surface-raised: color-mix(in srgb, var(--dash-base) 20%, #1c221e);
+  --bg-row-hover: color-mix(in srgb, var(--dash-light) 6%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--dash-light) 22%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-light) 36%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--dash-light) 48%, transparent);
+
+  background:
+    radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
+    radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
+    radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
+    radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
+    color-mix(in srgb, var(--dash-base) 6%, #090c0a);
+}
+
+[data-theme='light'] .app--glass {
+  --glass-bg: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 3%, white) 52%, transparent);
+  --glass-bg-strong: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 2%, white) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-shadow:
+    0 1px 2px color-mix(in srgb, var(--dash-deep) 6%, transparent),
+    0 14px 34px -16px color-mix(in srgb, var(--dash-deep) 26%, transparent);
+  --dash-ink: var(--text-primary);
+  --dash-badge-ring: color-mix(in srgb, var(--dash-deep) 18%, transparent);
+  --dash-primary: color-mix(in srgb, var(--dash-base) 88%, black);
+  --dash-primary-ink: #ffffff;
+  --dash-up: color-mix(in srgb, var(--dash-base) 85%, black);
+  --dash-down: #dc4c4c;
+  --hatch-ink: color-mix(in srgb, var(--dash-base) 28%, transparent);
+  --hatch-base: color-mix(in srgb, var(--dash-base) 6%, transparent);
+  --sleep-fill: var(--dash-accent);
+  --sleep-hatch-ink: color-mix(in srgb, var(--dash-accent) 32%, transparent);
+  --sleep-hatch-base: color-mix(in srgb, var(--dash-accent) 10%, transparent);
+  --kanban-lane: rgba(255, 255, 255, 0.42);
+
+  --bg-primary: color-mix(in srgb, var(--dash-base) 4%, white);
+  --bg-secondary: color-mix(in srgb, var(--dash-base) 2%, white);
+  --bg-surface: color-mix(in srgb, var(--dash-base) 8%, white);
+  --text-primary: color-mix(in srgb, var(--dash-base) 14%, #0d1310);
+  --text-secondary: color-mix(in srgb, var(--dash-base) 22%, #4c544f);
+  --text-dim: color-mix(in srgb, var(--dash-base) 22%, #8b938e);
+  --border: color-mix(in srgb, var(--dash-deep) 14%, transparent);
+  --track-bg: color-mix(in srgb, var(--dash-deep) 7%, transparent);
+  --surface-raised: #ffffff;
+  --control-hover: color-mix(in srgb, var(--dash-deep) 7%, transparent);
+  --bg-row-hover: color-mix(in srgb, var(--dash-deep) 5%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--dash-deep) 24%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-deep) 40%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--dash-deep) 52%, transparent);
+
+  background:
+    radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
+    radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
+    radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
+    radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--dash-base) 4%, white) 0%,
+      color-mix(in srgb, var(--dash-base) 9%, white) 100%
+    );
+}
+
+/* Where the browser can turn a hue, two of the glows drift off the base to
+   either side — lime and teal around a green — so the backdrop is not one
+   flat wash of a single colour. */
+@supports (color: oklch(from red l c h)) {
+  .app--glass {
+    background:
+      radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
+      radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18), transparent 70%),
+      radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.6 c calc(h + 35) / 0.18), transparent 70%),
+      radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
+      color-mix(in srgb, var(--dash-base) 6%, #090c0a);
+  }
+
+  [data-theme='light'] .app--glass {
+    background:
+      radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
+      radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75), transparent 70%),
+      radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.88 calc(c * 0.6) calc(h + 35) / 0.6), transparent 70%),
+      radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--dash-base) 4%, white) 0%,
+        color-mix(in srgb, var(--dash-base) 9%, white) 100%
+      );
+  }
+}
+
+/* The header lets the backdrop through instead of sitting on it as a bar. */
+.app--glass .header {
+  background: color-mix(in srgb, var(--bg-secondary) 45%, transparent);
+  border-bottom-color: var(--glass-border);
+}
+
+/* On the home page the page's own hue is also every "good" accent, and the
+   heatmap's shades are its steps. The working pages keep green for ahead and
+   done, so a palette never makes ahead and behind look alike. */
+.app--home {
+  --accent-green: var(--dash-light);
+  --heat-1: color-mix(in srgb, var(--dash-base) 28%, #121714);
+  --heat-2: color-mix(in srgb, var(--dash-base) 52%, #121714);
+  --heat-3: color-mix(in srgb, var(--dash-base) 80%, #121714);
+  --heat-4: var(--dash-light);
+}
+
+[data-theme='light'] .app--home {
+  --accent-green: color-mix(in srgb, var(--dash-base) 88%, black);
+  --heat-0: color-mix(in srgb, var(--dash-base) 8%, transparent);
+  --heat-1: color-mix(in srgb, var(--dash-base) 26%, white);
+  --heat-2: color-mix(in srgb, var(--dash-base) 52%, white);
+  --heat-3: color-mix(in srgb, var(--dash-base) 82%, white);
+  --heat-4: color-mix(in srgb, var(--dash-base) 85%, black);
+}
+
+/* The dashboard is the stacking context its glass is painted in (see the
+   panels below), lifted over the header so a dialog opened from a panel
+   still covers the whole window. */
+.app--home .home-page {
+  position: relative;
+  z-index: 2;
+  padding-top: 20px;
+}
+
+/* Glass panels. The frosted layer is a pseudo-element behind the content
+   rather than the panel's own background: backdrop-filter on the panel itself
+   would make it the containing block of everything position: fixed inside it
+   — the sleep editor, the heatmap tooltip, the board's dialogs — and pin
+   those to the panel instead of the window. The panels stay without a
+   stacking context of their own, so their z-index: -1 layers all land in the
+   dashboard's: above its (empty) background, below every panel's content. */
+.app--home :is(.home-week-overtake, .card, .stat-card, .habit-card, .habits-empty, .home-panel--kanban, .home-panel--days) {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--dash-radius);
+}
+
+.app--home
+  :is(.home-week-overtake, .card, .stat-card, .habit-card, .habits-empty, .home-panel--kanban, .home-panel--days)::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  pointer-events: none;
+}
+
+.app--home .habits-empty {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.app--home :is(.home-panel--kanban, .home-panel--days) {
+  padding: 20px 22px;
+}
+
+.app--home .card {
+  padding: 20px 22px;
+}
+
+/* A habit card clips its contents (overflow: hidden), which would clip the
+   glass layer's shadow too, so the card casts it itself. */
+.app--home .habit-card {
+  box-shadow: var(--glass-shadow);
+}
+
+/* A habit card keeps its own colour on hover and once done, now over glass. */
+.app--home .habit-card:hover {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 35%, var(--glass-border));
+}
+
+.app--home .habit-card.done {
+  border-color: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 45%, var(--glass-border));
+}
+
+.app--home .habit-card.done::before {
+  background: color-mix(in srgb, var(--habit-color, var(--accent-blue)) 10%, var(--glass-bg));
+}
+
+/* Week strip: the empty hours are hatched like every other empty square. */
+.app--home .home-week-overtake {
+  padding: 16px 18px 18px;
+}
+
+.app--home .ot-block {
+  border-color: transparent;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(90deg, var(--hatch-ink) 0 1.5px, transparent 1.5px 4.5px),
+    var(--hatch-base);
+}
+
+/* Controls inside the panels become pills, like the cards' own. */
+.app--home :is(.btn-sleep-nav, .btn-heat-nav) {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.app--home :is(.btn-sleep-nav, .btn-heat-nav):hover {
+  background: var(--bg-secondary);
+}
+
+.app--home .dd-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--glass-bg-strong);
+  font-weight: 500;
+}
+
+.app--home .period-toggle {
+  border-radius: 999px;
+  background: var(--track-bg);
+  padding: 3px;
+}
+
+.app--home .period-toggle-btn {
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-weight: 500;
+}
+
+.app--home .period-toggle-btn.active {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+  color: var(--text-primary);
+}
+
+.app--home .sleep-info-total {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* Fewer, softer layers where blur costs the most: a phone repaints every
+   frosted panel on each scroll frame. */
+@media (pointer: coarse) {
+  .app--glass {
+    --glass-blur: blur(10px);
+  }
+}
+
+/* Phones: tighter panels, and the summary cards shorter so all four are not
+   a whole screen of scrolling. */
+@media (max-width: 640px) {
+  .app--glass {
+    --dash-radius: 16px;
+  }
+
+  .app--home :is(.card, .home-panel--kanban, .home-panel--days) {
+    padding: 16px 14px;
+  }
+
+  .stats-summary {
+    gap: 10px;
+  }
+
+  .stat-card-head {
+    margin-bottom: 12px;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
+}
+
+/* ── Palette picker: the header's palette button and its popover ── */
+.palette {
+  position: relative;
+}
+
+.icon-btn.is-open {
+  background: var(--control-hover);
+  color: var(--text-primary);
+}
+
+.palette-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 90px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  box-shadow: 0 18px 48px -12px rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+  animation: kanban-pop 0.18s var(--ease-out);
+}
+
+.palette-head {
+  margin: 0 2px 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.palette-sub {
+  margin: 14px 2px 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.palette-empty {
+  margin: 0 2px 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* The pages that can wear the look, each with its switch. */
+.palette-lead {
+  margin: -4px 2px 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.palette-pages {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--track-bg);
+}
+
+.palette-page {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.palette-pages .current .palette-page {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+}
+
+.palette-page-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.palette-page-text b {
+  font-weight: 500;
+}
+
+.palette-page-text small {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+/* A checkbox drawn as a switch: a pill track with a knob that slides over and
+   fills in the page's colour when on. */
+.palette-switch {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.palette-switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 180ms var(--ease-out);
+}
+
+.palette-switch:checked {
+  background: var(--dash-primary, var(--accent-green));
+}
+
+.palette-switch:checked::before {
+  transform: translateX(14px);
+}
+
+.palette-switch:focus-visible {
+  outline: 2px solid var(--dash-primary, var(--accent-green));
+  outline-offset: 2px;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+}
+
+.palette-item:hover,
+.palette-item.active {
+  background: var(--bg-row-hover);
+}
+
+.palette-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-swatch {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 0 0 2px var(--bg-secondary);
+}
+
+.palette-item.active .palette-swatch {
+  box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--dash-primary, var(--accent-green));
+}
+
+.palette-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-check {
+  flex: none;
+  color: var(--dash-primary, var(--accent-green));
+}
+
+/* Edit / delete for the user's own palettes, shown on the row under the
+   pointer (always on a touch screen). */
+.palette-tools {
+  display: flex;
+  gap: 2px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.palette-item:hover .palette-tools,
+.palette-item:focus-within .palette-tools {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .palette-tools {
+    opacity: 1;
+  }
+}
+
+.palette-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.palette-tool:hover {
+  background: var(--control-hover);
+  color: var(--text-primary);
+}
+
+.palette-tool--remove:hover {
+  color: var(--accent-red);
+}
+
+.palette-new {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.palette-background-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.palette-background-actions .pill-btn {
+  flex: 1;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+/* The editor: a name and two colours, painted on the page as they change. */
+.palette-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.palette-editor .palette-head {
+  margin-bottom: 2px;
+}
+
+.palette-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.palette-input {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.palette-input:focus {
+  border-color: var(--dash-primary, var(--accent-green));
+}
+
+.palette-color {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.palette-color:hover {
+  background: var(--bg-row-hover);
+}
+
+/* The native colour input, reduced to a round swatch that opens the
+   system picker. */
+.palette-color input[type='color'] {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.palette-color input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.palette-color input[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.palette-color input[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.palette-color-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+
+.palette-color-text b {
+  font-weight: 600;
+}
+
+.palette-color-text small {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.palette-color code {
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.palette-note {
+  margin: 0 2px;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.palette-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 /* ===== Habit tracker (home page) — per-habit dial cards ===== */

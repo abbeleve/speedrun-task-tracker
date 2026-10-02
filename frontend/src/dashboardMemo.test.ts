@@ -6,7 +6,7 @@ import { ActivityHeatmap, ActivityStatsSummary, SleepTracker } from './StatsPage
 
 // App re-renders on every clock tick (twice a second) and the home page with
 // it. Only the weekly overtake strip reads the clock; every other panel has to
-// skip those renders, or the sleep grid (thousands of cell buttons), the
+// skip those renders, or the sleep grid (thousands of hour cells), the
 // heatmap and the board are rebuilt twice a second and the page stutters on
 // every scroll, hover and habit +.
 const REACT_MEMO = Symbol.for('react.memo');

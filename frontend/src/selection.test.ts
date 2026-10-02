@@ -1,19 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import type { Task } from './types';
 import { buildChains, buildGroups, dayStartMs } from './schedule';
+import type { Marquee, SelectionBlock } from './selection';
 import {
   HOLD_SLOP_PX,
   chainOfSelection,
-  normalizeBand,
+  clampMarquee,
+  marqueeRect,
   onTheSpot,
   splitPatches,
   sweep,
-  tasksInBand,
+  tasksInMarquee,
   toggled,
 } from './selection';
 
 const DAY = '2026-03-10';
-const NEXT = '2026-03-11';
 const hm = (h: number, m = 0) => h * 60 + m;
 
 let seq = 0;
@@ -44,71 +45,82 @@ function apply(tasks: Task[], patches: { id: string; patch: Partial<Task> }[]): 
   });
 }
 
-describe('normalizeBand', () => {
-  it('sorts the corners and clamps the columns to what is on screen', () => {
-    expect(normalizeBand({ fromDayIdx: 4, toDayIdx: -2, fromMin: 600, toMin: 120 }, 3)).toEqual({
-      fromDayIdx: 0,
-      toDayIdx: 2,
-      topMin: 120,
-      bottomMin: 600,
-    });
+const area = (x1: number, y1: number, x2: number, y2: number, dayIdx = 0): Marquee => ({
+  dayIdx, anchor: { x: x1, y: y1 }, cursor: { x: x2, y: y2 },
+});
+const block = (taskId: string, left: number, top: number, right: number, bottom: number, dayIdx = 0): SelectionBlock => ({
+  taskId, dayIdx, left, top, right, bottom,
+});
+
+describe('marquee geometry', () => {
+  it('normalizes drags in every direction', () => {
+    for (const marquee of [area(20, 30, 80, 90), area(80, 90, 20, 30), area(80, 30, 20, 90), area(20, 90, 80, 30)]) {
+      expect(marqueeRect(marquee)).toEqual({ left: 20, top: 30, right: 80, bottom: 90 });
+    }
+  });
+
+  it('stops a column selection at its starting day, even across other columns', () => {
+    const day = { left: 100, top: 0, right: 200, bottom: 1200 };
+    expect(clampMarquee(area(120, 300, 450, 1500, 1), day)).toEqual(area(120, 300, 200, 1200, 1));
+    expect(clampMarquee(area(180, 300, -50, -100, 1), day)).toEqual(area(180, 300, 100, 0, 1));
+  });
+
+  it('stops a timeline selection at its starting row and the ends of the day', () => {
+    const day = { left: 0, top: 100, right: 3000, bottom: 250 };
+    expect(clampMarquee(area(500, 130, 3200, 450, 1), day)).toEqual(area(500, 130, 3000, 250, 1));
+    expect(clampMarquee(area(500, 230, -100, 20, 1), day)).toEqual(area(500, 230, 0, 100, 1));
   });
 });
 
-describe('tasksInBand', () => {
-  const a = task({ start: hm(9), plannedTime: 3600 }); // 09:00–10:00
-  const b = task({ start: hm(10), plannedTime: 1800 }); // 10:00–10:30
-  const late = task({ start: hm(20), plannedTime: 3600 });
-  const otherDay = task({ day: NEXT, start: hm(9), plannedTime: 3600 });
-  const backlog = task({ status: 'open', start: null });
-  const all = [a, b, late, otherDay, backlog];
-  const days = [DAY, NEXT];
+describe('tasksInMarquee', () => {
+  const columns = [
+    block('left-early', 14, 100, 90, 160),
+    block('right-early', 100, 100, 180, 160),
+    block('left-late', 14, 170, 90, 230),
+    block('right-late', 100, 170, 180, 230),
+    block('next-day', 214, 100, 290, 160, 1),
+  ];
 
-  it('picks every block the rectangle touches, in start order', () => {
-    const picked = tasksInBand(all, days, {
-      fromDayIdx: 0,
-      toDayIdx: 0,
-      fromMin: hm(9, 30),
-      toMin: hm(10, 10),
-    });
-    expect(picked.map((t) => t.id)).toEqual([a.id, b.id]);
+  it('picks only one task from each parallel pair in a column', () => {
+    expect(tasksInMarquee(columns, area(10, 95, 95, 235))).toEqual(['left-early', 'left-late']);
+    expect(tasksInMarquee(columns, area(185, 235, 95, 95))).toEqual(['right-early', 'right-late']);
   });
 
-  it('spans several day columns', () => {
-    const picked = tasksInBand(all, days, {
-      fromDayIdx: 1,
-      toDayIdx: 0,
-      fromMin: hm(8),
-      toMin: hm(11),
-    });
-    expect(picked.map((t) => t.id).sort()).toEqual([a.id, b.id, otherDay.id].sort());
+  it('picks only one lane of parallel tasks in the timeline', () => {
+    const rows = columns.slice(0, 4).map((b) => ({
+      ...b, left: b.top, right: b.bottom, top: b.left, bottom: b.right,
+    }));
+    expect(tasksInMarquee(rows, area(95, 10, 235, 95))).toEqual(['left-early', 'left-late']);
   });
 
-  it('leaves the backlog alone and never picks a block it only misses', () => {
-    const picked = tasksInBand(all, days, {
-      fromDayIdx: 0,
-      toDayIdx: 1,
-      fromMin: hm(12),
-      toMin: hm(13),
-    });
-    expect(picked).toEqual([]);
+  it('selects both parallel lanes only when the rectangle overlaps both', () => {
+    expect(tasksInMarquee(columns, area(85, 110, 105, 120))).toEqual(['left-early', 'right-early']);
   });
 
-  it('catches a block spilling past midnight from the column it runs into', () => {
-    const night = task({ start: hm(23), plannedTime: 2 * 3600 }); // 23:00–01:00
-    const picked = tasksInBand([night], [DAY, NEXT], {
-      fromDayIdx: 1,
-      toDayIdx: 1,
-      fromMin: hm(0, 15),
-      toMin: hm(0, 45),
-    });
-    expect(picked.map((t) => t.id)).toEqual([night.id]);
+  it('never includes a segment from another day', () => {
+    expect(tasksInMarquee(columns, area(0, 95, 500, 165))).toEqual(['left-early', 'right-early']);
   });
 
-  it('picks nothing from a rectangle with no height', () => {
-    expect(tasksInBand(all, days, { fromDayIdx: 0, toDayIdx: 0, fromMin: 540, toMin: 540 })).toEqual(
-      []
-    );
+  it('uses rendered short blocks and reminder rails without selecting their neighbours', () => {
+    const rendered = [block('short', 14, 100, 90, 116), block('reminder', 188, 100, 194, 160)];
+    expect(tasksInMarquee(rendered, area(20, 110, 30, 115))).toEqual(['short']);
+    expect(tasksInMarquee(rendered, area(186, 110, 195, 120))).toEqual(['reminder']);
+  });
+
+  it('can select an overnight continuation in the day it runs into', () => {
+    const overnight = [block('night', 14, 1100, 90, 1200), block('night', 214, 0, 290, 60, 1)];
+    expect(tasksInMarquee(overnight, area(220, 15, 280, 45, 1))).toEqual(['night']);
+  });
+
+  it('does not select blocks only touching an edge, or rectangles without area', () => {
+    expect(tasksInMarquee(columns, area(90, 100, 100, 160))).toEqual([]);
+    expect(tasksInMarquee(columns, area(14, 160, 90, 170))).toEqual([]);
+    expect(tasksInMarquee(columns, area(20, 110, 20, 150))).toEqual([]);
+    expect(tasksInMarquee(columns, area(20, 110, 80, 110))).toEqual([]);
+  });
+
+  it('returns each task once even if more than one segment is supplied', () => {
+    expect(tasksInMarquee([...columns, columns[0]], area(10, 95, 95, 165))).toEqual(['left-early']);
   });
 });
 
@@ -124,27 +136,19 @@ describe('onTheSpot', () => {
 });
 
 describe('sweep', () => {
-  const a = task({ start: hm(9), plannedTime: 3600 }); // 09:00–10:00
-  const b = task({ start: hm(10), plannedTime: 1800 }); // 10:00–10:30
-  const late = task({ start: hm(20), plannedTime: 3600 });
-  const all = [a, b, late];
-  const days = [DAY];
+  const blocks = [block('a', 14, 100, 90, 160), block('b', 14, 170, 90, 230)];
 
-  it('adds what the rectangle touches to the batch it started from', () => {
-    const band = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(10, 10) };
-    expect([...sweep(all, days, band, [late.id])].sort()).toEqual([a.id, b.id, late.id].sort());
+  it('adds touched blocks to the original selection, without duplicates', () => {
+    expect([...sweep(blocks, area(10, 95, 95, 235), ['a', 'previous'])]).toEqual(['a', 'previous', 'b']);
   });
 
-  it('lets go of what it swept when the rectangle shrinks, but never of the base', () => {
-    const wide = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(10, 10) };
-    const narrow = { ...wide, toMin: hm(9, 45) };
-    expect(sweep(all, days, wide, [late.id]).has(b.id)).toBe(true);
-    expect([...sweep(all, days, narrow, [late.id])].sort()).toEqual([a.id, late.id].sort());
+  it('releases swept blocks when the rectangle shrinks, keeping the original selection', () => {
+    expect(sweep(blocks, area(10, 95, 95, 235), ['previous']).has('b')).toBe(true);
+    expect([...sweep(blocks, area(10, 95, 95, 165), ['previous'])]).toEqual(['previous', 'a']);
   });
 
-  it('keeps the base as it is while the rectangle has no height yet', () => {
-    const band = { fromDayIdx: 0, toDayIdx: 0, fromMin: hm(9, 30), toMin: hm(9, 30) };
-    expect([...sweep(all, days, band, [late.id])]).toEqual([late.id]);
+  it('keeps the original selection while the rectangle has no area', () => {
+    expect([...sweep(blocks, area(20, 110, 20, 110), ['previous'])]).toEqual(['previous']);
   });
 });
 

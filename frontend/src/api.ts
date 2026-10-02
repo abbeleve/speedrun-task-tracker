@@ -5,10 +5,12 @@
 
 import { todayKey } from './history';
 import type { ActivityChart } from './activityChart';
+import type { CalDesign } from './calendarDesign';
 import type { CalLayout } from './calendarLayout';
 import type { ColorPreset } from './colorPresets';
+import type { DashPalette, GlassPages } from './dashPalette';
 import type { SleepData } from './sleep';
-import type { DayState, DayStats, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
+import type { DayState, DayStats, Deadline, Habit, HabitEntry, RunRecord, TaskTemplate, Template } from './types';
 
 const TOKEN_KEY = 'speedrun_token';
 
@@ -163,6 +165,21 @@ export async function loadDays(): Promise<Record<string, DayState>> {
   return apiFetch('/days');
 }
 
+// Deadlines belong to the account, not to the day holding their work blocks.
+export async function loadDeadlines(): Promise<Deadline[]> {
+  return apiFetch('/deadlines');
+}
+
+export async function saveDeadline(deadline: Deadline): Promise<void> {
+  await apiFetch(`/deadlines/${encodeURIComponent(deadline.id)}`, {
+    method: 'PUT', body: JSON.stringify(deadline),
+  });
+}
+
+export async function deleteDeadline(id: string): Promise<void> {
+  await apiFetch(`/deadlines/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 // ── Sleep log ──────────────────────────────────────────────────────
 
 export async function loadSleepLog(): Promise<Record<string, SleepData>> {
@@ -249,6 +266,11 @@ export function saveColorPresets(presets: ColorPreset[]): Promise<void> {
 export interface Prefs {
   activityChart?: ActivityChart;
   calendarLayout?: CalLayout;
+  calendarDesign?: CalDesign;
+  dashPalette?: string; // id of the home page's palette (see dashPalette.ts)
+  dashPalettes?: DashPalette[]; // the palettes the user made
+  dashGlass?: GlassPages; // the other pages that wear the dashboard's look
+  dashBackdropSeed?: number; // saved positions of the backdrop's colored glows
 }
 
 export async function loadPrefs(): Promise<Prefs> {

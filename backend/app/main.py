@@ -20,6 +20,7 @@ from .schemas import (
     ColorPresetIn,
     DayStateIn,
     DayStatsIn,
+    DeadlineIn,
     HabitEntryIn,
     HabitIn,
     LoginIn,
@@ -334,6 +335,12 @@ def put_day(
     user=Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    for deadline_id in {task.deadlineId for task in body.tasks if task.deadlineId}:
+        if conn.execute(
+            'SELECT 1 FROM deadlines WHERE user_id = ? AND id = ?',
+            (user['id'], deadline_id),
+        ).fetchone() is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, 'Unknown deadline')
     conn.execute(
         """
         INSERT INTO day_state (user_id, date, data, updated_at)
@@ -343,6 +350,63 @@ def put_day(
             updated_at = excluded.updated_at
         """,
         (user['id'], date, body.model_dump_json()),
+    )
+    conn.commit()
+    return {'ok': True}
+
+
+# ── Independent deadlines ──────────────────────────────────────────
+
+@app.get('/api/deadlines')
+def get_deadlines(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    rows = conn.execute(
+        'SELECT data FROM deadlines WHERE user_id = ? ORDER BY id', (user['id'],)
+    ).fetchall()
+    return [json.loads(row['data']) for row in rows]
+
+
+@app.put('/api/deadlines/{deadline_id}')
+def put_deadline(
+    deadline_id: str,
+    body: DeadlineIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    if body.id != deadline_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Deadline id does not match URL')
+    conn.execute(
+        'INSERT INTO deadlines (user_id, id, data) VALUES (?, ?, ?) '
+        'ON CONFLICT(user_id, id) DO UPDATE SET data = excluded.data',
+        (user['id'], deadline_id, body.model_dump_json()),
+    )
+    conn.commit()
+    return {'ok': True}
+
+
+@app.delete('/api/deadlines/{deadline_id}')
+def delete_deadline(
+    deadline_id: str,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    # Clear links atomically without changing work completion or placement.
+    rows = conn.execute(
+        'SELECT date, data FROM day_state WHERE user_id = ?', (user['id'],)
+    ).fetchall()
+    for row in rows:
+        data = json.loads(row['data'])
+        linked = [task for task in (data.get('tasks') or []) if task.get('deadlineId') == deadline_id]
+        if not linked:
+            continue
+        for task in linked:
+            task['deadlineId'] = None
+        conn.execute(
+            "UPDATE day_state SET data = ?, updated_at = datetime('now') "
+            'WHERE user_id = ? AND date = ?',
+            (json.dumps(data), user['id'], row['date']),
+        )
+    conn.execute(
+        'DELETE FROM deadlines WHERE user_id = ? AND id = ?', (user['id'], deadline_id)
     )
     conn.commit()
     return {'ok': True}

@@ -1,6 +1,6 @@
 # ⏱ SpeedRun Task Tracker
 
-A calendar you can speedrun. Plan the day the way you would in Google Calendar — real slots, real times, parallel blocks — then close tasks as you go and watch the **overtake**: the time you have won back from the plan and can spend on everything that follows. Any run of back-to-back blocks can be opened in the LiveSplit-style views (thermometer, spiral route, list) and run against the clock.
+A calendar you can speedrun. Plan the day the way you would in Google Calendar — real slots, real times, parallel blocks — then close tasks as you go and watch the **overtake**: the time you have won back from the plan and can spend on everything that follows. Any run of back-to-back blocks can be opened in the LiveSplit-style views (thermometer, spiral route, list, story path) and run against the clock.
 
 ![Stack](https://img.shields.io/badge/React-19-61dafb?logo=react) ![Stack](https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript) ![Stack](https://img.shields.io/badge/Vite-8-646cff?logo=vite) ![Stack](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
 
@@ -8,7 +8,7 @@ A calendar you can speedrun. Plan the day the way you would in Google Calendar �
 
 The app is split into two parts:
 
-- `frontend/` — React + Vite SPA (calendar, dashboard, kanban board and the sequence visualisations: timeline, spiral, list).
+- `frontend/` — React + Vite SPA (calendar, dashboard, kanban board and the sequence visualisations: timeline, spiral, list, story path).
 - `backend/` — FastAPI + SQLite REST API (users, the per-day plan, daily totals, sleep log).
 
 All user data lives in the backend's SQLite file, scoped per account (registration
@@ -20,7 +20,9 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Calendar** — day / week / month views with an hour grid: drag on empty space to create a block, drag it to move (across days too), drag either edge to resize, click to edit. The backlog rail holds unplanned tasks; drop one on the grid to give it a time. Hover a day in the 3-day/week views to see reminder details and the first real break after the current or next uninterrupted work stretch.
 - **Timeline layout** — the switch next to the views turns the day / 3-day / week grid on its side: a row per day with the hours running across, the hour ruler and the day labels pinned while it scrolls both ways. Blocks that run at the same time stack into lanes; a session hangs under a rail in its own gradient with connectors from step to step, weekends are hatched, and the now line stands across today's row. Hovering a day in the 3-day/week timeline opens its reminders and its first real break in a line of cards under the row (over it near the bottom of the screen), with the break marked out in the row. In any view, hovering a day also opens the hover card of each of its blocks on screen that are too short to show their own name — the same card the block shows when hovered itself — as many as fit side by side across the screen, in a line under the row's lanes (over the row near the bottom of the screen), each tied to its block by a guide. Drawing, moving, resizing by either end, the lasso, right-drag zoom and backlog drops all work as in the columns. The choice is saved to the account, so it follows you to another device.
 - **Backlog templates** — hide the calendar backlog rail when you need more room. Its Templates tab stores reusable task details per account; each use makes a new unscheduled backlog task for the chosen day. This suits tasks such as a rest-type meal whose time is not known in advance.
+- **Independent deadlines** — a deliverable has its own due date and completion, and can link to work blocks on different days. Flags mark its cutoff in calendar columns, timeline rows and month cells; linked blocks carry a flag badge, with a dotted guide on hover or selection. Open deadlines stay visible above the grid, including overdue ones and those whose work blocks are already done. Closing a block never closes its deadline, and moving it never moves the due date. The deadline editor can create more work blocks, close or reopen the deliverable, and accepts a date with optional time. Labels show absolute due dates and times without countdowns.
 - **Pinned tasks** — pin a calendar block or backlog item to lock its placement. It can still be completed and edited; uncheck the pin to move it again.
+- **Area selection** — hold Ctrl (⌘) and drag a rectangle within one day to select the blocks it touches, including individual parallel tasks. Drag any selected block to move the batch together. Ctrl (⌘) + click adds or removes a single block; holding on empty grid space for a second also starts a selection rectangle. Works in both calendar columns and timeline rows.
 - **Parallel tasks** — overlapping blocks are laid out side by side, and count as a single group: the group is closed only when its last task is.
 - **Overtake (обгон)** — the headline metric: how far ahead of the plan you are running right now. See [the rules](#the-overtake) below.
 - **Sequences are explicit** — blocks never connect to each other on their own, however tightly they are laid out: two blocks that touch stay two separate blocks until you say otherwise. A sequence is marked by a spine on the left of the day column; click the spine to open the session editor, drag it to move the whole run at once.
@@ -30,6 +32,7 @@ All user data lives in the backend's SQLite file, scoped per account (registrati
 - **Thermometer timeline** — vertical fill bar that grows as the sequence's time passes, color-coded by task
 - **Spiral route** — zooming spiral view where one full turn (360°) equals one hour of planned time; every task's planet is visible at once, far ones rendered smaller, and sub-pixel planets culled
 - **List timeline** — a plain task list (emoji avatar, name, finish time and schedule delta per row); the task the sequence has reached expands into a thermometer that tapers back into the spine, with a motivational picture card beside it (pictures are served by the backend from `MOTIVATION_DIR`)
+- **Story path** — a fourth sequence view inspired by a winding photo timeline: task images and text alternate along a continuous teal route. The route fills green as the active task progresses, keeps completed steps filled, and leaves upcoming steps pale; closing a step early fills its entire bend and starts the next one, while reopening or scrubbing updates the fill. It shares the List view's motivational pictures, shuffles their order on each page reload, uses every distinct image before looping, and keeps images stable while the clock ticks or views change. Shows progress, finish times and schedule deltas; tasks can be completed or reopened, and the active progress slider scrubs time. Supports light and dark themes and phone widths.
 - **Kanban board** — plan tasks ahead across days in three columns (Open → In-Progress → Done); dragging an Open task into In-Progress puts it on that day's calendar, after everything already planned there
 - **Recurring tasks** — a task can repeat on a fixed interval or walk a spaced-repetition series (1 → 3 → 7 → 16 → 35 days, scaled by a base); closing it schedules the next occurrence at the same time of day. A reminder has no ✓: it closes itself once its window has passed, and a recurring one schedules its next occurrence then (occurrences missed while the app was closed are caught up)
 - **Wall-clock only** — no session to start, pause or reset: the day runs on the real clock, and ✓ records the moment a task was actually closed
@@ -85,7 +88,7 @@ proxies every `/api/*` request to the backend, so no CORS config is needed.
 Use the **register** tab on the login screen to create an account (a token is
 stored in `localStorage` and sent as `Authorization: Bearer ...`).
 
-Motivational pictures for the List view are served by the backend from
+Motivational pictures for the List and Story path views are served by the backend from
 `backend/data/motivation/` (override with the `MOTIVATION_DIR` env var). Drop
 images there — they are picked up automatically and are not committed to git.
 
@@ -107,7 +110,7 @@ images there — they are picked up automatically and are not committed to git.
 2. **Plan the day** — on the calendar, drag on the grid to create a block, or drop one from the backlog. Set the emoji, colour, length and (optionally) a repeat rule in the dialog. Blocks may overlap: that is a parallel group.
    Open **Шаблоны** in the backlog to save a task for later use (or press ☆ on an existing backlog card), then choose a day and press **В бэклог** whenever you need a new copy. Use **Скрыть бэклог** to give the calendar more space; the same button shows it again.
 3. **Work the plan** — press ✓ on a block the moment you really finish it. The HUD shows your lead, what closing the running block right now would bank, and when the rest of the plan will be done.
-4. **Glue a sequence** — press the 🔗 handle between two blocks (or select a batch and *Собрать в отдельную сессию*) to make them one session, then click its spine to open it in the thermometer / spiral / list views and close splits from there.
+4. **Glue a sequence** — press the 🔗 handle between two blocks (or select a batch and *Собрать в отдельную сессию*) to make them one session, then click its spine to open it in the thermometer / spiral / list / story path views and close splits from there.
 5. **Look back** — the dashboard (🏠) holds the kanban board, every stretch you have worked, and the statistics page.
 
 ## CI / CD

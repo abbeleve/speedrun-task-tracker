@@ -5,10 +5,12 @@ import { DEFAULT_COLOR } from './types';
 import { formatTime, formatDelta } from './format';
 import { SpiralThermometer } from './SpiralThermometer';
 import { ListView } from './ListView';
+import { StoryView } from './StoryView';
 import { primeMotivationImages } from './motivation';
 import HomePage from './HomePage';
 import CalendarPage from './CalendarPage';
 import { useDayStore } from './dayStore';
+import { useDeadlines } from './deadlineStore';
 import { useHabits } from './habitStore';
 import type { Chain } from './schedule';
 import {
@@ -30,23 +32,37 @@ import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
 import {
   IconCalendar,
+  IconClock,
   IconClose,
+  IconFlag,
   IconHome,
+  IconHourglass,
   IconList,
   IconLogOut,
   IconMoon,
   IconPlay,
   IconRewind,
   IconSpiral,
+  IconStory,
   IconStopwatch,
   IconSun,
   IconThermometer,
+  IconTrend,
 } from './icons';
 import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
+import { paletteStyle } from './dashPalette';
+import { useDashPalette } from './useDashPalette';
+import PalettePicker from './PalettePicker';
 import './App.css';
 import './calendar.css';
+import './deadlines.css';
+// After the classic rules, which it overrides under .cal-cards.
+import './calendarCards.css';
+// The dashboard's look on the calendar and the tracker; last, over both
+// designs of the calendar.
+import './glass.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
@@ -85,6 +101,7 @@ function wallTime(ms: number): string {
 function App() {
   const { user, logout } = useAuth();
   const store = useDayStore();
+  const deadlines = useDeadlines();
   const habits = useHabits();
 
   const [now, setNow] = useState(() => Date.now());
@@ -98,13 +115,21 @@ function App() {
     return saved !== null ? saved === 'dark' : true;
   });
 
-  const [view, setView] = useState<'timeline' | 'spiral' | 'list'>(() => {
+  // The home page's colours (see dashPalette.ts).
+  const palette = useDashPalette();
+  const shownPalette = palette.current;
+  const paletteVars = useMemo(
+    () => paletteStyle(shownPalette, palette.backdropSeed),
+    [shownPalette, palette.backdropSeed]
+  );
+
+  const [view, setView] = useState<'timeline' | 'spiral' | 'list' | 'story'>(() => {
     const saved = localStorage.getItem('speedrun_view');
-    return saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
+    return saved === 'story' ? 'story' : saved === 'spiral' ? 'spiral' : saved === 'list' ? 'list' : 'timeline';
   });
 
   // 'calendar' = the plan (main screen), 'home' = kanban + sessions + stats,
-  // 'tracker' = one sequence opened in the thermometer/spiral/list views.
+  // 'tracker' = one sequence opened in the thermometer/spiral/list/story views.
   const [page, setPage] = useState<'calendar' | 'home' | 'tracker'>('calendar');
 
   // The sequence currently open in the tracker, addressed by one of its tasks
@@ -607,8 +632,20 @@ function App() {
   const leadLabel = credit.lead >= 0 ? 'обгон' : 'отставание';
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
+  // The dashboard's look — a backdrop and glass panels coloured from the
+  // chosen palette (`.app--glass` in App.css, glass.css). The home page always
+  // wears it; the calendar and the tracker when the user has switched it on
+  // for them, except the spiral, which keeps its own night sky.
+  const glassOn =
+    page === 'home' ||
+    (page === 'calendar' && palette.glass.calendar) ||
+    (page === 'tracker' && palette.glass.tracker && view !== 'spiral');
+
   return (
-    <div className="app">
+    <div
+      className={`app${glassOn ? ' app--glass' : ''}${page === 'home' ? ' app--home' : ''}`}
+      style={glassOn ? (paletteVars as React.CSSProperties) : undefined}
+    >
       <header className="header">
         <div className="header-brand">
           <IconStopwatch className="header-logo" size={22} />
@@ -644,6 +681,7 @@ function App() {
         </nav>
 
         <div className="header-tools">
+          <PalettePicker store={palette} page={page} shown={glassOn} />
           <button
             type="button"
             className="icon-btn"
@@ -697,6 +735,17 @@ function App() {
                 <IconList size={16} />
                 <span className="view-toggle-label">Список</span>
               </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${view === 'story' ? 'active' : ''}`}
+                onClick={() => setView('story')}
+                aria-label="Путь"
+                aria-pressed={view === 'story'}
+                title="Путь секвенции с вдохновляющими изображениями"
+              >
+                <IconStory size={16} />
+                <span className="view-toggle-label">Путь</span>
+              </button>
             </div>
 
             {openChain && (
@@ -742,6 +791,7 @@ function App() {
       {page === 'calendar' && (
         <CalendarPage
           store={store}
+          deadlineStore={deadlines}
           now={now}
           credit={credit}
           chains={chains}
@@ -764,23 +814,45 @@ function App() {
 
       {page === 'tracker' && (
         <>
+          {/* The badges only show in the dashboard's look, where each
+              read-out is a card of its own. */}
           <footer className="footer">
             <div className="timer-block timer-next">
-              <span className="timer-label">Осталось по плану</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconHourglass size={16} />
+                </span>
+                Осталось по плану
+              </span>
               <span className="timer-value">{formatTime(remainingSec * 1000, false)}</span>
             </div>
             <div className="timer-block timer-clock">
-              <span className="timer-label">Сейчас</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconClock size={16} />
+                </span>
+                Сейчас
+              </span>
               <span className="timer-value timer-clock-value">{wallTime(now)}</span>
             </div>
             <div className="timer-block timer-finish">
-              <span className="timer-label">Финиш</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconFlag size={16} />
+                </span>
+                Финиш
+              </span>
               <span className="timer-value timer-finish-value">
                 {openChain ? wallTime(openChain.endMs - credit.lead * 1000) : '—'}
               </span>
             </div>
             <div className="timer-block timer-session">
-              <span className="timer-label">{leadLabel === 'обгон' ? 'Обгон' : 'Отставание'}</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconTrend size={16} />
+                </span>
+                {leadLabel === 'обгон' ? 'Обгон' : 'Отставание'}
+              </span>
               <span className={`timer-value timer-main ${credit.lead >= 0 ? 'ahead' : 'behind'}`}>
                 {formatDelta(-credit.lead * 1000)}
               </span>
@@ -796,6 +868,19 @@ function App() {
                 <p>Секвенция пуста</p>
                 <p className="hint">Поставь задачи подряд в календаре и открой их здесь.</p>
               </div>
+            ) : view === 'story' ? (
+              <StoryView
+                tasks={runTasks}
+                cumulativeTimes={cumulativeTimes}
+                elapsedSec={elapsedSec}
+                sessionState={sessionState}
+                currentTaskIdx={currentTaskIdx}
+                deltaMs={currentDeltaMs}
+                onCompleteTask={completeTask}
+                onUncompleteTask={uncompleteTask}
+                onSeek={seek}
+                formatEnd={formatEnd}
+              />
             ) : view === 'list' ? (
               <ListView
                 tasks={runTasks}

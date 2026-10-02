@@ -82,6 +82,14 @@ CREATE TABLE IF NOT EXISTS task_templates (
     PRIMARY KEY (user_id, id)
 );
 
+-- Deliverables close separately from the work blocks in day_state.
+CREATE TABLE IF NOT EXISTS deadlines (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+
 -- A single ordered list per user. Keeping the order in the JSON array makes
 -- reordering atomic and avoids relying on SQLite's unspecified row order.
 CREATE TABLE IF NOT EXISTS color_presets (
@@ -131,7 +139,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 
 def init_db() -> None:

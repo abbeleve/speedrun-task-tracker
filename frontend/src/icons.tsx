@@ -41,6 +41,12 @@ export const IconCalendar = (p: IconProps) => (
   </Icon>
 );
 
+export const IconFlag = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0" />
+  </Icon>
+);
+
 // The calendar's two layouts, for the switch in its toolbar: a column per day
 // with blocks stacked down it, or a row per day with blocks laid along it.
 export const IconLayoutColumns = (p: IconProps) => (
@@ -56,6 +62,22 @@ export const IconLayoutRows = (p: IconProps) => (
     <rect x="3" y="3.5" width="18" height="17" rx="2.5" />
     <path d="M3 9.25h18M3 14.75h18" />
     <path d="M6.5 6.4h5M10 12h7M7.5 17.6h4" strokeWidth={2.5} />
+  </Icon>
+);
+
+// The calendar's two designs: a ruled grid of small blocks, or loose
+// rounded cards.
+export const IconDesignClassic = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3.5" width="18" height="17" rx="1.5" />
+    <path d="M3 9.25h18M3 14.75h18M12 3.5v17" />
+  </Icon>
+);
+
+export const IconDesignCards = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="8" height="11" rx="3" />
+    <rect x="13" y="10" width="8" height="11" rx="3" />
   </Icon>
 );
 
@@ -105,6 +127,14 @@ export const IconList = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9 6h11.5M9 12h11.5M9 18h11.5" />
     <path d="M4 6h.01M4 12h.01M4 18h.01" strokeWidth={2.5} />
+  </Icon>
+);
+
+export const IconStory = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M16 3H8a4 4 0 0 0 0 8h8a4 4 0 0 1 0 8H8" />
+    <circle cx="16" cy="3" r="1.5" />
+    <circle cx="8" cy="19" r="1.5" />
   </Icon>
 );
 
@@ -164,5 +194,112 @@ export const IconChartWave = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3 12c2.5 0 3 3.5 5.5 3.5S12 7 15 7s3.5 4.5 6 4.5" />
     <path d="M12.5 20.5h6" strokeWidth={2.5} />
+  </Icon>
+);
+
+// The home dashboard's card badges.
+
+// Four squares — the activity heatmap.
+export const IconGrid = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.75" />
+  </Icon>
+);
+
+export const IconBriefcase = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="7" width="18" height="13" rx="2.5" />
+    <path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7M3 12.5h18" />
+  </Icon>
+);
+
+export const IconCalendarCheck = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
+    <path d="M3 9.5h18M8 2.5v4M16 2.5v4M9 15l2 2 4-4" />
+  </Icon>
+);
+
+export const IconBed = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 5v15M3 16h18v4M21 16v-3a3 3 0 0 0-3-3h-7.5v6" />
+    <circle cx="7" cy="12.5" r="1.75" />
+  </Icon>
+);
+
+// "Open the full view" — the summary cards' corner button.
+export const IconArrowUpRight = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 17 17 7M8.5 7H17v8.5" />
+  </Icon>
+);
+
+// The board's actions.
+export const IconPlus = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+export const IconCheck = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </Icon>
+);
+
+export const IconUndo = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 14 4.5 9.5 9 5" />
+    <path d="M4.5 9.5H15a4.5 4.5 0 0 1 0 9h-3" />
+  </Icon>
+);
+
+// The home page's colour palette.
+export const IconPalette = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.7-.8 1.7-1.6 0-1-.7-1.4-.7-2.2 0-.9.7-1.6 1.7-1.6H17a4 4 0 0 0 4-4C21 7 17 3 12 3Z" />
+    <circle cx="7.5" cy="11.5" r="1" fill="currentColor" />
+    <circle cx="10" cy="7.5" r="1" fill="currentColor" />
+    <circle cx="14.5" cy="7.5" r="1" fill="currentColor" />
+  </Icon>
+);
+
+export const IconPencil = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+    <path d="m13.5 6.5 4 4" />
+  </Icon>
+);
+
+// The sequence tracker's read-outs: time left by the plan, the clock, and
+// the overtake.
+export const IconHourglass = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 3h12M6 21h12" />
+    <path d="M7 3v3a5 5 0 0 0 5 5 5 5 0 0 0 5-5V3M7 21v-3a5 5 0 0 1 5-5 5 5 0 0 1 5 5v3" />
+  </Icon>
+);
+
+export const IconClock = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);
+
+export const IconTrend = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m3 17 6-6 4 4 8-8" />
+    <path d="M15 7h6v6" />
+  </Icon>
+);
+
+export const IconShuffle = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 7h3c4 0 8 10 12 10h3M3 17h3c1.5 0 3-1.4 4.5-3.3M13.5 10.3C15 8.4 16.5 7 18 7h3" />
+    <path d="m18 4 3 3-3 3m0 4 3 3-3 3" />
   </Icon>
 );

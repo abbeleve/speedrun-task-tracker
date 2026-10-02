@@ -1,0 +1,719 @@
+/* ===== Calendar — the card design for the sheet =====
+   The second look for what is drawn on the calendar sheet (see
+   calendarDesign.ts), laid over the classic rules in calendar.css whenever
+   the page carries .cal-cards: no column rules, big "18 / вт" day numbers,
+   today as a soft band, and every block a rounded pastel card with dark ink.
+   The page around the sheet (toolbar, HUD, backlog, popovers) is the same in
+   both designs and lives in calendar.css. Every rule here is scoped to
+   .cal-cards, so the classic sheet is untouched without it. */
+
+.cal-cards {
+  --cal-line: rgba(255, 255, 255, 0.055);
+  --cal-today: rgba(150, 136, 255, 0.075);
+  --cal-day-dim: #4b4e57;
+  --cal-card-ink: #18181b;
+  --cal-card-radius: 22px;
+}
+
+[data-theme="light"] .cal-cards {
+  --cal-line: #eeeef2;
+  --cal-today: #f2f1fb;
+  --cal-day-dim: #c6c6cd;
+}
+
+/* ── day header, grid ────────────────────────────────────────── */
+
+/* The header keeps the grid's scrollbar gutter too, so today's band runs
+   straight down from its date into its column. */
+.cal-cards .cal-days-head,
+.cal-cards .cal-date-deadlines {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+
+.cal-cards .cal-days-head {
+  border-bottom: none;
+  background: var(--cal-sheet);
+}
+
+.cal-cards .cal-grid {
+  scrollbar-gutter: stable;
+}
+
+/* "18 / вт": a big number and the weekday after it, set on one baseline. */
+.cal-cards .cal-day-head {
+  border: none;
+  padding: 14px 10px 12px 18px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 2px;
+  color: var(--cal-day-dim);
+  font-family: var(--font-display);
+  text-align: left;
+  transition: color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-cards .cal-day-head:hover {
+    color: var(--text-secondary);
+  }
+}
+
+.cal-cards .cal-day-num {
+  order: -1;
+  font-size: 2.1rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.cal-cards .cal-day-name {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.cal-cards .cal-day-name::before {
+  content: '/ ';
+}
+
+.cal-cards .cal-day-reminder-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  line-height: 1.4;
+}
+
+.cal-cards .cal-day-head.today {
+  background: var(--cal-today);
+  color: var(--cal-ink);
+}
+
+.cal-cards .cal-day-head.today .cal-day-num {
+  display: inline;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-weight: 700;
+}
+
+.cal-cards .cal-hour {
+  right: 10px;
+  font-weight: 500;
+}
+
+.cal-cards .cal-line {
+  border-top-color: var(--cal-line);
+  opacity: 1;
+}
+
+/* No rules between the days: the cards' own gaps keep them apart. */
+.cal-cards .cal-col {
+  border-left: none;
+}
+
+.cal-cards .cal-col.today {
+  background: var(--cal-today);
+}
+
+.cal-cards .cal-glue {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--cal-sheet);
+}
+
+/* ── blocks ──────────────────────────────────────────────────── */
+
+/* A transparent border keeps every card a few pixels inside its slot, so
+   back-to-back and parallel cards stand apart without moving their times;
+   the fill is clipped to the padding box inside it. Outer shadows therefore
+   start a little off the visible edge — rings are drawn inset instead. Only
+   the look is set here: position, cursor and stacking stay the classic
+   rules' business. */
+.cal-cards .cal-block {
+  border: solid transparent;
+  border-width: 2px 3px;
+  border-radius: var(--cal-card-radius);
+  background: var(--card-fill);
+  background-clip: padding-box;
+  color: var(--cal-card-ink);
+  padding: 4px 9px;
+}
+
+.cal-cards .cal-block.short {
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+/* Hover answers with a little depth, never with scale. Declared before the
+   states below so that, as in the classic rules, they keep their own rings. */
+@media (hover: hover) and (pointer: fine) {
+  .cal-cards .cal-block:hover {
+    box-shadow: 0 10px 22px -12px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.cal-cards .cal-block.active {
+  box-shadow:
+    inset 0 0 0 2px var(--cal-card-ink),
+    0 12px 26px -14px rgba(0, 0, 0, 0.55);
+}
+
+/* What of the running block the clock has passed is hatched, like a
+   progress bar, down to a dark line at the current minute. */
+.cal-cards .cal-block.active::after {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.13) 0 3px,
+    rgba(0, 0, 0, 0.04) 3px 7px
+  );
+}
+
+.cal-cards .cal-block.active.now-inside::after {
+  border-bottom-color: var(--cal-card-ink);
+}
+
+.cal-cards .cal-block.rest {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.3) 5px,
+    rgba(255, 255, 255, 0.3) 10px
+  );
+}
+
+/* Closed: the card steps back into the sheet and its name is struck
+   through, as on a ticked checklist; the filled box is the verdict. */
+.cal-cards .cal-block.done {
+  background: color-mix(in srgb, var(--card-fill) 24%, var(--cal-sheet));
+  background-clip: padding-box;
+  color: var(--card-fill);
+}
+
+[data-theme="light"] .cal-cards .cal-block.done {
+  background: color-mix(in srgb, var(--card-fill) 45%, var(--cal-sheet));
+  background-clip: padding-box;
+  color: color-mix(in srgb, var(--cal-card-ink) 55%, transparent);
+}
+
+.cal-cards .cal-block.done .cal-block-emoji,
+.cal-cards .cal-block.done .cal-block-name {
+  opacity: 1;
+}
+
+.cal-cards .cal-block.done .cal-block-meta {
+  opacity: 0.8;
+}
+
+.cal-cards .cal-block.done .cal-block-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+/* A user-built gradient wins over the fill, done or not, as it does in the
+   classic rules. */
+.cal-cards .cal-block.task-color-flow,
+.cal-cards .cal-chip.task-color-flow {
+  background-image: var(--task-gradient);
+}
+
+.cal-cards .cal-block.rest.task-color-flow {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 5px,
+      rgba(255, 255, 255, 0.3) 5px,
+      rgba(255, 255, 255, 0.3) 10px
+    ),
+    var(--task-gradient);
+}
+
+.cal-cards .cal-block.selected {
+  box-shadow:
+    0 0 0 2px var(--cal-sheet),
+    0 0 0 4px var(--accent-cyan);
+}
+
+.cal-cards .cal-block.dragging {
+  box-shadow: 0 18px 34px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* The block the editor is describing. */
+.cal-cards .cal-block.live {
+  box-shadow: inset 0 0 0 2px var(--cal-card-ink);
+}
+
+.cal-cards .cal-block.draft {
+  border: 2px dashed var(--cal-ink);
+  background: color-mix(in srgb, var(--cal-ink) 6%, transparent);
+  color: var(--cal-ink);
+}
+
+.cal-cards .cal-gap-slot {
+  border: 2px dashed var(--text-dim);
+  border-radius: var(--cal-card-radius);
+  background: transparent;
+  padding: 4px;
+}
+
+.cal-cards .cal-gap-slot:hover {
+  border-color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+}
+
+/* A block that runs past midnight is cut flat where the day cuts it. */
+.cal-cards .cal-block.cont-top {
+  border-top-width: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.cal-cards .cal-block.cont-bottom {
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.cal-cards .cal-block-head {
+  gap: 6px;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+/* With room for the times the emoji sits in a white badge, like an avatar. */
+.cal-cards .cal-block:not(.short) .cal-block-emoji {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.cal-cards .cal-block-name {
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: inherit;
+}
+
+/* The completion control: a checklist box that fills and shows a tick once
+   the task is done. */
+.cal-cards .cal-block-check {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  border: 1.5px solid color-mix(in srgb, var(--cal-card-ink) 70%, transparent);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.cal-cards .cal-block-check::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 3.5px;
+  height: 7px;
+  border: solid var(--card-fill);
+  border-width: 0 1.75px 1.75px 0;
+  transform: translate(-50%, -50%) rotate(45deg) scale(0);
+  transition: transform 150ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-cards .cal-block-check:hover {
+    border-color: var(--cal-card-ink);
+    transform: scale(1.12);
+  }
+}
+
+@media (pointer: coarse) {
+  .cal-cards .cal-block-check {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+.cal-cards .cal-block.done .cal-block-check {
+  border-color: var(--card-fill);
+  background: var(--card-fill);
+}
+
+.cal-cards .cal-block.done .cal-block-check::before {
+  border-color: var(--cal-card-ink);
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+}
+
+[data-theme="light"] .cal-cards .cal-block.done .cal-block-check {
+  border-color: var(--cal-card-ink);
+  background: var(--cal-card-ink);
+}
+
+[data-theme="light"] .cal-cards .cal-block.done .cal-block-check::before {
+  border-color: #fff;
+}
+
+.cal-cards .cal-block-meta {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* Room enough for a whole card: badge and ✓ on top, the name under them
+   (two lines if it needs them), the times at the foot. */
+.cal-cards .cal-block.tall {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 11px;
+}
+
+.cal-cards .cal-block.tall .cal-block-head {
+  flex-wrap: wrap;
+  row-gap: 7px;
+}
+
+.cal-cards .cal-block.tall .cal-block-emoji {
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+}
+
+.cal-cards .cal-block.tall .cal-block-check {
+  margin-left: auto;
+}
+
+.cal-cards .cal-block.tall .cal-block-name {
+  order: 1;
+  flex: 1 0 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+/* A narrow card puts the duration under the times rather than cut them. */
+.cal-cards .cal-block.tall .cal-block-meta {
+  flex-wrap: wrap;
+  row-gap: 0;
+  margin-top: 0;
+}
+
+/* ── now line & lead band ────────────────────────────────────── */
+
+/* An ink hairline with a short bar across its start, like a pin in the day. */
+.cal-cards .cal-now {
+  border-top: 1.5px solid var(--cal-ink);
+}
+
+.cal-cards .cal-now-dot {
+  left: -2px;
+  top: -7.5px;
+  width: 2.5px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--cal-ink);
+}
+
+.cal-cards .cal-lead-band {
+  border-radius: 10px;
+}
+
+.cal-cards .cal-hour.cal-now-label {
+  color: var(--cal-ink-inverse);
+  background: var(--cal-ink);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* ── month ───────────────────────────────────────────────────── */
+
+.cal-cards .cal-month-head {
+  border-bottom: none;
+  padding: 4px 6px 0;
+}
+
+.cal-cards .cal-month-head span {
+  padding: 10px 10px 6px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.cal-cards .cal-month-grid {
+  gap: 4px;
+  padding: 0 6px 6px;
+}
+
+.cal-cards .cal-cell {
+  border: none;
+  border-top: 1px solid var(--cal-line);
+  border-radius: 0 0 12px 12px;
+  padding: 6px 6px 4px;
+  gap: 3px;
+}
+
+.cal-cards .cal-cell.today {
+  background: var(--cal-today);
+  border-top-color: transparent;
+  border-radius: 12px;
+}
+
+.cal-cards .cal-cell-head {
+  align-items: baseline;
+}
+
+.cal-cards .cal-cell-num {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--cal-day-dim);
+}
+
+.cal-cards .cal-cell:not(.other-month) .cal-cell-num {
+  color: var(--text-secondary);
+}
+
+.cal-cards .cal-cell.today .cal-cell-num {
+  color: var(--cal-ink);
+  font-weight: 700;
+}
+
+.cal-cards .cal-chip {
+  background: var(--card-fill);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 500;
+  color: var(--cal-card-ink);
+}
+
+.cal-cards .cal-chip.done {
+  color: var(--card-fill);
+  background: color-mix(in srgb, var(--card-fill) 24%, var(--cal-sheet));
+}
+
+[data-theme="light"] .cal-cards .cal-chip.done {
+  color: color-mix(in srgb, var(--cal-card-ink) 55%, transparent);
+  background: color-mix(in srgb, var(--card-fill) 45%, var(--cal-sheet));
+}
+
+.cal-cards .cal-chip-time {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.cal-cards .cal-chip-name {
+  color: inherit;
+  font-weight: 600;
+}
+
+/* ── timeline ────────────────────────────────────────────────── */
+
+.cal-cards .tl-ruler {
+  background: var(--cal-sheet);
+  border-bottom-color: var(--cal-line);
+}
+
+.cal-cards .tl-corner,
+.cal-cards .tl-labels {
+  background: var(--cal-sheet);
+  border-right: none;
+}
+
+.cal-cards .tl-tick::before {
+  border-left-color: var(--cal-line);
+}
+
+.cal-cards .tl-now-label {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--cal-ink);
+  color: var(--cal-ink-inverse);
+}
+
+.cal-cards .tl-now-label::after {
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: var(--cal-ink);
+}
+
+/* The big number over the weekday. */
+.cal-cards .tl-day {
+  gap: 2px;
+  padding-top: 12px;
+  border-bottom-color: var(--cal-line);
+  color: var(--cal-day-dim);
+  transition: color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-cards .tl-day:hover {
+    background: none;
+    color: var(--text-secondary);
+  }
+}
+
+.cal-cards .tl-day.today {
+  background: var(--cal-today);
+  color: var(--cal-ink);
+}
+
+.cal-cards .tl-day-name,
+.cal-cards .tl-day.weekend .tl-day-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: inherit;
+}
+
+.cal-cards .tl-day-num {
+  order: -1;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.cal-cards .tl-day.today .tl-day-num {
+  display: block;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-weight: 700;
+}
+
+.cal-cards .tl-hour-line {
+  border-left-color: var(--cal-line);
+  opacity: 1;
+}
+
+.cal-cards .tl-hour-line.half {
+  opacity: 0.5;
+}
+
+.cal-cards .tl-row {
+  border-bottom-color: var(--cal-line);
+}
+
+.cal-cards .tl-row.today {
+  background: var(--cal-today);
+}
+
+/* Stood on end, the now line keeps its bar on top: a "T" through today. */
+.cal-cards .tl-now {
+  margin-left: -0.75px;
+  border-left: 1.5px solid var(--cal-ink);
+}
+
+.cal-cards .tl-now .cal-now-dot {
+  left: -7.5px;
+  top: 0;
+  width: 13px;
+  height: 2.5px;
+}
+
+.cal-cards .tl-now-guide {
+  border-left-color: color-mix(in srgb, var(--cal-ink) 30%, transparent);
+}
+
+/* A timeline block: the same card, laid along its lane. The lanes already
+   keep their own gaps, so only the ends are held apart. */
+.cal-cards .cal-block--across {
+  gap: 1px;
+  border-width: 0 2px;
+  padding: 3px 12px;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.cal-cards .cal-block--across::before {
+  display: none;
+}
+
+.cal-cards .cal-block--across.short {
+  border-width: 0 2px;
+  padding: 3px 10px;
+}
+
+.cal-cards .cal-block--across.compact {
+  padding: 3px;
+}
+
+.cal-cards .cal-block--across .cal-block-meta {
+  margin-top: 0;
+}
+
+.cal-cards .cal-block--across:not(.short) .cal-block-emoji {
+  width: 18px;
+  height: 18px;
+}
+
+.cal-cards .cal-block--across.active.now-inside::after {
+  border-right-color: var(--cal-card-ink);
+}
+
+.cal-cards .cal-block--across.cont-start {
+  border-left-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.cal-cards .cal-block--across.cont-end {
+  border-right-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* ── phones ──────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  /* Narrow columns: the weekday drops under the number. */
+  .cal-cards .cal-day-head {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 2px;
+  }
+
+  .cal-cards .cal-day-num {
+    font-size: 1.35rem;
+  }
+
+  .cal-cards .cal-day-name::before {
+    content: none;
+  }
+}
+
+@media (max-height: 500px) {
+  .cal-cards .cal-day-head {
+    padding-block: 4px;
+  }
+}

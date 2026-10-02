@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
+  Deadline,
   Habit,
   RepeatMode,
   Task,
@@ -32,6 +33,8 @@ import {
   taskColorAnimationClass,
   taskColorStyle,
 } from './taskAppearance';
+import { deadlineLabel } from './deadlines';
+import TimeInput from './TimeInput';
 import './TaskPreset.css';
 
 export interface DialogAnchor {
@@ -52,6 +55,8 @@ interface TaskDialogProps {
   // The habits a task can be linked to (see Habit). Completing a linked task
   // grows that habit's daily progress.
   habits?: Habit[];
+  deadlines?: Deadline[];
+  onCreateDeadline?: (day: string, name: string, onCreated: (id: string) => void) => void;
   // Fires on every edit so the calendar can redraw the block being described.
   onPreview?: (task: Task) => void;
   onSave: (task: Task) => void;
@@ -90,14 +95,15 @@ function minutesToSec(minutes: string): number {
 }
 
 function fromTimeInput(value: string, fallback: number): number {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return fallback;
   const [h, m] = value.split(':').map(Number);
   if (!isFinite(h) || !isFinite(m)) return fallback;
   return Math.max(0, Math.min(DAY_MIN - 1, h * 60 + m));
 }
 
-// Local wall-clock timestamp ↔ <input type="datetime-local"> string. Seconds
-// are kept (not just hh:mm) so re-saving the dialog without touching this
-// field never quietly rounds a real finishedAt down to the minute — the
+// Local wall-clock timestamp ↔ date and 24-hour time fields. Seconds
+// are kept (not just HH:mm) so re-saving the dialog without touching these
+// fields never quietly rounds a real finishedAt down to the minute — the
 // overtake engine is sensitive to exactly that precision.
 function toDatetimeInput(ms: number): string {
   const d = new Date(ms);
@@ -176,6 +182,8 @@ function TaskDialog({
   sessionName,
   onLeaveSession,
   habits,
+  deadlines,
+  onCreateDeadline,
   onPreview,
   onSave,
   onDelete,
@@ -218,6 +226,7 @@ function TaskDialog({
   );
   const [type, setType] = useState<TaskType>(task.type);
   const [habitId, setHabitId] = useState(task.habitId ?? '');
+  const [deadlineId, setDeadlineId] = useState(task.deadlineId ?? '');
   const [repeatOn, setRepeatOn] = useState(Boolean(task.repeat));
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(task.repeat?.mode ?? 'fixed');
   const [repeatBase, setRepeatBase] = useState(String(task.repeat?.baseDays ?? 7));
@@ -312,9 +321,10 @@ function TaskDialog({
       colorAnimation,
       type,
       habitId: habitId || null,
+      deadlineId: type === 'reminder' ? null : deadlineId || null,
       pinned,
     });
-  }, [name, description, day, time, minutes, emoji, color, colorAnimation, type, habitId, pinned]);
+  }, [name, description, day, time, minutes, emoji, color, colorAnimation, type, habitId, deadlineId, pinned]);
 
   const formRef = useRef<HTMLFormElement>(null);
   const [popHeight, setPopHeight] = useState(0);
@@ -432,6 +442,7 @@ function TaskDialog({
       type,
       pinned,
       habitId: isReminder ? null : habitId || null,
+      deadlineId: isReminder ? null : deadlineId || null,
       repeat: repeatOn
         ? { mode: repeatMode, baseDays: Math.max(1, parseFloat(repeatBase) || 1) }
         : null,
@@ -527,12 +538,11 @@ function TaskDialog({
           </label>
           <label className="cal-field">
             <span>Начало</span>
-            <input
-              type="time"
+            <TimeInput
               value={time}
               disabled={pinned}
+              required
               onChange={(e) => setTime(e.target.value)}
-              step={300}
             />
           </label>
           <label className="cal-field cal-field--sm">
@@ -549,6 +559,19 @@ function TaskDialog({
             />
           </label>
         </div>
+
+        {deadlines && type !== 'reminder' && (
+          <div className="cal-modal-row cal-deadline-link-row">
+            <label className="cal-field cal-field--grow"><span>Дедлайн результата</span>
+              <select value={deadlineId} onChange={(event) => setDeadlineId(event.target.value)}>
+                <option value="">— без дедлайна —</option>
+                {deadlineId && !deadlines.some((item) => item.id === deadlineId) && <option value={deadlineId}>Дедлайн недоступен</option>}
+                {deadlines.map((item) => <option key={item.id} value={item.id}>{item.completedAt !== null ? '✓ ' : '⚑ '}{item.name} · {deadlineLabel(item)}</option>)}
+              </select>
+            </label>
+            {onCreateDeadline && <button type="button" className="cal-btn" onClick={() => onCreateDeadline(day, name, setDeadlineId)}>＋ Новый дедлайн</button>}
+          </div>
+        )}
 
         <div className="cal-modal-row">
           <label className="cal-check">
@@ -997,10 +1020,19 @@ function TaskDialog({
                 <label className="cal-field cal-field--grow">
                   <span>Когда закрыта</span>
                   <input
-                    type="datetime-local"
-                    step={1}
-                    value={finishedInput}
-                    onChange={(e) => setFinishedInput(e.target.value)}
+                    type="date"
+                    required
+                    value={finishedInput.split('T')[0]}
+                    onChange={(e) => setFinishedInput(`${e.target.value}T${finishedInput.split('T')[1]}`)}
+                  />
+                </label>
+                <label className="cal-field">
+                  <span>Время закрытия</span>
+                  <TimeInput
+                    seconds
+                    required
+                    value={finishedInput.split('T')[1]}
+                    onChange={(e) => setFinishedInput(`${finishedInput.split('T')[0]}T${e.target.value}`)}
                   />
                 </label>
                 <button
