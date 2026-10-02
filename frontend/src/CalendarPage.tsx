@@ -796,16 +796,15 @@ function CalendarPage({
   }, []);
 
   // A deep copy of `task`, ready to drop into the dialog as a draft: fresh id,
-  // not done, no session (a copy never silently joins the original's session,
-  // nor carries its spine colour into the next one it joins) and placed right
-  // after the original — on the next day if that is past midnight — so the
-  // two don't sit on top of each other.
+  // the same name, not done, no session (a copy never silently joins the
+  // original's session, nor carries its spine colour into the next one it
+  // joins) and placed right after the original — on the next day if that is
+  // past midnight — so the two don't sit on top of each other.
   const duplicateTask = useCallback((task: Task): Task => {
     const placed = task.start !== null && task.start !== undefined;
     return {
       ...cloneTask(task, newTaskId()),
       ...(placed ? slotAtMs(taskEndMs(task)) : {}),
-      name: `${task.name} (копия)`,
       order: 0,
       completedAt: null,
       finishedAt: null,
