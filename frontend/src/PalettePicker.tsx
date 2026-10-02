@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { DashPalette, GlassPages } from './dashPalette';
-import { isUserPalette, newPaletteId, PALETTE_NAME_MAX } from './dashPalette';
+import {
+  BACKDROP_SPEED_MAX,
+  BACKDROP_SPEED_MIN,
+  BACKDROP_SPEED_STEP,
+  formatBackdropSpeed,
+  isUserPalette,
+  newPaletteId,
+  PALETTE_NAME_MAX,
+} from './dashPalette';
 import type { DashPaletteStore } from './useDashPalette';
 import { IconCheck, IconClose, IconPalette, IconPencil, IconPlus, IconShuffle, IconUndo } from './icons';
 
@@ -177,6 +185,27 @@ export default function PalettePicker({ store, page, shown }: {
                     />
                   </label>
                 </li>
+                {store.backdropFlow && (
+                  <li>
+                    <label className="palette-page">
+                      <span className="palette-page-text">
+                        <b>Скорость</b>
+                        <small>{formatBackdropSpeed(store.backdropSpeed)}</small>
+                      </span>
+                      <input
+                        type="range"
+                        className="palette-range"
+                        min={BACKDROP_SPEED_MIN}
+                        max={BACKDROP_SPEED_MAX}
+                        step={BACKDROP_SPEED_STEP}
+                        value={store.backdropSpeed}
+                        aria-valuetext={formatBackdropSpeed(store.backdropSpeed)}
+                        disabled={!shown}
+                        onChange={(e) => store.setBackdropSpeed(Number(e.target.value))}
+                      />
+                    </label>
+                  </li>
+                )}
               </ul>
               <div className="palette-background-actions">
                 <button

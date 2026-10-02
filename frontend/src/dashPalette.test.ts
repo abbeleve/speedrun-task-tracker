@@ -3,9 +3,13 @@ import {
   adoptServerPalettes,
   BUILTIN_PALETTES,
   cachePalettes,
+  BACKDROP_SPEED_MAX,
+  BACKDROP_SPEED_MIN,
   cachedPalettes,
   DEFAULT_BACKDROP_FLOW,
   DEFAULT_BACKDROP_SEED,
+  DEFAULT_BACKDROP_SPEED,
+  formatBackdropSpeed,
   DEFAULT_GLASS,
   DEFAULT_PALETTE_ID,
   isUserPalette,
@@ -17,6 +21,7 @@ import {
   paletteStyle,
   parseBackdropFlow,
   parseBackdropSeed,
+  parseBackdropSpeed,
   parseGlass,
   randomBackdropSeed,
   resolvePalette,
@@ -139,6 +144,23 @@ describe('the living backdrop', () => {
       expect(parseBackdropFlow(value)).toBe(DEFAULT_BACKDROP_FLOW);
     }
   });
+
+  it('goes at the normal pace until the user picks another, in the slider’s steps', () => {
+    expect(DEFAULT_BACKDROP_SPEED).toBe(1);
+    expect(parseBackdropSpeed(BACKDROP_SPEED_MIN)).toBe(0.25);
+    expect(parseBackdropSpeed(1.5)).toBe(1.5);
+    expect(parseBackdropSpeed(BACKDROP_SPEED_MAX)).toBe(4);
+    expect(parseBackdropSpeed(1.3)).toBe(1.25);
+    for (const value of [undefined, null, '2', true, NaN, Infinity, 0, 0.2, 4.5, -1]) {
+      expect(parseBackdropSpeed(value)).toBe(DEFAULT_BACKDROP_SPEED);
+    }
+  });
+
+  it('reads the speed out the way the page writes numbers', () => {
+    expect(formatBackdropSpeed(1)).toBe('1×');
+    expect(formatBackdropSpeed(0.25)).toBe('0,25×');
+    expect(formatBackdropSpeed(2.5)).toBe('2,5×');
+  });
 });
 
 describe('the local copy', () => {
@@ -149,6 +171,7 @@ describe('the local copy', () => {
       glass: DEFAULT_GLASS,
       backdropSeed: DEFAULT_BACKDROP_SEED,
       backdropFlow: DEFAULT_BACKDROP_FLOW,
+      backdropSpeed: DEFAULT_BACKDROP_SPEED,
     };
     expect(cachedPalettes(memoryStorage())).toEqual(fresh);
     expect(cachedPalettes(memoryStorage({ [PALETTE_CACHE_KEY]: '{oops' }))).toEqual(fresh);
@@ -162,6 +185,7 @@ describe('the local copy', () => {
       glass: { calendar: false, tracker: true },
       backdropSeed: 123456,
       backdropFlow: true,
+      backdropSpeed: 2.75,
     };
     cachePalettes(state, storage);
     expect(cachedPalettes(storage)).toEqual(state);
@@ -178,6 +202,7 @@ describe('adoptServerPalettes', () => {
           dashGlass: { calendar: true, tracker: false },
           dashBackdropSeed: 123456,
           dashBackdropFlow: true,
+          dashBackdropSpeed: 0.5,
         },
         false
       )
@@ -187,6 +212,7 @@ describe('adoptServerPalettes', () => {
       glass: { calendar: true, tracker: false },
       backdropSeed: 123456,
       backdropFlow: true,
+      backdropSpeed: 0.5,
     });
   });
 
@@ -197,6 +223,7 @@ describe('adoptServerPalettes', () => {
       glass: DEFAULT_GLASS,
       backdropSeed: DEFAULT_BACKDROP_SEED,
       backdropFlow: DEFAULT_BACKDROP_FLOW,
+      backdropSpeed: DEFAULT_BACKDROP_SPEED,
     });
   });
 

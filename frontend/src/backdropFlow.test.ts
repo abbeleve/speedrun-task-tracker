@@ -70,7 +70,9 @@ describe('flowTransform', () => {
 interface FakeAnimation {
   keyframes: Keyframe[];
   options: KeyframeAnimationOptions;
+  playbackRate: number;
   cancel: ReturnType<typeof vi.fn>;
+  updatePlaybackRate: ReturnType<typeof vi.fn>;
   onfinish: (() => void) | null;
 }
 
@@ -78,7 +80,14 @@ function fakeElement() {
   const animations: FakeAnimation[] = [];
   const el = {
     animate: vi.fn((keyframes: Keyframe[], options: KeyframeAnimationOptions) => {
-      const animation: FakeAnimation = { keyframes, options, cancel: vi.fn(), onfinish: null };
+      const animation: FakeAnimation = {
+        keyframes,
+        options,
+        playbackRate: 1,
+        cancel: vi.fn(),
+        updatePlaybackRate: vi.fn(),
+        onfinish: null,
+      };
       animations.push(animation);
       return animation;
     }),
@@ -91,7 +100,7 @@ describe('wander', () => {
 
   it('sets off from the glow’s place and chains each leg from where the last one ended', () => {
     const { el, animations } = fakeElement();
-    wander(el, 'x', seeded(3));
+    wander(el, 'x', 1, seeded(3));
 
     expect(animations).toHaveLength(1);
     const [first] = animations;
@@ -114,7 +123,7 @@ describe('wander', () => {
     const homeward = { cancel: vi.fn() };
     Object.assign(el, { getAnimations: () => [homeward] });
 
-    wander(el, 'y', seeded(9));
+    wander(el, 'y', 1, seeded(9));
     expect(homeward.cancel).toHaveBeenCalledOnce();
     expect(animations[0].keyframes[0]).toEqual({ transform: 'matrix(1, 0, 0, 1, 0, -40)' });
     animations[0].onfinish?.();
@@ -124,10 +133,10 @@ describe('wander', () => {
   it('drifts back to its place when stopped, and walks no further', () => {
     vi.stubGlobal('getComputedStyle', () => ({ transform: 'matrix(1, 0, 0, 1, 120, 0)' }));
     const { el, animations } = fakeElement();
-    const stop = wander(el, 'x', seeded(5));
+    const walk = wander(el, 'x', 2, seeded(5));
     const leg = animations[0];
 
-    stop();
+    walk.stop();
     expect(leg.cancel).toHaveBeenCalledOnce();
     expect(leg.onfinish).toBeNull();
     expect(animations).toHaveLength(2);
@@ -135,14 +144,33 @@ describe('wander', () => {
       { transform: 'matrix(1, 0, 0, 1, 120, 0)' },
       { transform: 'translateX(0vw)' },
     ]);
+    // Home is always the same short drift, whatever the speed.
     expect(animations[1].options).toMatchObject({ duration: FLOW_SETTLE_MS });
+    expect(animations[1].playbackRate).toBe(1);
     expect(animations[1].options.fill).toBeUndefined();
+  });
+
+  it('walks at the speed it was given, and a new speed reaches the leg under way and the ones after', () => {
+    const { el, animations } = fakeElement();
+    const walk = wander(el, 'shape', 0.5, seeded(11));
+    const [first] = animations;
+    // The leg keeps its normal length; the speed is the rate it plays at.
+    expect(first.options.duration).toBeGreaterThanOrEqual(FLOW_MOTIONS.shape.minMs);
+    expect(first.playbackRate).toBe(0.5);
+
+    walk.setSpeed(2.5);
+    expect(first.updatePlaybackRate).toHaveBeenCalledWith(2.5);
+    walk.setSpeed(2.5);
+    expect(first.updatePlaybackRate).toHaveBeenCalledOnce();
+
+    first.onfinish?.();
+    expect(animations[1].playbackRate).toBe(2.5);
   });
 });
 
 describe('DashBackdrop', () => {
   it('draws four glows, each a box per motion, hidden from assistive tech', () => {
-    const html = renderToStaticMarkup(createElement(DashBackdrop, { flowing: true }));
+    const html = renderToStaticMarkup(createElement(DashBackdrop, { flowing: true, speed: 1 }));
     expect(html).toMatch(/^<div class="dash-backdrop" aria-hidden="true">/);
     for (const n of [1, 2, 3, 4]) expect(html).toContain(`class="dash-glow dash-glow--${n}"`);
     expect(html.match(/class="dash-glow-drift"/g)).toHaveLength(4);

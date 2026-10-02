@@ -121,3 +121,20 @@ def test_malformed_living_backdrop_switches_are_rejected(client, auth_headers):
         resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropFlow': flow})
         assert resp.status_code == 422, flow
     assert client.get('/api/prefs', headers=auth_headers).json() == {}
+
+
+def test_the_backdrop_speed_round_trips_without_touching_the_rest(client, auth_headers):
+    client.put('/api/prefs', headers=auth_headers, json={'dashPalette': 'ocean', 'dashBackdropFlow': True})
+    for speed in [0.25, 1, 1.5, 4]:
+        resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSpeed': speed})
+        assert resp.status_code == 200, speed
+        assert client.get('/api/prefs', headers=auth_headers).json() == {
+            'dashPalette': 'ocean', 'dashBackdropFlow': True, 'dashBackdropSpeed': speed,
+        }
+
+
+def test_malformed_backdrop_speeds_are_rejected(client, auth_headers):
+    for speed in [0, 0.2, 4.25, 1.3, -1, True, '1', [], {}]:
+        resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSpeed': speed})
+        assert resp.status_code == 422, speed
+    assert client.get('/api/prefs', headers=auth_headers).json() == {}

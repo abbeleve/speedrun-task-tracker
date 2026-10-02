@@ -647,7 +647,7 @@ function App() {
       className={`app${glassOn ? ' app--glass' : ''}${page === 'home' ? ' app--home' : ''}`}
       style={glassOn ? (paletteVars as React.CSSProperties) : undefined}
     >
-      {glassOn && <DashBackdrop flowing={palette.backdropFlow} />}
+      {glassOn && <DashBackdrop flowing={palette.backdropFlow} speed={palette.backdropSpeed} />}
       <header className="header">
         <div className="header-brand">
           <IconStopwatch className="header-logo" size={22} />

@@ -8,6 +8,7 @@ import {
   DEFAULT_BACKDROP_SEED,
   DEFAULT_PALETTE_ID,
   MAX_USER_PALETTES,
+  parseBackdropSpeed,
   randomBackdropSeed,
   resolvePalette,
 } from './dashPalette';
@@ -35,7 +36,14 @@ export interface DashPaletteStore {
   // Whether the backdrop's glows wander, and the switch for it.
   backdropFlow: boolean;
   setBackdropFlow: (on: boolean) => void;
+  // How fast they wander, and the slider for it.
+  backdropSpeed: number;
+  setBackdropSpeed: (speed: number) => void;
 }
+
+// A slider sends a change for every step it is dragged over; the account
+// hears only where it came to rest.
+const SETTLE_SAVE_MS = 400;
 
 // The dashboard's look: opens with this browser's copy, then follows the
 // account once /api/prefs answers — unless something was changed here in the
@@ -48,6 +56,7 @@ export function useDashPalette(): DashPaletteStore {
   // state updater, so the save they send goes out once, not once per render.
   const stateRef = useRef(state);
   stateRef.current = state;
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -65,7 +74,9 @@ export function useDashPalette(): DashPaletteStore {
     };
   }, []);
 
-  const commit = useCallback((update: (prev: PaletteState) => PaletteState) => {
+  // `settle` holds the save back until the changes stop coming; any other
+  // change sends the whole look at once, a held-back one included.
+  const commit = useCallback((update: (prev: PaletteState) => PaletteState, settle = false) => {
     const prev = stateRef.current;
     const next = update(prev);
     if (next === prev) return;
@@ -73,17 +84,22 @@ export function useDashPalette(): DashPaletteStore {
     stateRef.current = next;
     setState(next);
     cachePalettes(next);
-    api
-      .savePrefs({
-        dashPalette: next.active,
-        dashPalettes: next.own,
-        dashGlass: next.glass,
-        dashBackdropSeed: next.backdropSeed,
-        dashBackdropFlow: next.backdropFlow,
-      })
-      .catch((error) => {
-        console.error('Failed to save the dashboard palette', error);
-      });
+    const save = () =>
+      api
+        .savePrefs({
+          dashPalette: next.active,
+          dashPalettes: next.own,
+          dashGlass: next.glass,
+          dashBackdropSeed: next.backdropSeed,
+          dashBackdropFlow: next.backdropFlow,
+          dashBackdropSpeed: next.backdropSpeed,
+        })
+        .catch((error) => {
+          console.error('Failed to save the dashboard palette', error);
+        });
+    clearTimeout(saveTimer.current);
+    if (settle) saveTimer.current = setTimeout(save, SETTLE_SAVE_MS);
+    else void save();
   }, []);
 
   const select = useCallback((id: string) => commit((prev) => ({ ...prev, active: id })), [commit]);
@@ -127,6 +143,14 @@ export function useDashPalette(): DashPaletteStore {
     (on: boolean) => commit((prev) => (prev.backdropFlow === on ? prev : { ...prev, backdropFlow: on })),
     [commit]
   );
+  const setBackdropSpeed = useCallback(
+    (value: number) =>
+      commit((prev) => {
+        const backdropSpeed = parseBackdropSpeed(value);
+        return prev.backdropSpeed === backdropSpeed ? prev : { ...prev, backdropSpeed };
+      }, true),
+    [commit]
+  );
 
   const palettes = useMemo(() => [...BUILTIN_PALETTES, ...state.own], [state.own]);
   const current = preview ?? resolvePalette(state.active, state.own);
@@ -147,5 +171,7 @@ export function useDashPalette(): DashPaletteStore {
     resetBackdrop,
     backdropFlow: state.backdropFlow,
     setBackdropFlow,
+    backdropSpeed: state.backdropSpeed,
+    setBackdropSpeed,
   };
 }

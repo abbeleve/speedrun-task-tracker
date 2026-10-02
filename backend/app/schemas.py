@@ -231,8 +231,9 @@ class DashGlassIn(BaseModel):
     tracker: StrictBool
 
 
-# `dashBackdropSeed` shuffles where the backdrop's glows sit, and
-# `dashBackdropFlow` sets them wandering.
+# `dashBackdropSeed` shuffles where the backdrop's glows sit,
+# `dashBackdropFlow` sets them wandering and `dashBackdropSpeed` is how fast,
+# as a multiple of the normal pace in quarter steps.
 class PrefsIn(BaseModel):
     activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
     calendarLayout: Optional[str] = Field(default=None, pattern=r'^(vertical|horizontal)$')
@@ -242,6 +243,7 @@ class PrefsIn(BaseModel):
     dashGlass: Optional[DashGlassIn] = None
     dashBackdropSeed: Optional[int] = Field(default=None, strict=True, ge=0, le=4294967295)
     dashBackdropFlow: Optional[StrictBool] = None
+    dashBackdropSpeed: Optional[float] = Field(default=None, strict=True, ge=0.25, le=4, multiple_of=0.25)
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

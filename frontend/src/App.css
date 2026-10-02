@@ -5519,18 +5519,28 @@
   outline-offset: 2px;
 }
 
-.palette-switch:disabled {
+.palette-switch:disabled,
+.palette-range:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.palette-page:has(.palette-switch:disabled) {
+.palette-page:has(:disabled) {
   cursor: default;
 }
 
-/* The living backdrop's switch, over the shuffle buttons. */
+/* The living backdrop's switch, over the shuffle buttons, and its speed
+   under it while it is on. */
 .palette-flow {
   margin-bottom: 8px;
+}
+
+.palette-range {
+  flex: 0 0 132px;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--dash-primary, var(--accent-green));
+  cursor: pointer;
 }
 
 .palette-list {

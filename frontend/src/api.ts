@@ -272,6 +272,7 @@ export interface Prefs {
   dashGlass?: GlassPages; // the other pages that wear the dashboard's look
   dashBackdropSeed?: number; // saved positions of the backdrop's colored glows
   dashBackdropFlow?: boolean; // whether the backdrop's glows wander (backdropFlow.ts)
+  dashBackdropSpeed?: number; // how fast they wander, × the normal pace
 }
 
 export async function loadPrefs(): Promise<Prefs> {

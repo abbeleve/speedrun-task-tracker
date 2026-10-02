@@ -5,7 +5,9 @@
 // point to the next. The motions turn at different moments, so a glow never
 // comes to a standstill and never retraces a path: it meanders. Only
 // `transform` is animated, which the browser runs off the main thread, so a
-// busy calendar does not stutter the backdrop and vice versa.
+// busy calendar does not stutter the backdrop and vice versa. How fast they
+// go is the user's to pick, and is kept with the rest of the look
+// (dashPalette.ts).
 
 export type FlowMotion = 'x' | 'y' | 'shape';
 
@@ -15,7 +17,7 @@ interface MotionSpec {
   reach: number;
   // The shortest step worth taking, so a leg never ends right where it began.
   minStep: number;
-  // How long one leg takes, ms.
+  // How long one leg takes at the normal speed, ms.
   minMs: number;
   maxMs: number;
 }
@@ -64,12 +66,25 @@ export function flowTransform(motion: FlowMotion, p: FlowPoint): string {
 // How long a glow takes to drift home when the switch goes off.
 export const FLOW_SETTLE_MS = 1400;
 
-// Walks one box through random legs until the returned stop is called, which
-// lets the box drift back to its place rather than jump there.
-export function wander(el: HTMLElement, motion: FlowMotion, random: () => number = Math.random): () => void {
+export interface FlowWalk {
+  // Speeds the walk up or slows it down, the leg under way included, from
+  // where the box is now.
+  setSpeed: (speed: number) => void;
+  // Ends the walk and lets the box drift back to its place rather than jump.
+  stop: () => void;
+}
+
+// Walks one box through random legs at `speed` times the normal pace.
+export function wander(
+  el: HTMLElement,
+  motion: FlowMotion,
+  speed = 1,
+  random: () => number = Math.random
+): FlowWalk {
   let at = FLOW_REST;
   let current: Animation | null = null;
   let stopped = false;
+  let rate = speed;
 
   // A box still drifting home from the last walk sets off from where it is.
   const settling = el.getAnimations?.() ?? [];
@@ -84,6 +99,7 @@ export function wander(el: HTMLElement, motion: FlowMotion, random: () => number
       easing: 'ease-in-out',
       fill: 'forwards',
     });
+    next.playbackRate = rate;
     // The finished leg held its end point; the new one starts from it.
     current?.cancel();
     current = next;
@@ -93,18 +109,25 @@ export function wander(el: HTMLElement, motion: FlowMotion, random: () => number
   };
   step();
 
-  return () => {
-    stopped = true;
-    if (!current) return;
-    const here = getComputedStyle(el).transform;
-    current.onfinish = null;
-    current.cancel();
-    current = null;
-    if (here && here !== 'none') {
-      el.animate([{ transform: here }, { transform: flowTransform(motion, FLOW_REST) }], {
-        duration: FLOW_SETTLE_MS,
-        easing: 'ease-in-out',
-      });
-    }
+  return {
+    setSpeed(next) {
+      if (next === rate) return;
+      rate = next;
+      current?.updatePlaybackRate(rate);
+    },
+    stop() {
+      stopped = true;
+      if (!current) return;
+      const here = getComputedStyle(el).transform;
+      current.onfinish = null;
+      current.cancel();
+      current = null;
+      if (here && here !== 'none') {
+        el.animate([{ transform: here }, { transform: flowTransform(motion, FLOW_REST) }], {
+          duration: FLOW_SETTLE_MS,
+          easing: 'ease-in-out',
+        });
+      }
+    },
   };
 }

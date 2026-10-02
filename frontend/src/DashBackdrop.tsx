@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { wander } from './backdropFlow';
-import type { FlowMotion } from './backdropFlow';
+import type { FlowMotion, FlowWalk } from './backdropFlow';
 
 const GLOWS = [1, 2, 3, 4] as const;
 
@@ -16,25 +16,34 @@ const STILL_QUERY = '(prefers-reduced-motion: reduce)';
 // The glass pages' backdrop: four soft glows of the palette's colours over
 // the ground `.app--glass` paints (App.css). Each glow sits where the
 // backdrop's layout puts it; with `flowing` on they wander off from there
-// (backdropFlow.ts) — unless the system asks for less motion.
-function DashBackdrop({ flowing }: { flowing: boolean }) {
+// (backdropFlow.ts) at `speed` times the normal pace — unless the system asks
+// for less motion.
+function DashBackdrop({ flowing, speed }: { flowing: boolean; speed: number }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The walks under way, so a new speed reaches them without starting over.
+  const walksRef = useRef<FlowWalk[]>([]);
+  const speedRef = useRef(speed);
+
+  useEffect(() => {
+    speedRef.current = speed;
+    walksRef.current.forEach((w) => w.setSpeed(speed));
+  }, [speed]);
 
   useEffect(() => {
     const root = ref.current;
     if (!flowing || !root || typeof root.animate !== 'function') return;
     const still = typeof window.matchMedia === 'function' ? window.matchMedia(STILL_QUERY) : null;
-    let stops: (() => void)[] = [];
+    let walks: FlowWalk[] = [];
 
     const stop = () => {
-      stops.forEach((s) => s());
-      stops = [];
+      walks.forEach((w) => w.stop());
+      walks = walksRef.current = [];
     };
     const sync = () => {
       if (still?.matches) stop();
-      else if (stops.length === 0) {
-        stops = BOXES.flatMap(({ selector, motion }) =>
-          Array.from(root.querySelectorAll<HTMLElement>(selector), (el) => wander(el, motion))
+      else if (walks.length === 0) {
+        walks = walksRef.current = BOXES.flatMap(({ selector, motion }) =>
+          Array.from(root.querySelectorAll<HTMLElement>(selector), (el) => wander(el, motion, speedRef.current))
         );
       }
     };

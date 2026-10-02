@@ -57,6 +57,25 @@ export function parseBackdropFlow(value: unknown): boolean {
   return typeof value === 'boolean' ? value : DEFAULT_BACKDROP_FLOW;
 }
 
+// How fast the glows wander, as a multiple of the normal pace, in steps of a
+// quarter: from a slow drift to a lively swirl.
+export const BACKDROP_SPEED_MIN = 0.25;
+export const BACKDROP_SPEED_MAX = 4;
+export const BACKDROP_SPEED_STEP = 0.25;
+export const DEFAULT_BACKDROP_SPEED = 1;
+
+// A stored speed, snapped to the slider's steps; anything else is the normal
+// pace.
+export function parseBackdropSpeed(value: unknown): number {
+  if (typeof value !== 'number' || !(value >= BACKDROP_SPEED_MIN && value <= BACKDROP_SPEED_MAX)) {
+    return DEFAULT_BACKDROP_SPEED;
+  }
+  return Math.round(value / BACKDROP_SPEED_STEP) * BACKDROP_SPEED_STEP;
+}
+
+// "1,5×" — the speed as the slider reads it out.
+export const formatBackdropSpeed = (speed: number) => `${String(speed).replace('.', ',')}×`;
+
 export const BUILTIN_PALETTES: readonly DashPalette[] = [
   { id: 'mint', name: 'Мята', base: '#22a35a', accent: '#ee5a24' },
   { id: 'ocean', name: 'Океан', base: '#2f7fd8', accent: '#f59e0b' },
@@ -122,6 +141,7 @@ export interface PaletteState {
   glass: GlassPages;
   backdropSeed: number;
   backdropFlow: boolean;
+  backdropSpeed: number;
 }
 
 export const PALETTE_CACHE_KEY = 'speedrun_dash_palette';
@@ -135,6 +155,7 @@ export function cachedPalettes(storage: Pick<Storage, 'getItem'> = localStorage)
       glass: parseGlass(raw?.glass),
       backdropSeed: parseBackdropSeed(raw?.backdropSeed),
       backdropFlow: parseBackdropFlow(raw?.backdropFlow),
+      backdropSpeed: parseBackdropSpeed(raw?.backdropSpeed),
     };
   } catch {
     return {
@@ -143,6 +164,7 @@ export function cachedPalettes(storage: Pick<Storage, 'getItem'> = localStorage)
       glass: DEFAULT_GLASS,
       backdropSeed: DEFAULT_BACKDROP_SEED,
       backdropFlow: DEFAULT_BACKDROP_FLOW,
+      backdropSpeed: DEFAULT_BACKDROP_SPEED,
     };
   }
 }
@@ -167,6 +189,7 @@ export function adoptServerPalettes(prefs: unknown, changedHere: boolean): Palet
     dashGlass?: unknown;
     dashBackdropSeed?: unknown;
     dashBackdropFlow?: unknown;
+    dashBackdropSpeed?: unknown;
   };
   return {
     active: parsePaletteId(raw.dashPalette) ?? DEFAULT_PALETTE_ID,
@@ -174,6 +197,7 @@ export function adoptServerPalettes(prefs: unknown, changedHere: boolean): Palet
     glass: parseGlass(raw.dashGlass),
     backdropSeed: parseBackdropSeed(raw.dashBackdropSeed),
     backdropFlow: parseBackdropFlow(raw.dashBackdropFlow),
+    backdropSpeed: parseBackdropSpeed(raw.dashBackdropSpeed),
   };
 }
 
