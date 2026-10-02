@@ -1,4 +1,5 @@
-"""Tests for the home page's colour palettes kept in the per-user prefs.
+"""Tests for the dashboard's look kept in the per-user prefs: the colour
+palettes, and the pages besides the home page that wear it.
 
 The endpoint itself (empty start, merging, auth) is covered in test_prefs.py.
 """
@@ -45,6 +46,31 @@ def test_malformed_palettes_are_rejected(client, auth_headers):
         assert resp.status_code == 422, palette
     resp = client.put('/api/prefs', headers=auth_headers, json={'dashPalettes': [SPRING] * 25})
     assert resp.status_code == 422
+    assert client.get('/api/prefs', headers=auth_headers).json() == {}
+
+
+def test_the_pages_wearing_the_look_round_trip(client, auth_headers):
+    client.put('/api/prefs', headers=auth_headers, json={'dashPalette': 'ocean'})
+    resp = client.put(
+        '/api/prefs', headers=auth_headers, json={'dashGlass': {'calendar': False, 'tracker': True}}
+    )
+    assert resp.status_code == 200
+    assert client.get('/api/prefs', headers=auth_headers).json() == {
+        'dashPalette': 'ocean',
+        'dashGlass': {'calendar': False, 'tracker': True},
+    }
+
+
+def test_malformed_page_choices_are_rejected(client, auth_headers):
+    bad = [
+        {'calendar': True},  # every page is named
+        {'calendar': 'yes', 'tracker': True},
+        {'calendar': 1, 'tracker': 0},
+        'all',
+    ]
+    for glass in bad:
+        resp = client.put('/api/prefs', headers=auth_headers, json={'dashGlass': glass})
+        assert resp.status_code == 422, glass
     assert client.get('/api/prefs', headers=auth_headers).json() == {}
 
 

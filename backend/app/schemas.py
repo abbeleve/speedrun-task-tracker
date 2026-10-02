@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class RegisterIn(BaseModel):
@@ -224,12 +224,20 @@ class DashPaletteIn(BaseModel):
     accent: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
 
 
+# `dashGlass` says which of the other pages wear the home page's look (the
+# palette's backdrop and glass panels) — the calendar, the sequence tracker.
+class DashGlassIn(BaseModel):
+    calendar: StrictBool
+    tracker: StrictBool
+
+
 class PrefsIn(BaseModel):
     activityChart: Optional[str] = Field(default=None, pattern=r'^(bars|race|wave)$')
     calendarLayout: Optional[str] = Field(default=None, pattern=r'^(vertical|horizontal)$')
     calendarDesign: Optional[str] = Field(default=None, pattern=r'^(classic|cards)$')
     dashPalette: Optional[str] = Field(default=None, pattern=r'^[a-z0-9-]{1,40}$')
     dashPalettes: Optional[List[DashPaletteIn]] = Field(default=None, max_length=24)
+    dashGlass: Optional[DashGlassIn] = None
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

@@ -273,3 +273,26 @@ export const IconPencil = (p: IconProps) => (
     <path d="m13.5 6.5 4 4" />
   </Icon>
 );
+
+// The sequence tracker's read-outs: time left by the plan, the clock, and
+// the overtake.
+export const IconHourglass = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 3h12M6 21h12" />
+    <path d="M7 3v3a5 5 0 0 0 5 5 5 5 0 0 0 5-5V3M7 21v-3a5 5 0 0 1 5-5 5 5 0 0 1 5 5v3" />
+  </Icon>
+);
+
+export const IconClock = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);
+
+export const IconTrend = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m3 17 6-6 4 4 8-8" />
+    <path d="M15 7h6v6" />
+  </Icon>
+);

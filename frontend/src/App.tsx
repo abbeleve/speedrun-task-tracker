@@ -32,8 +32,11 @@ import { sumWeekOvertakeSec } from './weekOvertake';
 import { buildChainRun } from './chainRun';
 import {
   IconCalendar,
+  IconClock,
   IconClose,
+  IconFlag,
   IconHome,
+  IconHourglass,
   IconList,
   IconLogOut,
   IconMoon,
@@ -44,6 +47,7 @@ import {
   IconStopwatch,
   IconSun,
   IconThermometer,
+  IconTrend,
 } from './icons';
 import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
@@ -56,6 +60,9 @@ import './calendar.css';
 import './deadlines.css';
 // After the classic rules, which it overrides under .cal-cards.
 import './calendarCards.css';
+// The dashboard's look on the calendar and the tracker; last, over both
+// designs of the calendar.
+import './glass.css';
 
 const MIN_BLOCK_PX = 72;
 const MAX_BLOCK_PX = 200;
@@ -622,12 +629,19 @@ function App() {
   const leadLabel = credit.lead >= 0 ? 'обгон' : 'отставание';
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
+  // The dashboard's look — a backdrop and glass panels coloured from the
+  // chosen palette (`.app--glass` in App.css, glass.css). The home page always
+  // wears it; the calendar and the tracker when the user has switched it on
+  // for them, except the spiral, which keeps its own night sky.
+  const glassOn =
+    page === 'home' ||
+    (page === 'calendar' && palette.glass.calendar) ||
+    (page === 'tracker' && palette.glass.tracker && view !== 'spiral');
+
   return (
-    // The home dashboard brings its own backdrop and glass panels, coloured
-    // from the chosen palette — see `.app--home` in App.css.
     <div
-      className={page === 'home' ? 'app app--home' : 'app'}
-      style={page === 'home' ? (paletteVars as React.CSSProperties) : undefined}
+      className={`app${glassOn ? ' app--glass' : ''}${page === 'home' ? ' app--home' : ''}`}
+      style={glassOn ? (paletteVars as React.CSSProperties) : undefined}
     >
       <header className="header">
         <div className="header-brand">
@@ -664,7 +678,7 @@ function App() {
         </nav>
 
         <div className="header-tools">
-          {page === 'home' && <PalettePicker store={palette} />}
+          <PalettePicker store={palette} page={page} shown={glassOn} />
           <button
             type="button"
             className="icon-btn"
@@ -797,23 +811,45 @@ function App() {
 
       {page === 'tracker' && (
         <>
+          {/* The badges only show in the dashboard's look, where each
+              read-out is a card of its own. */}
           <footer className="footer">
             <div className="timer-block timer-next">
-              <span className="timer-label">Осталось по плану</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconHourglass size={16} />
+                </span>
+                Осталось по плану
+              </span>
               <span className="timer-value">{formatTime(remainingSec * 1000, false)}</span>
             </div>
             <div className="timer-block timer-clock">
-              <span className="timer-label">Сейчас</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconClock size={16} />
+                </span>
+                Сейчас
+              </span>
               <span className="timer-value timer-clock-value">{wallTime(now)}</span>
             </div>
             <div className="timer-block timer-finish">
-              <span className="timer-label">Финиш</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconFlag size={16} />
+                </span>
+                Финиш
+              </span>
               <span className="timer-value timer-finish-value">
                 {openChain ? wallTime(openChain.endMs - credit.lead * 1000) : '—'}
               </span>
             </div>
             <div className="timer-block timer-session">
-              <span className="timer-label">{leadLabel === 'обгон' ? 'Обгон' : 'Отставание'}</span>
+              <span className="timer-label">
+                <span className="timer-badge">
+                  <IconTrend size={16} />
+                </span>
+                {leadLabel === 'обгон' ? 'Обгон' : 'Отставание'}
+              </span>
               <span className={`timer-value timer-main ${credit.lead >= 0 ? 'ahead' : 'behind'}`}>
                 {formatDelta(-credit.lead * 1000)}
               </span>

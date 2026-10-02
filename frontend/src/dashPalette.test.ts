@@ -4,12 +4,14 @@ import {
   BUILTIN_PALETTES,
   cachePalettes,
   cachedPalettes,
+  DEFAULT_GLASS,
   DEFAULT_PALETTE_ID,
   isUserPalette,
   MAX_USER_PALETTES,
   newPaletteId,
   normalizePalettes,
   PALETTE_CACHE_KEY,
+  parseGlass,
   resolvePalette,
 } from './dashPalette';
 
@@ -71,27 +73,46 @@ describe('resolvePalette', () => {
   });
 });
 
+describe('parseGlass', () => {
+  it('puts the look on both pages until the user says otherwise', () => {
+    expect(parseGlass(undefined)).toEqual(DEFAULT_GLASS);
+    expect(DEFAULT_GLASS).toEqual({ calendar: true, tracker: true });
+  });
+
+  it('keeps each page’s own choice and fills in a missing or malformed one', () => {
+    expect(parseGlass({ calendar: false, tracker: true })).toEqual({ calendar: false, tracker: true });
+    expect(parseGlass({ tracker: false })).toEqual({ calendar: true, tracker: false });
+    expect(parseGlass({ calendar: 'no', tracker: 0 })).toEqual(DEFAULT_GLASS);
+    expect(parseGlass('nonsense')).toEqual(DEFAULT_GLASS);
+  });
+});
+
 describe('the local copy', () => {
   it('opens on the default until something has been chosen', () => {
-    expect(cachedPalettes(memoryStorage())).toEqual({ active: DEFAULT_PALETTE_ID, own: [] });
-    expect(cachedPalettes(memoryStorage({ [PALETTE_CACHE_KEY]: '{oops' }))).toEqual({
-      active: DEFAULT_PALETTE_ID,
-      own: [],
-    });
+    const fresh = { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS };
+    expect(cachedPalettes(memoryStorage())).toEqual(fresh);
+    expect(cachedPalettes(memoryStorage({ [PALETTE_CACHE_KEY]: '{oops' }))).toEqual(fresh);
   });
 
   it('reads back what it stored', () => {
     const storage = memoryStorage();
-    cachePalettes({ active: 'u-abc123', own: [SPRING] }, storage);
-    expect(cachedPalettes(storage)).toEqual({ active: 'u-abc123', own: [SPRING] });
+    const state = { active: 'u-abc123', own: [SPRING], glass: { calendar: false, tracker: true } };
+    cachePalettes(state, storage);
+    expect(cachedPalettes(storage)).toEqual(state);
   });
 });
 
 describe('adoptServerPalettes', () => {
-  it('takes the account’s palettes', () => {
-    expect(adoptServerPalettes({ dashPalette: 'u-abc123', dashPalettes: [SPRING] }, false)).toEqual({
+  it('takes the account’s palettes and pages', () => {
+    expect(
+      adoptServerPalettes(
+        { dashPalette: 'u-abc123', dashPalettes: [SPRING], dashGlass: { calendar: true, tracker: false } },
+        false
+      )
+    ).toEqual({
       active: 'u-abc123',
       own: [SPRING],
+      glass: { calendar: true, tracker: false },
     });
   });
 
@@ -99,6 +120,7 @@ describe('adoptServerPalettes', () => {
     expect(adoptServerPalettes({ calendarDesign: 'cards' }, false)).toEqual({
       active: DEFAULT_PALETTE_ID,
       own: [],
+      glass: DEFAULT_GLASS,
     });
   });
 

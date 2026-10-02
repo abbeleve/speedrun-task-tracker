@@ -1,0 +1,280 @@
+/* Glass surfaces for Calendar and Sequence. Direct translucent fills avoid
+   blurring repainting views and leave fixed popovers anchored to the viewport. */
+.app--glass .cal-page {
+  --cal-sheet: color-mix(in srgb, var(--dash-base) 10%, #141916);
+  --cal-panel-radius: var(--dash-radius);
+  --cal-today: color-mix(in srgb, var(--dash-base) 9%, transparent);
+  --cal-line: color-mix(in srgb, var(--dash-light) 8%, transparent);
+  --cal-day-dim: color-mix(in srgb, var(--dash-base) 14%, #727a75);
+  --cal-pop-bg: color-mix(in srgb, var(--dash-base) 14%, #1c201e);
+  --cal-seg-track: var(--track-bg);
+  --cal-seg-border: var(--glass-border);
+}
+
+[data-theme='light'] .app--glass .cal-page {
+  --cal-sheet: color-mix(in srgb, var(--dash-base) 3%, white);
+  --cal-line: color-mix(in srgb, var(--dash-deep) 8%, transparent);
+  --cal-day-dim: color-mix(in srgb, var(--dash-base) 10%, #969e99);
+}
+
+.app--glass :is(.cal-hud, .cal-sheet, .cal-month, .cal-backlog) {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--dash-radius);
+}
+
+.app--glass .cal-backlog.drop-target {
+  background: color-mix(in srgb, var(--dash-primary) 12%, var(--glass-bg));
+  border-color: var(--dash-primary);
+  border-style: dashed;
+}
+
+.app--glass :is(.cal-days-head, .cal-date-deadlines) {
+  background: transparent;
+}
+
+.app--glass :is(.tl-ruler, .tl-corner, .tl-labels) {
+  background: color-mix(in srgb, var(--cal-sheet) 85%, transparent);
+}
+
+.app--glass .cal-btn {
+  background: var(--glass-bg-strong);
+}
+
+.app--glass .cal-btn--primary {
+  background: var(--dash-primary);
+  border-color: var(--dash-primary);
+  color: var(--dash-primary-ink);
+}
+
+.app--glass .cal-btn--danger {
+  background: transparent;
+}
+
+.app--glass .cal-toolbar .cal-seg button,
+.app--glass .cal-backlog-tabs button {
+  color: var(--text-secondary);
+}
+
+.app--glass .cal-toolbar .cal-seg button.active,
+.app--glass .cal-backlog-tabs button.active {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+  color: var(--text-primary);
+}
+
+.app--glass :is(.cal-col.today, .cal-cell.today, .tl-row.today, .tl-day.today) {
+  background: var(--cal-today);
+}
+
+/* The card design uses a large date, without the classic date's circle. */
+.app--glass .cal-page:not(.cal-cards) .cal-day-head.today .cal-day-num,
+.app--glass .cal-page:not(.cal-cards) .tl-day.today .tl-day-num {
+  background: var(--dash-primary);
+  color: var(--dash-primary-ink);
+}
+
+.app--glass .cal-upcoming-deadline {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  border-left-color: var(--deadline-tone);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+}
+
+/* Hide the new badges in the original footer, including Spiral. */
+.timer-badge {
+  display: none;
+}
+
+.app--glass .footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 20px 0;
+  background: none;
+  border: 0;
+}
+
+.app--glass .timer-block {
+  min-width: 0;
+  container-type: inline-size;
+  padding: 16px 20px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--dash-radius);
+  box-shadow: var(--glass-shadow);
+  text-align: left;
+}
+
+.app--glass .timer-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.app--glass .timer-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--dash-badge-ring);
+  color: var(--dash-ink);
+}
+
+.app--glass .timer-value {
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+/* Keep signed values with hours and hundredths inside their card. */
+.app--glass .timer-main {
+  font-size: clamp(1rem, 14cqi, 3.4rem);
+}
+
+/* Transparent borders provide a gap without changing the timeline offsets. */
+.app--glass .task-block {
+  border: solid transparent;
+  border-width: 4px 0;
+  background-color: var(--glass-bg);
+  background-clip: padding-box;
+  border-radius: 18px;
+  padding-left: 8px;
+  box-shadow: inset 0 0 0 1px var(--glass-border), inset 4px 0 0 var(--task-color);
+}
+
+.app--glass .task-block.current {
+  background: color-mix(in srgb, var(--task-color) 14%, var(--glass-bg-strong)) padding-box !important;
+}
+
+.app--glass .task-block.rest {
+  background:
+    repeating-linear-gradient(135deg, var(--hatch-ink) 0 1.5px, transparent 1.5px 9px) padding-box,
+    var(--hatch-base) padding-box;
+}
+
+.app--glass .task-block.rest.current {
+  background:
+    repeating-linear-gradient(135deg, var(--hatch-ink) 0 1.5px, transparent 1.5px 9px) padding-box,
+    color-mix(in srgb, var(--task-color) 14%, var(--glass-bg-strong)) padding-box !important;
+}
+
+.app--glass .timeline-thermo {
+  border-color: var(--glass-border);
+}
+
+.app--glass .liquid-list {
+  width: min(1080px, calc(100% - 32px));
+  margin: 4px auto 24px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  box-shadow: var(--glass-shadow);
+}
+
+.app--glass .liquid-thermo {
+  background: var(--glass-bg-strong);
+}
+
+.app--glass .liquid-cat {
+  border-color: var(--glass-border);
+  border-radius: 20px;
+}
+
+.app--glass .story-view {
+  --story-paper: color-mix(in srgb, var(--dash-base) 10%, #141916);
+  --story-ink: var(--text-primary);
+  --story-muted: var(--text-secondary);
+  --story-rail: var(--dash-primary);
+  --story-gold: color-mix(in srgb, var(--dash-accent) 85%, white);
+  --story-badge: color-mix(in srgb, var(--dash-base) 10%, transparent);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  box-shadow: var(--glass-shadow);
+}
+
+[data-theme='light'] .app--glass .story-view {
+  --story-paper: color-mix(in srgb, var(--dash-base) 3%, white);
+  --story-gold: color-mix(in srgb, var(--dash-accent) 85%, black);
+}
+
+.app--glass .story-complete {
+  color: var(--dash-primary-ink);
+}
+
+.app--glass .btn-resume {
+  background: var(--dash-primary);
+  color: var(--dash-primary-ink);
+  border-radius: 999px;
+}
+
+.app--glass .btn-quiet {
+  background: var(--glass-bg-strong);
+  border-radius: 999px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app--glass .cal-btn:hover,
+  .app--glass .btn-quiet:hover {
+    background: var(--bg-secondary);
+  }
+
+  .app--glass .cal-btn--primary:hover,
+  .app--glass .btn-resume:hover {
+    background: var(--dash-primary);
+    filter: brightness(1.08);
+  }
+
+  .app--glass .cal-btn--danger:hover {
+    background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  }
+
+  .app--glass .task-block:hover {
+    background-color: var(--glass-bg-strong);
+  }
+}
+
+@media (max-width: 720px) {
+  .app--glass .footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px 12px 0;
+  }
+
+  .app--glass .timer-block {
+    padding: 12px;
+  }
+
+  .app--glass .timer-label {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+}
+
+/* Leave room for the sequence on a phone turned sideways. */
+@media (max-height: 500px) {
+  .app--glass .footer {
+    gap: 6px;
+    padding-top: 6px;
+  }
+
+  .app--glass .timer-block {
+    padding: 6px 12px;
+  }
+
+  .app--glass .timer-label {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .app--glass .timer-badge {
+    width: 24px;
+    height: 24px;
+  }
+}

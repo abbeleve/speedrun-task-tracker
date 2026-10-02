@@ -4978,17 +4978,21 @@
 }
 
 /* ── The dashboard's look: frosted glass panels over a soft tinted backdrop ──
-   `.app--home` is set on the app shell while the home page is open, so the
-   backdrop also runs under the header. The whole palette is worked out from
-   the two colours of the chosen palette preset (see dashPalette.ts), which
-   App sets inline on the shell:
+   `.app--glass` is set on the app shell while a page wearing the look is open
+   — the home page always, the calendar and the tracker when the user has
+   switched it on for them (see dashPalette.ts) — so the backdrop also runs
+   under the header. The whole palette is worked out from the two colours of
+   the chosen palette preset, which App sets inline on the shell:
      --dash-base    the page's own hue: backdrop, glass tint, heatmap shades,
-                    hatching, buttons and every "good" accent;
-     --dash-accent  the sleep tracker's squares.
+                    hatching and buttons;
+     --dash-accent  a second colour: the sleep tracker's squares, small
+                    labels and marks.
    The app's own tokens are retuned from those, plus the glass, the hatching
    of empty squares and the sleep tracker's colours. Dark theme first (it is
-   the default), light theme over it. */
-.app--home {
+   the default), light theme over it. What the home page's panels do with
+   them follows under `.app--home`; the calendar and the tracker are dressed
+   in glass.css. */
+.app--glass {
   --dash-base: #22a35a;
   --dash-accent: #ee5a24;
   /* A light and a deep version of the hue, for dark and light grounds. */
@@ -5018,17 +5022,12 @@
   --bg-secondary: color-mix(in srgb, var(--dash-base) 8%, #0e1210);
   --bg-surface: color-mix(in srgb, var(--dash-base) 14%, #171c19);
   --border: rgba(255, 255, 255, 0.09);
-  --accent-green: var(--dash-light);
   --track-bg: rgba(255, 255, 255, 0.05);
   --surface-raised: color-mix(in srgb, var(--dash-base) 20%, #1c221e);
   --bg-row-hover: color-mix(in srgb, var(--dash-light) 6%, transparent);
   --scrollbar-thumb: color-mix(in srgb, var(--dash-light) 22%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-light) 36%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-light) 48%, transparent);
-  --heat-1: color-mix(in srgb, var(--dash-base) 28%, #121714);
-  --heat-2: color-mix(in srgb, var(--dash-base) 52%, #121714);
-  --heat-3: color-mix(in srgb, var(--dash-base) 80%, #121714);
-  --heat-4: var(--dash-light);
 
   background:
     radial-gradient(52% 44% at 50% 22%, color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
@@ -5038,7 +5037,7 @@
     color-mix(in srgb, var(--dash-base) 6%, #090c0a);
 }
 
-[data-theme='light'] .app--home {
+[data-theme='light'] .app--glass {
   --glass-bg: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 3%, white) 52%, transparent);
   --glass-bg-strong: color-mix(in srgb, color-mix(in srgb, var(--dash-base) 2%, white) 82%, transparent);
   --glass-border: rgba(255, 255, 255, 0.9);
@@ -5065,7 +5064,6 @@
   --text-secondary: color-mix(in srgb, var(--dash-base) 22%, #4c544f);
   --text-dim: color-mix(in srgb, var(--dash-base) 22%, #8b938e);
   --border: color-mix(in srgb, var(--dash-deep) 14%, transparent);
-  --accent-green: color-mix(in srgb, var(--dash-base) 88%, black);
   --track-bg: color-mix(in srgb, var(--dash-deep) 7%, transparent);
   --surface-raised: #ffffff;
   --control-hover: color-mix(in srgb, var(--dash-deep) 7%, transparent);
@@ -5073,11 +5071,6 @@
   --scrollbar-thumb: color-mix(in srgb, var(--dash-deep) 24%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-deep) 40%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-deep) 52%, transparent);
-  --heat-0: color-mix(in srgb, var(--dash-base) 8%, transparent);
-  --heat-1: color-mix(in srgb, var(--dash-base) 26%, white);
-  --heat-2: color-mix(in srgb, var(--dash-base) 52%, white);
-  --heat-3: color-mix(in srgb, var(--dash-base) 82%, white);
-  --heat-4: color-mix(in srgb, var(--dash-base) 85%, black);
 
   background:
     radial-gradient(56% 46% at 50% 24%, color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
@@ -5095,7 +5088,7 @@
    either side — lime and teal around a green — so the backdrop is not one
    flat wash of a single colour. */
 @supports (color: oklch(from red l c h)) {
-  .app--home {
+  .app--glass {
     background:
       radial-gradient(52% 44% at 50% 22%, color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
       radial-gradient(34% 40% at 92% 8%, oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18), transparent 70%),
@@ -5104,7 +5097,7 @@
       color-mix(in srgb, var(--dash-base) 6%, #090c0a);
   }
 
-  [data-theme='light'] .app--home {
+  [data-theme='light'] .app--glass {
     background:
       radial-gradient(56% 46% at 50% 24%, color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
       radial-gradient(36% 42% at 94% 6%, oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75), transparent 70%),
@@ -5119,9 +5112,29 @@
 }
 
 /* The header lets the backdrop through instead of sitting on it as a bar. */
-.app--home .header {
+.app--glass .header {
   background: color-mix(in srgb, var(--bg-secondary) 45%, transparent);
   border-bottom-color: var(--glass-border);
+}
+
+/* On the home page the page's own hue is also every "good" accent, and the
+   heatmap's shades are its steps. The working pages keep green for ahead and
+   done, so a palette never makes ahead and behind look alike. */
+.app--home {
+  --accent-green: var(--dash-light);
+  --heat-1: color-mix(in srgb, var(--dash-base) 28%, #121714);
+  --heat-2: color-mix(in srgb, var(--dash-base) 52%, #121714);
+  --heat-3: color-mix(in srgb, var(--dash-base) 80%, #121714);
+  --heat-4: var(--dash-light);
+}
+
+[data-theme='light'] .app--home {
+  --accent-green: color-mix(in srgb, var(--dash-base) 88%, black);
+  --heat-0: color-mix(in srgb, var(--dash-base) 8%, transparent);
+  --heat-1: color-mix(in srgb, var(--dash-base) 26%, white);
+  --heat-2: color-mix(in srgb, var(--dash-base) 52%, white);
+  --heat-3: color-mix(in srgb, var(--dash-base) 82%, white);
+  --heat-4: color-mix(in srgb, var(--dash-base) 85%, black);
 }
 
 /* The dashboard is the stacking context its glass is painted in (see the
@@ -5256,7 +5269,7 @@
 /* Fewer, softer layers where blur costs the most: a phone repaints every
    frosted panel on each scroll frame. */
 @media (pointer: coarse) {
-  .app--home {
+  .app--glass {
     --glass-blur: blur(10px);
   }
 }
@@ -5264,7 +5277,7 @@
 /* Phones: tighter panels, and the summary cards shorter so all four are not
    a whole screen of scrolling. */
 @media (max-width: 640px) {
-  .app--home {
+  .app--glass {
     --dash-radius: 16px;
   }
 
@@ -5334,6 +5347,95 @@
   color: var(--text-secondary);
 }
 
+/* The pages that can wear the look, each with its switch. */
+.palette-lead {
+  margin: -4px 2px 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.palette-pages {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--track-bg);
+}
+
+.palette-page {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.palette-pages .current .palette-page {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pill);
+}
+
+.palette-page-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.palette-page-text b {
+  font-weight: 500;
+}
+
+.palette-page-text small {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+/* A checkbox drawn as a switch: a pill track with a knob that slides over and
+   fills in the page's colour when on. */
+.palette-switch {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.palette-switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 180ms var(--ease-out);
+}
+
+.palette-switch:checked {
+  background: var(--dash-primary, var(--accent-green));
+}
+
+.palette-switch:checked::before {
+  transform: translateX(14px);
+}
+
+.palette-switch:focus-visible {
+  outline: 2px solid var(--dash-primary, var(--accent-green));
+  outline-offset: 2px;
+}
+
 .palette-list {
   list-style: none;
   margin: 0;
@@ -5381,7 +5483,7 @@
 }
 
 .palette-item.active .palette-swatch {
-  box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--accent-green);
+  box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--dash-primary, var(--accent-green));
 }
 
 .palette-name {
@@ -5394,7 +5496,7 @@
 
 .palette-check {
   flex: none;
-  color: var(--accent-green);
+  color: var(--dash-primary, var(--accent-green));
 }
 
 /* Edit / delete for the user's own palettes, shown on the row under the
@@ -5478,7 +5580,7 @@
 }
 
 .palette-input:focus {
-  border-color: var(--accent-green);
+  border-color: var(--dash-primary, var(--accent-green));
 }
 
 .palette-color {

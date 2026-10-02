@@ -1,8 +1,10 @@
-// The home dashboard's colour scheme. A palette is two colours — the page's
-// own hue and the sleep tracker's — and App.css works the rest of the page out
-// of them (see `.app--home`). A few palettes ship with the app; the user makes
-// their own on top. The list and the choice belong to the account
-// (/api/prefs), so they follow the user to another device; a copy is kept in
+// The dashboard's look: a colour scheme, and the pages that wear it. A palette
+// is two colours — the page's own hue and a second one for accents (the sleep
+// tracker's squares) — and App.css works the rest of the page out of them (see
+// `.app--glass`). A few palettes ship with the app; the user makes their own
+// on top. The home page always wears the look; the calendar and the sequence
+// tracker each take it or keep their own. All of it belongs to the account
+// (/api/prefs), so it follows the user to another device; a copy is kept in
 // localStorage only so the page opens in the right colours before the server
 // has answered.
 
@@ -10,7 +12,25 @@ export interface DashPalette {
   id: string;
   name: string;
   base: string; // '#rrggbb' — backdrop, glass, heatmap, buttons
-  accent: string; // '#rrggbb' — the sleep tracker's squares
+  accent: string; // '#rrggbb' — the sleep tracker's squares, small accents
+}
+
+// Which of the other pages wear the look too.
+export interface GlassPages {
+  calendar: boolean;
+  tracker: boolean;
+}
+
+export const DEFAULT_GLASS: GlassPages = { calendar: true, tracker: true };
+
+// A stored choice, with a missing or malformed page falling back to the
+// default for it.
+export function parseGlass(value: unknown): GlassPages {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    calendar: typeof raw.calendar === 'boolean' ? raw.calendar : DEFAULT_GLASS.calendar,
+    tracker: typeof raw.tracker === 'boolean' ? raw.tracker : DEFAULT_GLASS.tracker,
+  };
 }
 
 export const BUILTIN_PALETTES: readonly DashPalette[] = [
@@ -75,6 +95,7 @@ export function resolvePalette(id: string | null, own: readonly DashPalette[]): 
 export interface PaletteState {
   active: string;
   own: DashPalette[];
+  glass: GlassPages;
 }
 
 export const PALETTE_CACHE_KEY = 'speedrun_dash_palette';
@@ -85,9 +106,10 @@ export function cachedPalettes(storage: Pick<Storage, 'getItem'> = localStorage)
     return {
       active: parsePaletteId(raw?.active) ?? DEFAULT_PALETTE_ID,
       own: normalizePalettes(raw?.own),
+      glass: parseGlass(raw?.glass),
     };
   } catch {
-    return { active: DEFAULT_PALETTE_ID, own: [] };
+    return { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS };
   }
 }
 
@@ -105,10 +127,11 @@ export function cachePalettes(state: PaletteState, storage: Pick<Storage, 'setIt
 // browser and may be another account's. Null means "leave it as it is".
 export function adoptServerPalettes(prefs: unknown, changedHere: boolean): PaletteState | null {
   if (changedHere || typeof prefs !== 'object' || prefs === null) return null;
-  const raw = prefs as { dashPalette?: unknown; dashPalettes?: unknown };
+  const raw = prefs as { dashPalette?: unknown; dashPalettes?: unknown; dashGlass?: unknown };
   return {
     active: parsePaletteId(raw.dashPalette) ?? DEFAULT_PALETTE_ID,
     own: normalizePalettes(raw.dashPalettes),
+    glass: parseGlass(raw.dashGlass),
   };
 }
 

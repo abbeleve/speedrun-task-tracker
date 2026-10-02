@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { DashPalette } from './dashPalette';
+import type { DashPalette, GlassPages } from './dashPalette';
 import { isUserPalette, newPaletteId, PALETTE_NAME_MAX } from './dashPalette';
 import type { DashPaletteStore } from './useDashPalette';
 import { IconCheck, IconClose, IconPalette, IconPencil, IconPlus } from './icons';
@@ -10,10 +10,22 @@ const swatchStyle = (p: DashPalette): CSSProperties => ({
   background: `conic-gradient(from 225deg, ${p.base} 0 50%, ${p.accent} 50% 100%)`,
 });
 
-// The header's palette button and its popover: choose one of the palettes, or
-// make, edit and delete your own. While one is being edited the page is shown
-// in it, so its colours are judged where they will actually be used.
-export default function PalettePicker({ store }: { store: DashPaletteStore }) {
+// The pages that can take the look or leave it, as the switches name them.
+const GLASS_PAGES: { page: keyof GlassPages; label: string; hint?: string }[] = [
+  { page: 'calendar', label: 'Календарь' },
+  { page: 'tracker', label: 'Секвенция', hint: 'кроме «Спирали»' },
+];
+
+// The header's palette button and its popover: which pages wear the
+// dashboard's look, and in which colours — one of the palettes, or one the
+// user makes, edits or deletes. While one is being edited the page is shown in
+// it, so its colours are judged where they will actually be used.
+export default function PalettePicker({ store, page, shown }: {
+  store: DashPaletteStore;
+  page: 'home' | 'calendar' | 'tracker';
+  // Whether the page open under the popover wears the look right now.
+  shown: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DashPalette | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -94,19 +106,20 @@ export default function PalettePicker({ store }: { store: DashPaletteStore }) {
         type="button"
         className={`icon-btn${open ? ' is-open' : ''}`}
         onClick={() => (open ? close() : setOpen(true))}
-        title="Цветовая гамма"
-        aria-label="Цветовая гамма"
+        title="Оформление"
+        aria-label="Оформление"
         aria-expanded={open}
       >
         <IconPalette />
       </button>
 
       {open && (
-        <div className="palette-pop" role="dialog" aria-label="Цветовая гамма">
+        <div className="palette-pop" role="dialog" aria-label="Оформление">
           {draft ? (
             <PaletteEditor
               draft={draft}
               isNew={!own.some((p) => p.id === draft.id)}
+              shown={shown}
               onChange={setDraft}
               onCancel={() => setDraft(null)}
               onSave={(p) => {
@@ -116,7 +129,29 @@ export default function PalettePicker({ store }: { store: DashPaletteStore }) {
             />
           ) : (
             <>
-              <p className="palette-head">Цветовая гамма</p>
+              <p className="palette-head">Оформление</p>
+              <p className="palette-lead">Стекло и цвета «Главной» — ещё и на страницах:</p>
+              <ul className="palette-pages">
+                {GLASS_PAGES.map(({ page: p, label, hint }) => (
+                  <li key={p} className={p === page ? 'current' : undefined}>
+                    <label className="palette-page">
+                      <span className="palette-page-text">
+                        <b>{label}</b>
+                        {hint && <small>{hint}</small>}
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        className="palette-switch"
+                        checked={store.glass[p]}
+                        onChange={(e) => store.setGlass(p, e.target.checked)}
+                      />
+                    </label>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="palette-sub">Цветовая гамма</p>
               <ul className="palette-list">{builtIn.map(item)}</ul>
 
               <p className="palette-sub">Мои палитры</p>
@@ -146,9 +181,10 @@ export default function PalettePicker({ store }: { store: DashPaletteStore }) {
   );
 }
 
-function PaletteEditor({ draft, isNew, onChange, onCancel, onSave }: {
+function PaletteEditor({ draft, isNew, shown, onChange, onCancel, onSave }: {
   draft: DashPalette;
   isNew: boolean;
+  shown: boolean;
   onChange: (p: DashPalette) => void;
   onCancel: () => void;
   onSave: (p: DashPalette) => void;
@@ -183,13 +219,17 @@ function PaletteEditor({ draft, isNew, onChange, onCancel, onSave }: {
         onChange={(base) => onChange({ ...draft, base })}
       />
       <ColorField
-        label="Трекер сна"
-        hint="закрашенные часы сна"
+        label="Акцент"
+        hint="часы сна, подписи и метки"
         value={draft.accent}
         onChange={(accent) => onChange({ ...draft, accent })}
       />
 
-      <p className="palette-note">Страница уже показана в этих цветах.</p>
+      <p className="palette-note">
+        {shown
+          ? 'Страница уже показана в этих цветах.'
+          : 'Эти цвета видны на «Главной» и страницах со стеклом.'}
+      </p>
 
       <div className="palette-actions">
         <button type="button" className="pill-btn" onClick={onCancel}>

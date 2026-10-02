@@ -9,7 +9,7 @@ import {
   MAX_USER_PALETTES,
   resolvePalette,
 } from './dashPalette';
-import type { DashPalette, PaletteState } from './dashPalette';
+import type { DashPalette, GlassPages, PaletteState } from './dashPalette';
 
 export interface DashPaletteStore {
   // Every palette to choose from: the built-in ones, then the user's own.
@@ -24,9 +24,12 @@ export interface DashPaletteStore {
   remove: (id: string) => void;
   setPreview: (palette: DashPalette | null) => void;
   canAdd: boolean;
+  // The other pages that wear the look, and the switch for each.
+  glass: GlassPages;
+  setGlass: (page: keyof GlassPages, on: boolean) => void;
 }
 
-// The dashboard palette: opens with this browser's copy, then follows the
+// The dashboard's look: opens with this browser's copy, then follows the
 // account once /api/prefs answers — unless something was changed here in the
 // meantime. Every change is cached locally and sent to the account.
 export function useDashPalette(): DashPaletteStore {
@@ -62,9 +65,11 @@ export function useDashPalette(): DashPaletteStore {
     stateRef.current = next;
     setState(next);
     cachePalettes(next);
-    api.savePrefs({ dashPalette: next.active, dashPalettes: next.own }).catch((error) => {
-      console.error('Failed to save the dashboard palette', error);
-    });
+    api
+      .savePrefs({ dashPalette: next.active, dashPalettes: next.own, dashGlass: next.glass })
+      .catch((error) => {
+        console.error('Failed to save the dashboard palette', error);
+      });
   }, []);
 
   const select = useCallback((id: string) => commit((prev) => ({ ...prev, active: id })), [commit]);
@@ -75,7 +80,7 @@ export function useDashPalette(): DashPaletteStore {
         const exists = prev.own.some((p) => p.id === palette.id);
         if (!exists && prev.own.length >= MAX_USER_PALETTES) return prev;
         const own = exists ? prev.own.map((p) => (p.id === palette.id ? palette : p)) : [...prev.own, palette];
-        return { active: palette.id, own };
+        return { ...prev, active: palette.id, own };
       }),
     [commit]
   );
@@ -83,9 +88,16 @@ export function useDashPalette(): DashPaletteStore {
   const remove = useCallback(
     (id: string) =>
       commit((prev) => ({
+        ...prev,
         active: prev.active === id ? DEFAULT_PALETTE_ID : prev.active,
         own: prev.own.filter((p) => p.id !== id),
       })),
+    [commit]
+  );
+
+  const setGlass = useCallback(
+    (page: keyof GlassPages, on: boolean) =>
+      commit((prev) => (prev.glass[page] === on ? prev : { ...prev, glass: { ...prev.glass, [page]: on } })),
     [commit]
   );
 
@@ -101,5 +113,7 @@ export function useDashPalette(): DashPaletteStore {
     remove,
     setPreview,
     canAdd: state.own.length < MAX_USER_PALETTES,
+    glass: state.glass,
+    setGlass,
   };
 }
