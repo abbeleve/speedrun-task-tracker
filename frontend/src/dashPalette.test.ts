@@ -4,6 +4,7 @@ import {
   BUILTIN_PALETTES,
   cachePalettes,
   cachedPalettes,
+  DEFAULT_BACKDROP_FLOW,
   DEFAULT_BACKDROP_SEED,
   DEFAULT_GLASS,
   DEFAULT_PALETTE_ID,
@@ -14,6 +15,7 @@ import {
   normalizePalettes,
   PALETTE_CACHE_KEY,
   paletteStyle,
+  parseBackdropFlow,
   parseBackdropSeed,
   parseGlass,
   randomBackdropSeed,
@@ -128,16 +130,39 @@ describe('backdrop positions', () => {
   });
 });
 
+describe('the living backdrop', () => {
+  it('keeps still until the user turns it on', () => {
+    expect(DEFAULT_BACKDROP_FLOW).toBe(false);
+    expect(parseBackdropFlow(true)).toBe(true);
+    expect(parseBackdropFlow(false)).toBe(false);
+    for (const value of [undefined, null, 1, 'true', {}]) {
+      expect(parseBackdropFlow(value)).toBe(DEFAULT_BACKDROP_FLOW);
+    }
+  });
+});
+
 describe('the local copy', () => {
   it('opens on the default until something has been chosen', () => {
-    const fresh = { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS, backdropSeed: DEFAULT_BACKDROP_SEED };
+    const fresh = {
+      active: DEFAULT_PALETTE_ID,
+      own: [],
+      glass: DEFAULT_GLASS,
+      backdropSeed: DEFAULT_BACKDROP_SEED,
+      backdropFlow: DEFAULT_BACKDROP_FLOW,
+    };
     expect(cachedPalettes(memoryStorage())).toEqual(fresh);
     expect(cachedPalettes(memoryStorage({ [PALETTE_CACHE_KEY]: '{oops' }))).toEqual(fresh);
   });
 
   it('reads back what it stored', () => {
     const storage = memoryStorage();
-    const state = { active: 'u-abc123', own: [SPRING], glass: { calendar: false, tracker: true }, backdropSeed: 123456 };
+    const state = {
+      active: 'u-abc123',
+      own: [SPRING],
+      glass: { calendar: false, tracker: true },
+      backdropSeed: 123456,
+      backdropFlow: true,
+    };
     cachePalettes(state, storage);
     expect(cachedPalettes(storage)).toEqual(state);
   });
@@ -147,7 +172,13 @@ describe('adoptServerPalettes', () => {
   it('takes the account’s palettes and pages', () => {
     expect(
       adoptServerPalettes(
-        { dashPalette: 'u-abc123', dashPalettes: [SPRING], dashGlass: { calendar: true, tracker: false }, dashBackdropSeed: 123456 },
+        {
+          dashPalette: 'u-abc123',
+          dashPalettes: [SPRING],
+          dashGlass: { calendar: true, tracker: false },
+          dashBackdropSeed: 123456,
+          dashBackdropFlow: true,
+        },
         false
       )
     ).toEqual({
@@ -155,6 +186,7 @@ describe('adoptServerPalettes', () => {
       own: [SPRING],
       glass: { calendar: true, tracker: false },
       backdropSeed: 123456,
+      backdropFlow: true,
     });
   });
 
@@ -164,6 +196,7 @@ describe('adoptServerPalettes', () => {
       own: [],
       glass: DEFAULT_GLASS,
       backdropSeed: DEFAULT_BACKDROP_SEED,
+      backdropFlow: DEFAULT_BACKDROP_FLOW,
     });
   });
 

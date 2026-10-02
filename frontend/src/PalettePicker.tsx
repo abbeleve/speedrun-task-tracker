@@ -10,6 +10,11 @@ const swatchStyle = (p: DashPalette): CSSProperties => ({
   background: `conic-gradient(from 225deg, ${p.base} 0 50%, ${p.accent} 50% 100%)`,
 });
 
+// The living backdrop keeps still where the system asks for less motion, and
+// its switch says so.
+const reducedMotion = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 // The pages that can take the look or leave it, as the switches name them.
 const GLASS_PAGES: { page: keyof GlassPages; label: string; hint?: string }[] = [
   { page: 'calendar', label: 'Календарь' },
@@ -151,7 +156,28 @@ export default function PalettePicker({ store, page, shown }: {
                 ))}
               </ul>
 
-              <p className="palette-sub">Расположение фона</p>
+              <p className="palette-sub">Фон</p>
+              <ul className="palette-pages palette-flow">
+                <li>
+                  <label
+                    className="palette-page"
+                    title={shown ? undefined : 'Включите стекло для этой страницы'}
+                  >
+                    <span className="palette-page-text">
+                      <b>Живой фон</b>
+                      <small>{reducedMotion() ? 'в системе меньше движения' : 'цвета плавно перетекают'}</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      className="palette-switch"
+                      checked={store.backdropFlow}
+                      disabled={!shown}
+                      onChange={(e) => store.setBackdropFlow(e.target.checked)}
+                    />
+                  </label>
+                </li>
+              </ul>
               <div className="palette-background-actions">
                 <button
                   type="button"

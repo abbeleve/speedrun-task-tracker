@@ -103,3 +103,21 @@ def test_malformed_backdrop_seeds_are_rejected(client, auth_headers):
         resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSeed': seed})
         assert resp.status_code == 422, seed
     assert client.get('/api/prefs', headers=auth_headers).json() == {}
+
+
+def test_the_living_backdrop_round_trips_without_touching_the_rest(client, auth_headers):
+    client.put('/api/prefs', headers=auth_headers, json={'dashPalette': 'ocean', 'dashBackdropSeed': 123456})
+    resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropFlow': True})
+    assert resp.status_code == 200
+    assert client.get('/api/prefs', headers=auth_headers).json() == {
+        'dashPalette': 'ocean', 'dashBackdropSeed': 123456, 'dashBackdropFlow': True,
+    }
+    client.put('/api/prefs', headers=auth_headers, json={'dashBackdropFlow': False})
+    assert client.get('/api/prefs', headers=auth_headers).json()['dashBackdropFlow'] is False
+
+
+def test_malformed_living_backdrop_switches_are_rejected(client, auth_headers):
+    for flow in [1, 0, 'true', 'on', [], {}]:
+        resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropFlow': flow})
+        assert resp.status_code == 422, flow
+    assert client.get('/api/prefs', headers=auth_headers).json() == {}

@@ -32,6 +32,9 @@ export interface DashPaletteStore {
   backdropSeed: number;
   shuffleBackdrop: () => void;
   resetBackdrop: () => void;
+  // Whether the backdrop's glows wander, and the switch for it.
+  backdropFlow: boolean;
+  setBackdropFlow: (on: boolean) => void;
 }
 
 // The dashboard's look: opens with this browser's copy, then follows the
@@ -76,6 +79,7 @@ export function useDashPalette(): DashPaletteStore {
         dashPalettes: next.own,
         dashGlass: next.glass,
         dashBackdropSeed: next.backdropSeed,
+        dashBackdropFlow: next.backdropFlow,
       })
       .catch((error) => {
         console.error('Failed to save the dashboard palette', error);
@@ -119,6 +123,10 @@ export function useDashPalette(): DashPaletteStore {
     () => commit((prev) => (prev.backdropSeed === DEFAULT_BACKDROP_SEED ? prev : { ...prev, backdropSeed: DEFAULT_BACKDROP_SEED })),
     [commit]
   );
+  const setBackdropFlow = useCallback(
+    (on: boolean) => commit((prev) => (prev.backdropFlow === on ? prev : { ...prev, backdropFlow: on })),
+    [commit]
+  );
 
   const palettes = useMemo(() => [...BUILTIN_PALETTES, ...state.own], [state.own]);
   const current = preview ?? resolvePalette(state.active, state.own);
@@ -137,5 +145,7 @@ export function useDashPalette(): DashPaletteStore {
     backdropSeed: state.backdropSeed,
     shuffleBackdrop,
     resetBackdrop,
+    backdropFlow: state.backdropFlow,
+    setBackdropFlow,
   };
 }

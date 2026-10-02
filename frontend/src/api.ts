@@ -271,6 +271,7 @@ export interface Prefs {
   dashPalettes?: DashPalette[]; // the palettes the user made
   dashGlass?: GlassPages; // the other pages that wear the dashboard's look
   dashBackdropSeed?: number; // saved positions of the backdrop's colored glows
+  dashBackdropFlow?: boolean; // whether the backdrop's glows wander (backdropFlow.ts)
 }
 
 export async function loadPrefs(): Promise<Prefs> {

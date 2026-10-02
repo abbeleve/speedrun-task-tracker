@@ -5029,12 +5029,10 @@
   --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-light) 36%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-light) 48%, transparent);
 
-  background:
-    radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
-    radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
-    radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
-    radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
-    color-mix(in srgb, var(--dash-base) 6%, #090c0a);
+  /* The ground. The glows over it are the backdrop layer's (see below), so
+     the shell is the stacking context that layer sits at the bottom of. */
+  background: color-mix(in srgb, var(--dash-base) 6%, #090c0a);
+  isolation: isolate;
 }
 
 [data-theme='light'] .app--glass {
@@ -5072,42 +5070,127 @@
   --scrollbar-thumb-hover: color-mix(in srgb, var(--dash-deep) 40%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-deep) 52%, transparent);
 
-  background:
-    radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
-    radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
-    radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
-    radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--dash-base) 4%, white) 0%,
-      color-mix(in srgb, var(--dash-base) 9%, white) 100%
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dash-base) 4%, white) 0%,
+    color-mix(in srgb, var(--dash-base) 9%, white) 100%
+  );
+}
+
+/* The backdrop's four soft glows (DashBackdrop.tsx): a fixed layer at the
+   bottom of the shell, each glow an ellipse of the palette's hue fading out
+   from its centre. A glow is three nested boxes — the outer one placed and
+   sized like the ellipse, then one box per motion of the living backdrop
+   (backdropFlow.ts): sideways, up and down, and the shape, which carries the
+   gradient. Still, they lie exactly where a shuffled seed or the theme's own
+   layout puts them (--dash-glow-N-x / -y, set by paletteStyle). */
+.dash-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dash-glow {
+  position: absolute;
+  left: var(--glow-x);
+  top: var(--glow-y);
+  width: calc(2 * var(--glow-rx));
+  height: calc(2 * var(--glow-ry));
+  translate: -50% -50%;
+}
+
+.dash-glow-drift,
+.dash-glow-shape {
+  width: 100%;
+  height: 100%;
+}
+
+.dash-glow-shape {
+  background: radial-gradient(closest-side, var(--glow-color), transparent var(--glow-fade, 70%));
+}
+
+.dash-glow--1 {
+  --glow-x: var(--dash-glow-1-x, 50%);
+  --glow-y: var(--dash-glow-1-y, 22%);
+  --glow-rx: 52%;
+  --glow-ry: 44%;
+  --glow-fade: 72%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 30%, transparent);
+}
+
+.dash-glow--2 {
+  --glow-x: var(--dash-glow-2-x, 92%);
+  --glow-y: var(--dash-glow-2-y, 8%);
+  --glow-rx: 34%;
+  --glow-ry: 40%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 16%, transparent);
+}
+
+.dash-glow--3 {
+  --glow-x: var(--dash-glow-3-x, 4%);
+  --glow-y: var(--dash-glow-3-y, 90%);
+  --glow-rx: 40%;
+  --glow-ry: 46%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 16%, transparent);
+}
+
+.dash-glow--4 {
+  --glow-x: var(--dash-glow-4-x, 74%);
+  --glow-y: var(--dash-glow-4-y, 96%);
+  --glow-rx: 30%;
+  --glow-ry: 34%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 14%, transparent);
+}
+
+[data-theme='light'] .dash-glow--1 {
+  --glow-y: var(--dash-glow-1-y, 24%);
+  --glow-rx: 56%;
+  --glow-ry: 46%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 42%, transparent);
+}
+
+[data-theme='light'] .dash-glow--2 {
+  --glow-x: var(--dash-glow-2-x, 94%);
+  --glow-y: var(--dash-glow-2-y, 6%);
+  --glow-rx: 36%;
+  --glow-ry: 42%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 32%, transparent);
+}
+
+[data-theme='light'] .dash-glow--3 {
+  --glow-x: var(--dash-glow-3-x, 3%);
+  --glow-rx: 42%;
+  --glow-ry: 48%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 32%, transparent);
+}
+
+[data-theme='light'] .dash-glow--4 {
+  --glow-x: var(--dash-glow-4-x, 72%);
+  --glow-y: var(--dash-glow-4-y, 98%);
+  --glow-ry: 36%;
+  --glow-color: color-mix(in srgb, var(--dash-base) 28%, transparent);
 }
 
 /* Where the browser can turn a hue, two of the glows drift off the base to
    either side — lime and teal around a green — so the backdrop is not one
    flat wash of a single colour. */
 @supports (color: oklch(from red l c h)) {
-  .app--glass {
-    background:
-      radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
-      radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18), transparent 70%),
-      radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.6 c calc(h + 35) / 0.18), transparent 70%),
-      radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
-      color-mix(in srgb, var(--dash-base) 6%, #090c0a);
+  .dash-glow--2 {
+    --glow-color: oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18);
   }
 
-  [data-theme='light'] .app--glass {
-    background:
-      radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
-      radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75), transparent 70%),
-      radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.88 calc(c * 0.6) calc(h + 35) / 0.6), transparent 70%),
-      radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--dash-base) 4%, white) 0%,
-        color-mix(in srgb, var(--dash-base) 9%, white) 100%
-      );
+  .dash-glow--3 {
+    --glow-color: oklch(from var(--dash-base) 0.6 c calc(h + 35) / 0.18);
+  }
+
+  [data-theme='light'] .dash-glow--2 {
+    --glow-color: oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75);
+  }
+
+  [data-theme='light'] .dash-glow--3 {
+    --glow-color: oklch(from var(--dash-base) 0.88 calc(c * 0.6) calc(h + 35) / 0.6);
   }
 }
 
@@ -5434,6 +5517,20 @@
 .palette-switch:focus-visible {
   outline: 2px solid var(--dash-primary, var(--accent-green));
   outline-offset: 2px;
+}
+
+.palette-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.palette-page:has(.palette-switch:disabled) {
+  cursor: default;
+}
+
+/* The living backdrop's switch, over the shuffle buttons. */
+.palette-flow {
+  margin-bottom: 8px;
 }
 
 .palette-list {

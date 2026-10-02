@@ -49,6 +49,14 @@ export function randomBackdropSeed(previous: number, random: () => number = Math
   return seed === previous ? (seed % MAX_BACKDROP_SEED) + 1 : seed;
 }
 
+// Whether the backdrop's glows wander (backdropFlow.ts) or keep still. Off
+// until the user turns it on.
+export const DEFAULT_BACKDROP_FLOW = false;
+
+export function parseBackdropFlow(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : DEFAULT_BACKDROP_FLOW;
+}
+
 export const BUILTIN_PALETTES: readonly DashPalette[] = [
   { id: 'mint', name: 'Мята', base: '#22a35a', accent: '#ee5a24' },
   { id: 'ocean', name: 'Океан', base: '#2f7fd8', accent: '#f59e0b' },
@@ -113,6 +121,7 @@ export interface PaletteState {
   own: DashPalette[];
   glass: GlassPages;
   backdropSeed: number;
+  backdropFlow: boolean;
 }
 
 export const PALETTE_CACHE_KEY = 'speedrun_dash_palette';
@@ -125,9 +134,16 @@ export function cachedPalettes(storage: Pick<Storage, 'getItem'> = localStorage)
       own: normalizePalettes(raw?.own),
       glass: parseGlass(raw?.glass),
       backdropSeed: parseBackdropSeed(raw?.backdropSeed),
+      backdropFlow: parseBackdropFlow(raw?.backdropFlow),
     };
   } catch {
-    return { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS, backdropSeed: DEFAULT_BACKDROP_SEED };
+    return {
+      active: DEFAULT_PALETTE_ID,
+      own: [],
+      glass: DEFAULT_GLASS,
+      backdropSeed: DEFAULT_BACKDROP_SEED,
+      backdropFlow: DEFAULT_BACKDROP_FLOW,
+    };
   }
 }
 
@@ -145,12 +161,19 @@ export function cachePalettes(state: PaletteState, storage: Pick<Storage, 'setIt
 // browser and may be another account's. Null means "leave it as it is".
 export function adoptServerPalettes(prefs: unknown, changedHere: boolean): PaletteState | null {
   if (changedHere || typeof prefs !== 'object' || prefs === null) return null;
-  const raw = prefs as { dashPalette?: unknown; dashPalettes?: unknown; dashGlass?: unknown; dashBackdropSeed?: unknown };
+  const raw = prefs as {
+    dashPalette?: unknown;
+    dashPalettes?: unknown;
+    dashGlass?: unknown;
+    dashBackdropSeed?: unknown;
+    dashBackdropFlow?: unknown;
+  };
   return {
     active: parsePaletteId(raw.dashPalette) ?? DEFAULT_PALETTE_ID,
     own: normalizePalettes(raw.dashPalettes),
     glass: parseGlass(raw.dashGlass),
     backdropSeed: parseBackdropSeed(raw.dashBackdropSeed),
+    backdropFlow: parseBackdropFlow(raw.dashBackdropFlow),
   };
 }
 

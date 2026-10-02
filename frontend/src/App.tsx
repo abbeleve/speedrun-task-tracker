@@ -55,6 +55,7 @@ import { useAuth } from './auth';
 import { paletteStyle } from './dashPalette';
 import { useDashPalette } from './useDashPalette';
 import PalettePicker from './PalettePicker';
+import DashBackdrop from './DashBackdrop';
 import './App.css';
 import './calendar.css';
 import './deadlines.css';
@@ -632,10 +633,10 @@ function App() {
   const leadLabel = credit.lead >= 0 ? 'обгон' : 'отставание';
   const remainingSec = openChain ? Math.max(0, (openChain.endMs - now) / 1000 - credit.lead) : 0;
 
-  // The dashboard's look — a backdrop and glass panels coloured from the
-  // chosen palette (`.app--glass` in App.css, glass.css). The home page always
-  // wears it; the calendar and the tracker when the user has switched it on
-  // for them, except the spiral, which keeps its own night sky.
+  // The dashboard's look — a backdrop (DashBackdrop) and glass panels coloured
+  // from the chosen palette (`.app--glass` in App.css, glass.css). The home
+  // page always wears it; the calendar and the tracker when the user has
+  // switched it on for them, except the spiral, which keeps its own night sky.
   const glassOn =
     page === 'home' ||
     (page === 'calendar' && palette.glass.calendar) ||
@@ -646,6 +647,7 @@ function App() {
       className={`app${glassOn ? ' app--glass' : ''}${page === 'home' ? ' app--home' : ''}`}
       style={glassOn ? (paletteVars as React.CSSProperties) : undefined}
     >
+      {glassOn && <DashBackdrop flowing={palette.backdropFlow} />}
       <header className="header">
         <div className="header-brand">
           <IconStopwatch className="header-logo" size={22} />
