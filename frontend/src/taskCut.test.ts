@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Habit, Task } from './types';
-import { CUT_KEY_CODE, MIN_CUT_PIECE_MIN, armsCut, cloneTask, cutPoint, cutTask } from './taskCut';
+import {
+  CUT_KEY_CODE,
+  MIN_CUT_PIECE_MIN,
+  armsCut,
+  cloneTask,
+  cutPoint,
+  cutTarget,
+  cutTask,
+} from './taskCut';
 import { buildChains, buildGroups, dayStartMs, MIN_MS, taskEndMs, taskStartMs } from './schedule';
 import { scheduledAheadIds, spawnNextOccurrence } from './tasks';
 import { habitAuto } from './habits';
@@ -153,6 +161,52 @@ describe('cutTask', () => {
     expect(second.repeatOf).toBe('parent');
     expect(scheduledAheadIds([first, second, block({ id: 'x', repeatOf: 'other' })], 'parent'))
       .toEqual(['a', second.id]);
+  });
+});
+
+describe('cutTarget', () => {
+  const pull = 3 * MIN_MS;
+
+  it('snaps to the 5-minute grid away from now', () => {
+    expect(cutTarget(block(), at(DAY, 622), at(DAY, 645), pull)).toEqual({
+      ms: at(DAY, 620),
+      atNow: false,
+    });
+    expect(cutTarget(block(), at(DAY, 623), at(DAY, 645), pull)).toEqual({
+      ms: at(DAY, 625),
+      atNow: false,
+    });
+  });
+
+  it('is pulled onto now when aimed close to it, to the nearest minute', () => {
+    const now = at(DAY, 637) + 40_000; // 10:37:40
+    expect(cutTarget(block(), at(DAY, 635), now, pull)).toEqual({ ms: at(DAY, 638), atNow: true });
+    expect(cutTarget(block(), at(DAY, 640), now, pull)).toEqual({ ms: at(DAY, 638), atNow: true });
+    // Just out of reach, the grid has it again.
+    expect(cutTarget(block(), at(DAY, 641), now, pull)).toEqual({ ms: at(DAY, 640), atNow: false });
+  });
+
+  it('cuts exactly where it said it would', () => {
+    const target = cutTarget(block(), at(DAY, 636), at(DAY, 637), pull)!;
+    const [first, second] = cutTask(block(), target.ms, makeId)!;
+    expect(taskEndMs(first)).toBe(target.ms);
+    expect(second.start).toBe(637);
+  });
+
+  it('pulls nothing when now is outside the block or too near one of its ends', () => {
+    // Now 2 minutes before the block: a press 1 minute in stays on the grid
+    // (clamped to the first piece's minimum), not dragged out to now.
+    expect(cutTarget(block(), at(DAY, 601), at(DAY, 598), pull)).toEqual({
+      ms: at(DAY, 605),
+      atNow: false,
+    });
+    // Now 2 minutes into it: a cut there would leave a piece too short.
+    expect(cutTarget(block(), at(DAY, 603), at(DAY, 602), pull)?.atNow).toBe(false);
+    expect(cutTarget(block(), at(DAY, 657), at(DAY, 658), pull)?.atNow).toBe(false);
+  });
+
+  it('gives nothing for a block that cannot be cut', () => {
+    expect(cutTarget(block({ type: 'reminder' }), at(DAY, 630), at(DAY, 630), pull)).toBeNull();
   });
 });
 

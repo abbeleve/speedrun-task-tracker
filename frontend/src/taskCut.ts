@@ -12,6 +12,14 @@ import { MIN_MS, isReminder, isScheduled, slotAtMs, taskEndMs, taskStartMs } fro
 // Neither piece of a cut is ever shorter than this.
 export const MIN_CUT_PIECE_MIN = 5;
 
+// A cut is aimed onto the grid's 5-minute steps…
+export const CUT_GRID_MIN = 5;
+
+// …unless it comes within this many screen pixels of the current moment:
+// then it is pulled onto now, the way "I worked on this until now" is cut.
+// Pixels rather than minutes, so the pull feels the same at any zoom.
+export const NOW_PULL_PX = 8;
+
 // The key held to cut, read by its place on the keyboard rather than the
 // letter it types, so it is the same key on a Russian layout («с»).
 export const CUT_KEY_CODE = 'KeyC';
@@ -50,6 +58,30 @@ export function cutPoint(task: Task, atMs: number): number | null {
   const latest = Math.floor((taskEndMs(task) - pieceMs) / MIN_MS) * MIN_MS;
   if (!Number.isFinite(atMs) || earliest > latest) return null;
   return Math.min(latest, Math.max(earliest, Math.round(atMs / MIN_MS) * MIN_MS));
+}
+
+// Where a press at `pointerMs` cuts `task`, and whether the now magnet took
+// it: within `pullMs` of `nowMs` it lands on now (to the minute) — provided
+// the block can be cut right there, so a now just outside it, or too near
+// one of its ends, pulls nothing — and anywhere else on the CUT_GRID_MIN
+// grid. Null when the block cannot be cut at all.
+export function cutTarget(
+  task: Task,
+  pointerMs: number,
+  nowMs: number,
+  pullMs: number
+): { ms: number; atNow: boolean } | null {
+  const atNow = cutPoint(task, nowMs);
+  if (
+    atNow !== null &&
+    atNow === Math.round(nowMs / MIN_MS) * MIN_MS &&
+    Math.abs(pointerMs - nowMs) <= pullMs
+  ) {
+    return { ms: atNow, atNow: true };
+  }
+  const gridMs = CUT_GRID_MIN * MIN_MS;
+  const ms = cutPoint(task, Math.round(pointerMs / gridMs) * gridMs);
+  return ms === null ? null : { ms, atNow: false };
 }
 
 // The two pieces `task` falls into when cut at `atMs` (see cutPoint), or null

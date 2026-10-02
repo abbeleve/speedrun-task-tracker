@@ -1028,6 +1028,22 @@
   left: 4px;
 }
 
+/* Pulled onto now: the seam takes the now line's red and goes solid — on
+   its one drawn side only, so no other edge of it wakes up. */
+.cal-block-cut.at-now {
+  border-color: var(--accent-red);
+  border-top-style: solid;
+}
+
+.cal-block-cut--across.at-now {
+  border-top-style: none;
+  border-left-style: solid;
+}
+
+.cal-block-cut.at-now span {
+  background: var(--accent-red);
+}
+
 /* ── task hover card ─────────────────────────────────────────── */
 
 /* Replaces the native title tooltip: appears the instant the pointer lands

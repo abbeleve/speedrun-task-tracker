@@ -82,7 +82,7 @@ import { clockTime, compactDur, signedDur } from './format';
 import { focusMotivation } from './focusMotivation';
 import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
 import { newTaskId, scheduledAheadIds, spawnNextOccurrence } from './tasks';
-import { CUT_KEY_CODE, armsCut, cloneTask, cutPoint, cutTask } from './taskCut';
+import { CUT_KEY_CODE, NOW_PULL_PX, armsCut, cloneTask, cutTarget, cutTask } from './taskCut';
 import { taskFromTemplate } from './taskTemplates';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
@@ -482,10 +482,13 @@ function CalendarPage({
 
   // Cut mode: while C is held, a click on a block cuts it in two there (see
   // taskCut.ts). `cutAim` is where the cut would land under the mouse, drawn
-  // across that block as a dashed line with its time.
+  // across that block as a dashed line with its time — red when the now
+  // line has pulled it in.
   const [cutArmed, setCutArmed] = useState(false);
   const cutArmedRef = useRef(false);
-  const [cutAim, setCutAim] = useState<{ taskId: string; ms: number } | null>(null);
+  const [cutAim, setCutAim] = useState<{ taskId: string; ms: number; atNow: boolean } | null>(
+    null
+  );
   const mouseAt = useRef<{ x: number; y: number } | null>(null);
 
   // A finger held on a block drags it, so from then on the grid must not
@@ -1103,30 +1106,35 @@ function CalendarPage({
 
   // ── cutting a block in two ───────────────────────────────────────
 
-  // The moment a press at this screen point would cut `task` at, or null if it
+  // Where a press at this screen point would cut `task` — on the grid, or on
+  // now when it lands within NOW_PULL_PX of the now line — or null if it
   // cannot be cut there. Read through slotAt like every other gesture, so it
   // works the same in the timeline and on a block spilling past midnight.
   const cutAt = useCallback(
-    (task: Task, clientX: number, clientY: number): number | null => {
+    (task: Task, clientX: number, clientY: number) => {
       const slot = slotAt(clientX, clientY);
       if (!slot) return null;
-      return cutPoint(task, dayStartMs(slot.day) + snap(slot.min) * MIN_MS);
+      const pullMs = (NOW_PULL_PX / pxPerMin) * MIN_MS;
+      return cutTarget(task, dayStartMs(slot.day) + slot.min * MIN_MS, now, pullMs);
     },
-    [slotAt]
+    [slotAt, pxPerMin, now]
   );
 
   // Point the cut line at the block under the mouse — none while something is
-  // being dragged, or off the blocks.
+  // being dragged, or off the blocks. It is aimed again as the clock ticks
+  // (see below), so a line held on now moves on with it.
   const aimCut = useCallback(
     (x: number, y: number) => {
       const element = gestureRef.current
         ? null
         : document.elementFromPoint(x, y)?.closest<HTMLElement>('.cal-block[data-task-id]');
       const task = element ? tasks.find((t) => t.id === element.dataset.taskId) : undefined;
-      const ms = task ? cutAt(task, x, y) : null;
+      const target = task ? cutAt(task, x, y) : null;
       setCutAim((prev) => {
-        if (!task || ms === null) return null;
-        return prev?.taskId === task.id && prev.ms === ms ? prev : { taskId: task.id, ms };
+        if (!task || !target) return null;
+        return prev?.taskId === task.id && prev.ms === target.ms && prev.atNow === target.atNow
+          ? prev
+          : { taskId: task.id, ...target };
       });
     },
     [tasks, cutAt]
@@ -1170,8 +1178,8 @@ function CalendarPage({
     };
   }, []);
 
-  // While armed the line follows the mouse, and the grid scrolling under a
-  // still mouse.
+  // While armed the line follows the mouse, the grid scrolling under a still
+  // mouse, and the clock (aimCut changes with `now`).
   useEffect(() => {
     if (!cutArmed) return;
     const aimAtMouse = () => {
@@ -1195,9 +1203,8 @@ function CalendarPage({
   // copy of it takes the rest of the slot.
   const cutBlock = useCallback(
     (e: React.PointerEvent, task: Task) => {
-      const slot = slotAt(e.clientX, e.clientY);
-      if (!slot) return;
-      const pieces = cutTask(task, dayStartMs(slot.day) + snap(slot.min) * MIN_MS, newTaskId);
+      const target = cutAt(task, e.clientX, e.clientY);
+      const pieces = target ? cutTask(task, target.ms, newTaskId) : null;
       if (!pieces) return;
       const [first, second] = pieces;
       store.patchTask(first.id, { plannedTime: first.plannedTime });
@@ -1206,7 +1213,7 @@ function CalendarPage({
       setHoverCard(null);
       setCutAim(null);
     },
-    [slotAt, store]
+    [cutAt, store]
   );
 
   const setGestureState = useCallback((next: Gesture | null) => {
@@ -2335,6 +2342,7 @@ function CalendarPage({
             className={[
               'cal-block-cut',
               across ? 'cal-block-cut--across' : '',
+              cutAim?.atNow ? 'at-now' : '',
               cutMin - topMin < topMin + lengthMin - cutMin ? 'after' : '',
             ]
               .filter(Boolean)
@@ -2342,7 +2350,7 @@ function CalendarPage({
             style={across ? { left: lenToPx(cutMin - topMin) } : { top: lenToPx(cutMin - topMin) }}
             aria-hidden="true"
           >
-            <span>✂ {hhmm(cutMin)}</span>
+            <span>✂ {cutAim?.atNow ? 'сейчас · ' : ''}{hhmm(cutMin)}</span>
           </div>
         )}
         {justCompleted && (
@@ -3829,7 +3837,8 @@ function CalendarPage({
               С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
               Рамка выделяет только задетые блоки внутри одного дня — параллельные можно выбрать по отдельности.
               Ctrl + клик по блоку — добавить его в пачку или убрать.
-              Зажми C и кликни по блоку — разрежешь его на две части в этом месте
+              Зажми C и кликни по блоку — разрежешь его на две части в этом месте;
+              у красной линии «сейчас» разрез прилипает к текущему времени
             </p>
             <p className="cal-backlog-hint cal-backlog-hint--touch">
               Нажми на карточку и выбери «В календарь», чтобы поставить время. Удерживай блок на
