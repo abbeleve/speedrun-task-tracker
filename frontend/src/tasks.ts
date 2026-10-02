@@ -148,6 +148,13 @@ export function spawnNextOccurrence(
   };
 }
 
+// The not-yet-done occurrences that closing `taskId` scheduled ahead, which
+// reopening it takes back. Usually one — or both pieces of it, once it has
+// been cut in two (see taskCut.ts).
+export function scheduledAheadIds(tasks: Task[], taskId: string): string[] {
+  return tasks.filter((t) => t.repeatOf === taskId && !isDone(t)).map((t) => t.id);
+}
+
 // ── Reminders close themselves ─────────────────────────────────────
 // A reminder has no ✓: it counts as completed the moment its window has
 // passed, and that is also what schedules a recurring one's next occurrence —

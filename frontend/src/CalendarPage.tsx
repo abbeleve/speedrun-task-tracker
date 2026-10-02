@@ -81,7 +81,8 @@ import { computeCredit, creditGroups, projectedFinishMs } from './credit';
 import { clockTime, compactDur, signedDur } from './format';
 import { focusMotivation } from './focusMotivation';
 import { dateKey, shiftDayKey, startOfWeek, todayKey } from './history';
-import { newTaskId, spawnNextOccurrence } from './tasks';
+import { newTaskId, scheduledAheadIds, spawnNextOccurrence } from './tasks';
+import { CUT_KEY_CODE, armsCut, cloneTask, cutPoint, cutTask } from './taskCut';
 import { taskFromTemplate } from './taskTemplates';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
@@ -479,6 +480,14 @@ function CalendarPage({
   const lastScrollAt = useRef(-Infinity);
   const lastPointer = useRef<{ x: number; y: number; id: number; type: string } | null>(null);
 
+  // Cut mode: while C is held, a click on a block cuts it in two there (see
+  // taskCut.ts). `cutAim` is where the cut would land under the mouse, drawn
+  // across that block as a dashed line with its time.
+  const [cutArmed, setCutArmed] = useState(false);
+  const cutArmedRef = useRef(false);
+  const [cutAim, setCutAim] = useState<{ taskId: string; ms: number } | null>(null);
+  const mouseAt = useRef<{ x: number; y: number } | null>(null);
+
   // A finger held on a block drags it, so from then on the grid must not
   // scroll under it. The listener is non-passive and always there, which is
   // what lets the browser hold every touch on the grid for it to cancel.
@@ -773,8 +782,7 @@ function CalendarPage({
       clearCompleting(task.id);
       store.patchTask(task.id, { status: 'in-progress', finishedAt: null, completedAt: null });
       // Drop the occurrence this completion had scheduled ahead.
-      const child = store.tasks.find((t) => t.repeatOf === task.id && !isDone(t));
-      if (child) store.removeTask(child.id);
+      store.removeTasks(scheduledAheadIds(store.tasks, task.id));
     },
     [store, clearCompleting]
   );
@@ -784,22 +792,24 @@ function CalendarPage({
     setPreview(null);
   }, []);
 
-  // A copy of `task`, ready to drop into the dialog as a draft: fresh id, not
-  // done, no session (a copy never silently joins the original's session) and
-  // placed right after the original so the two don't sit on top of each other.
+  // A deep copy of `task`, ready to drop into the dialog as a draft: fresh id,
+  // not done, no session (a copy never silently joins the original's session,
+  // nor carries its spine colour into the next one it joins) and placed right
+  // after the original — on the next day if that is past midnight — so the
+  // two don't sit on top of each other.
   const duplicateTask = useCallback((task: Task): Task => {
     const placed = task.start !== null && task.start !== undefined;
     return {
-      ...task,
-      id: newTaskId(),
+      ...cloneTask(task, newTaskId()),
+      ...(placed ? slotAtMs(taskEndMs(task)) : {}),
       name: `${task.name} (копия)`,
       order: 0,
       completedAt: null,
       finishedAt: null,
       status: task.status === 'done' ? 'in-progress' : task.status,
-      start: placed ? clampStartMin(task.start! + task.plannedTime / 60, task.plannedTime) : null,
       sessionId: null,
       sessionName: null,
+      sequenceGradient: null,
       repeatIndex: undefined,
       repeatOf: undefined,
     };
@@ -825,8 +835,7 @@ function CalendarPage({
         const child = spawnNextOccurrence(task, newTaskId, task.day);
         if (child) store.upsertTask(child);
       } else if (wasDone && !nowDone) {
-        const child = store.tasks.find((t) => t.repeatOf === task.id && !isDone(t));
-        if (child) store.removeTask(child.id);
+        store.removeTasks(scheduledAheadIds(store.tasks, task.id));
       }
       closeDialog();
     },
@@ -1091,6 +1100,114 @@ function CalendarPage({
     }));
     return { origin, bounds: relativeRect(day.getBoundingClientRect()), blocks };
   }, [visibleDays]);
+
+  // ── cutting a block in two ───────────────────────────────────────
+
+  // The moment a press at this screen point would cut `task` at, or null if it
+  // cannot be cut there. Read through slotAt like every other gesture, so it
+  // works the same in the timeline and on a block spilling past midnight.
+  const cutAt = useCallback(
+    (task: Task, clientX: number, clientY: number): number | null => {
+      const slot = slotAt(clientX, clientY);
+      if (!slot) return null;
+      return cutPoint(task, dayStartMs(slot.day) + snap(slot.min) * MIN_MS);
+    },
+    [slotAt]
+  );
+
+  // Point the cut line at the block under the mouse — none while something is
+  // being dragged, or off the blocks.
+  const aimCut = useCallback(
+    (x: number, y: number) => {
+      const element = gestureRef.current
+        ? null
+        : document.elementFromPoint(x, y)?.closest<HTMLElement>('.cal-block[data-task-id]');
+      const task = element ? tasks.find((t) => t.id === element.dataset.taskId) : undefined;
+      const ms = task ? cutAt(task, x, y) : null;
+      setCutAim((prev) => {
+        if (!task || ms === null) return null;
+        return prev?.taskId === task.id && prev.ms === ms ? prev : { taskId: task.id, ms };
+      });
+    },
+    [tasks, cutAt]
+  );
+
+  // C is held as a modifier: down arms the cut, up — or the window losing
+  // focus, which swallows the key's release — disarms it.
+  useEffect(() => {
+    const disarm = () => {
+      cutArmedRef.current = false;
+      setCutArmed(false);
+      setCutAim(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!armsCut(e)) return;
+      cutArmedRef.current = true;
+      setCutArmed(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === CUT_KEY_CODE) disarm();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') disarm();
+    };
+    // Where the mouse is, so a line can be drawn the moment C goes down,
+    // before the mouse moves again.
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') mouseAt.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', disarm);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pointermove', onPointerMove);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', disarm);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pointermove', onPointerMove);
+    };
+  }, []);
+
+  // While armed the line follows the mouse, and the grid scrolling under a
+  // still mouse.
+  useEffect(() => {
+    if (!cutArmed) return;
+    const aimAtMouse = () => {
+      if (mouseAt.current) aimCut(mouseAt.current.x, mouseAt.current.y);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') aimCut(e.clientX, e.clientY);
+    };
+    const frame = requestAnimationFrame(aimAtMouse);
+    const scroller = scrollerRef.current;
+    window.addEventListener('pointermove', onPointerMove);
+    scroller?.addEventListener('scroll', aimAtMouse, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('pointermove', onPointerMove);
+      scroller?.removeEventListener('scroll', aimAtMouse);
+    };
+  }, [cutArmed, aimCut]);
+
+  // Cut `task` where the press landed: it keeps the first piece, and a deep
+  // copy of it takes the rest of the slot.
+  const cutBlock = useCallback(
+    (e: React.PointerEvent, task: Task) => {
+      const slot = slotAt(e.clientX, e.clientY);
+      if (!slot) return;
+      const pieces = cutTask(task, dayStartMs(slot.day) + snap(slot.min) * MIN_MS, newTaskId);
+      if (!pieces) return;
+      const [first, second] = pieces;
+      store.patchTask(first.id, { plannedTime: first.plannedTime });
+      store.upsertTask(second);
+      // The hover card still describes the uncut block.
+      setHoverCard(null);
+      setCutAim(null);
+    },
+    [slotAt, store]
+  );
 
   const setGestureState = useCallback((next: Gesture | null) => {
     gestureRef.current = next;
@@ -1430,6 +1547,13 @@ function CalendarPage({
       if (!slot) return;
       e.preventDefault();
       e.stopPropagation();
+      // With C held the press cuts the block where it landed instead of
+      // picking it up — and a block that cannot be cut is left alone rather
+      // than opened.
+      if (cutArmedRef.current && !isTouchPointer(e.pointerType) && !e.ctrlKey && !e.metaKey) {
+        cutBlock(e, task);
+        return;
+      }
       // A finger takes hold of the block only once held still — see holdTouch.
       let touch: TouchHold | undefined;
       if (isTouchPointer(e.pointerType)) {
@@ -1472,7 +1596,7 @@ function CalendarPage({
         touch,
       });
     },
-    [slotAt, setGestureState, setSelection, store, armLasso, holdTouch]
+    [slotAt, setGestureState, setSelection, store, armLasso, holdTouch, cutBlock]
   );
 
   const startChainDrag = useCallback(
@@ -1503,7 +1627,8 @@ function CalendarPage({
   const startResize = useCallback(
     (e: React.PointerEvent, task: Task) => {
       if (e.button !== 0) return;
-      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey)) {
+      // Ctrl composes the batch and C cuts, from the edges as from the body.
+      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey || cutArmedRef.current)) {
         startMove(e, task);
         return;
       }
@@ -1522,7 +1647,8 @@ function CalendarPage({
   const startResizeTop = useCallback(
     (e: React.PointerEvent, task: Task) => {
       if (e.button !== 0) return;
-      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey)) {
+      // Ctrl composes the batch and C cuts, from the edges as from the body.
+      if (!isTouchPointer(e.pointerType) && (e.ctrlKey || e.metaKey || cutArmedRef.current)) {
         startMove(e, task);
         return;
       }
@@ -2117,6 +2243,11 @@ function CalendarPage({
         : day < today
           ? 1
           : 0;
+    // Where C + click would cut it, on the part of the block this day shows.
+    const aimMin =
+      cutAim?.taskId === task.id ? (cutAim.ms - dayStartMs(day)) / MIN_MS : null;
+    const cutMin =
+      aimMin !== null && aimMin > topMin && aimMin < topMin + lengthMin ? aimMin : null;
 
     return (
       <div
@@ -2199,6 +2330,21 @@ function CalendarPage({
           onPointerDown={(e) => startResize(e, task)}
           title="Потянуть — изменить длительность"
         />
+        {cutMin !== null && (
+          <div
+            className={[
+              'cal-block-cut',
+              across ? 'cal-block-cut--across' : '',
+              cutMin - topMin < topMin + lengthMin - cutMin ? 'after' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            style={across ? { left: lenToPx(cutMin - topMin) } : { top: lenToPx(cutMin - topMin) }}
+            aria-hidden="true"
+          >
+            <span>✂ {hhmm(cutMin)}</span>
+          </div>
+        )}
         {justCompleted && (
           <div className="cal-block-sweep" aria-hidden="true">
             <span className="cal-sweep-top" />
@@ -3462,7 +3608,7 @@ function CalendarPage({
     selectedTasks.length < 2 ? 'Выдели хотя бы два блока' : 'Эти блоки уже отдельная сессия';
 
   return (
-    <div className={`cal-page cal-page--${view}${design === 'cards' ? ' cal-cards' : ''}`}>
+    <div className={`cal-page cal-page--${view}${design === 'cards' ? ' cal-cards' : ''}${cutArmed ? ' cal-cutting' : ''}`}>
       <div className="cal-toolbar">
         <div className="cal-nav">
           <button type="button" className="cal-btn" onClick={() => setAnchor(today)}>
@@ -3682,7 +3828,8 @@ function CalendarPage({
               Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
               С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
               Рамка выделяет только задетые блоки внутри одного дня — параллельные можно выбрать по отдельности.
-              Ctrl + клик по блоку — добавить его в пачку или убрать
+              Ctrl + клик по блоку — добавить его в пачку или убрать.
+              Зажми C и кликни по блоку — разрежешь его на две части в этом месте
             </p>
             <p className="cal-backlog-hint cal-backlog-hint--touch">
               Нажми на карточку и выбери «В календарь», чтобы поставить время. Удерживай блок на

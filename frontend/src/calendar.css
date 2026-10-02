@@ -963,6 +963,71 @@
   bottom: 0;
 }
 
+/* ── cutting a block (hold C) ────────────────────────────────── */
+
+/* While C is held a press cuts instead of grabbing, so the blocks and their
+   edges stop offering to be picked up or resized. */
+.cal-cutting .cal-block[data-task-id],
+.cal-cutting .cal-block[data-task-id] .cal-block-resize {
+  cursor: crosshair;
+}
+
+/* Where the cut would land: a dashed seam across the block with its time,
+   written on the larger piece so it is not clipped off a thin one. White with
+   a dark halo, so it reads on any task colour in either theme. */
+.cal-block-cut {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed #fff;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+  z-index: 3;
+}
+
+.cal-block-cut span {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.cal-block-cut.after span {
+  bottom: auto;
+  top: 4px;
+}
+
+/* In a timeline row the seam stands upright. */
+.cal-block-cut--across {
+  left: auto;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  height: auto;
+  border-top: none;
+  border-left: 2px dashed #fff;
+}
+
+.cal-block-cut--across span,
+.cal-block-cut--across.after span {
+  bottom: auto;
+  top: 2px;
+}
+
+.cal-block-cut--across.after span {
+  right: auto;
+  left: 4px;
+}
+
 /* ── task hover card ─────────────────────────────────────────── */
 
 /* Replaces the native title tooltip: appears the instant the pointer lands

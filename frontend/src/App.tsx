@@ -49,7 +49,7 @@ import {
   IconThermometer,
   IconTrend,
 } from './icons';
-import { closeExpiredReminders, newTaskId, spawnNextOccurrence } from './tasks';
+import { closeExpiredReminders, newTaskId, scheduledAheadIds, spawnNextOccurrence } from './tasks';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
 import { useAuth } from './auth';
 import { paletteStyle } from './dashPalette';
@@ -288,8 +288,7 @@ function App() {
       const task = store.tasks.find((t) => t.id === id);
       if (!task) return;
       store.patchTask(id, { status: 'in-progress', finishedAt: null, completedAt: null });
-      const child = store.tasks.find((t) => t.repeatOf === id && !isDone(t));
-      if (child) store.removeTask(child.id);
+      store.removeTasks(scheduledAheadIds(store.tasks, id));
     },
     [store]
   );
