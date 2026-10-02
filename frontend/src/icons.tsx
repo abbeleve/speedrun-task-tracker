@@ -296,3 +296,10 @@ export const IconTrend = (p: IconProps) => (
     <path d="M15 7h6v6" />
   </Icon>
 );
+
+export const IconShuffle = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 7h3c4 0 8 10 12 10h3M3 17h3c1.5 0 3-1.4 4.5-3.3M13.5 10.3C15 8.4 16.5 7 18 7h3" />
+    <path d="m18 4 3 3-3 3m0 4 3 3-3 3" />
+  </Icon>
+);

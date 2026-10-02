@@ -5030,10 +5030,10 @@
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-light) 48%, transparent);
 
   background:
-    radial-gradient(52% 44% at 50% 22%, color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
-    radial-gradient(34% 40% at 92% 8%, color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
-    radial-gradient(40% 46% at 4% 90%, color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
-    radial-gradient(30% 34% at 74% 96%, color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
+    radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
+    radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
+    radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 16%, transparent), transparent 70%),
+    radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
     color-mix(in srgb, var(--dash-base) 6%, #090c0a);
 }
 
@@ -5073,10 +5073,10 @@
   --scrollbar-thumb-active: color-mix(in srgb, var(--dash-deep) 52%, transparent);
 
   background:
-    radial-gradient(56% 46% at 50% 24%, color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
-    radial-gradient(36% 42% at 94% 6%, color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
-    radial-gradient(42% 48% at 3% 90%, color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
-    radial-gradient(30% 36% at 72% 98%, color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
+    radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
+    radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
+    radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), color-mix(in srgb, var(--dash-base) 32%, transparent), transparent 70%),
+    radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--dash-base) 4%, white) 0%,
@@ -5090,19 +5090,19 @@
 @supports (color: oklch(from red l c h)) {
   .app--glass {
     background:
-      radial-gradient(52% 44% at 50% 22%, color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
-      radial-gradient(34% 40% at 92% 8%, oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18), transparent 70%),
-      radial-gradient(40% 46% at 4% 90%, oklch(from var(--dash-base) 0.6 c calc(h + 35) / 0.18), transparent 70%),
-      radial-gradient(30% 34% at 74% 96%, color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
+      radial-gradient(52% 44% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 22%), color-mix(in srgb, var(--dash-base) 30%, transparent), transparent 72%),
+      radial-gradient(34% 40% at var(--dash-glow-2-x, 92%) var(--dash-glow-2-y, 8%), oklch(from var(--dash-base) 0.62 c calc(h - 35) / 0.18), transparent 70%),
+      radial-gradient(40% 46% at var(--dash-glow-3-x, 4%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.6 c calc(h + 35) / 0.18), transparent 70%),
+      radial-gradient(30% 34% at var(--dash-glow-4-x, 74%) var(--dash-glow-4-y, 96%), color-mix(in srgb, var(--dash-base) 14%, transparent), transparent 70%),
       color-mix(in srgb, var(--dash-base) 6%, #090c0a);
   }
 
   [data-theme='light'] .app--glass {
     background:
-      radial-gradient(56% 46% at 50% 24%, color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
-      radial-gradient(36% 42% at 94% 6%, oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75), transparent 70%),
-      radial-gradient(42% 48% at 3% 90%, oklch(from var(--dash-base) 0.88 calc(c * 0.6) calc(h + 35) / 0.6), transparent 70%),
-      radial-gradient(30% 36% at 72% 98%, color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
+      radial-gradient(56% 46% at var(--dash-glow-1-x, 50%) var(--dash-glow-1-y, 24%), color-mix(in srgb, var(--dash-base) 42%, transparent), transparent 72%),
+      radial-gradient(36% 42% at var(--dash-glow-2-x, 94%) var(--dash-glow-2-y, 6%), oklch(from var(--dash-base) 0.92 calc(c * 0.8) calc(h - 35) / 0.75), transparent 70%),
+      radial-gradient(42% 48% at var(--dash-glow-3-x, 3%) var(--dash-glow-3-y, 90%), oklch(from var(--dash-base) 0.88 calc(c * 0.6) calc(h + 35) / 0.6), transparent 70%),
+      radial-gradient(30% 36% at var(--dash-glow-4-x, 72%) var(--dash-glow-4-y, 98%), color-mix(in srgb, var(--dash-base) 28%, transparent), transparent 70%),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--dash-base) 4%, white) 0%,
@@ -5546,6 +5546,19 @@
   width: 100%;
   justify-content: center;
   margin-top: 12px;
+}
+
+.palette-background-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.palette-background-actions .pill-btn {
+  flex: 1;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
 }
 
 /* The editor: a name and two colours, painted on the page as they change. */

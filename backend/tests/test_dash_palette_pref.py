@@ -75,8 +75,31 @@ def test_malformed_page_choices_are_rejected(client, auth_headers):
 
 
 def test_palettes_are_kept_per_user(client, auth_headers):
-    client.put('/api/prefs', headers=auth_headers, json={'dashPalettes': [SPRING]})
+    client.put('/api/prefs', headers=auth_headers, json={'dashPalettes': [SPRING], 'dashBackdropSeed': 123456})
 
     other = register(client, username='bob', password='secret456')
     other_headers = {'Authorization': f"Bearer {other['token']}"}
     assert client.get('/api/prefs', headers=other_headers).json() == {}
+
+
+def test_backdrop_positions_round_trip_and_reset_without_changing_the_palette(client, auth_headers):
+    client.put('/api/prefs', headers=auth_headers, json={'dashPalette': 'ocean'})
+    resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSeed': 4294967295})
+    assert resp.status_code == 200
+    assert client.get('/api/prefs', headers=auth_headers).json() == {
+        'dashPalette': 'ocean', 'dashBackdropSeed': 4294967295,
+    }
+    client.put('/api/prefs', headers=auth_headers, json={'calendarDesign': 'classic'})
+    assert client.get('/api/prefs', headers=auth_headers).json()['dashBackdropSeed'] == 4294967295
+    resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSeed': 0})
+    assert resp.status_code == 200
+    assert client.get('/api/prefs', headers=auth_headers).json() == {
+        'dashPalette': 'ocean', 'calendarDesign': 'classic', 'dashBackdropSeed': 0,
+    }
+
+
+def test_malformed_backdrop_seeds_are_rejected(client, auth_headers):
+    for seed in [-1, 4294967296, 1.5, '123', True, [], {}]:
+        resp = client.put('/api/prefs', headers=auth_headers, json={'dashBackdropSeed': seed})
+        assert resp.status_code == 422, seed
+    assert client.get('/api/prefs', headers=auth_headers).json() == {}

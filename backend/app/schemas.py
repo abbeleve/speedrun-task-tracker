@@ -238,6 +238,7 @@ class PrefsIn(BaseModel):
     dashPalette: Optional[str] = Field(default=None, pattern=r'^[a-z0-9-]{1,40}$')
     dashPalettes: Optional[List[DashPaletteIn]] = Field(default=None, max_length=24)
     dashGlass: Optional[DashGlassIn] = None
+    dashBackdropSeed: Optional[int] = Field(default=None, strict=True, ge=0, le=4294967295)
 
 
 # The hand-entered portion of a habit's progress for one day. The task-linked

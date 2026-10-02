@@ -33,6 +33,22 @@ export function parseGlass(value: unknown): GlassPages {
   };
 }
 
+// A seed keeps a shuffled backdrop stable across reloads and devices.
+// Zero preserves the original arrangement, including each theme's positions.
+export const DEFAULT_BACKDROP_SEED = 0;
+export const MAX_BACKDROP_SEED = 0xffffffff;
+
+export function parseBackdropSeed(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_BACKDROP_SEED
+    ? value
+    : DEFAULT_BACKDROP_SEED;
+}
+
+export function randomBackdropSeed(previous: number, random: () => number = Math.random): number {
+  const seed = 1 + Math.floor(random() * MAX_BACKDROP_SEED);
+  return seed === previous ? (seed % MAX_BACKDROP_SEED) + 1 : seed;
+}
+
 export const BUILTIN_PALETTES: readonly DashPalette[] = [
   { id: 'mint', name: 'Мята', base: '#22a35a', accent: '#ee5a24' },
   { id: 'ocean', name: 'Океан', base: '#2f7fd8', accent: '#f59e0b' },
@@ -96,6 +112,7 @@ export interface PaletteState {
   active: string;
   own: DashPalette[];
   glass: GlassPages;
+  backdropSeed: number;
 }
 
 export const PALETTE_CACHE_KEY = 'speedrun_dash_palette';
@@ -107,9 +124,10 @@ export function cachedPalettes(storage: Pick<Storage, 'getItem'> = localStorage)
       active: parsePaletteId(raw?.active) ?? DEFAULT_PALETTE_ID,
       own: normalizePalettes(raw?.own),
       glass: parseGlass(raw?.glass),
+      backdropSeed: parseBackdropSeed(raw?.backdropSeed),
     };
   } catch {
-    return { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS };
+    return { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS, backdropSeed: DEFAULT_BACKDROP_SEED };
   }
 }
 
@@ -127,15 +145,30 @@ export function cachePalettes(state: PaletteState, storage: Pick<Storage, 'setIt
 // browser and may be another account's. Null means "leave it as it is".
 export function adoptServerPalettes(prefs: unknown, changedHere: boolean): PaletteState | null {
   if (changedHere || typeof prefs !== 'object' || prefs === null) return null;
-  const raw = prefs as { dashPalette?: unknown; dashPalettes?: unknown; dashGlass?: unknown };
+  const raw = prefs as { dashPalette?: unknown; dashPalettes?: unknown; dashGlass?: unknown; dashBackdropSeed?: unknown };
   return {
     active: parsePaletteId(raw.dashPalette) ?? DEFAULT_PALETTE_ID,
     own: normalizePalettes(raw.dashPalettes),
     glass: parseGlass(raw.dashGlass),
+    backdropSeed: parseBackdropSeed(raw.dashBackdropSeed),
   };
 }
 
 // The inline style that hands a palette to the stylesheet.
-export function paletteStyle(p: DashPalette): Record<string, string> {
-  return { '--dash-base': p.base, '--dash-accent': p.accent };
+export function paletteStyle(p: DashPalette, backdropSeed = DEFAULT_BACKDROP_SEED): Record<string, string> {
+  const vars: Record<string, string> = { '--dash-base': p.base, '--dash-accent': p.accent };
+  let seed = parseBackdropSeed(backdropSeed);
+  if (seed === DEFAULT_BACKDROP_SEED) return vars;
+
+  // Separate centers for the four glows, bounded inside the page. The same
+  // seed produces the same layout without randomizing again while the clock ticks.
+  const position = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return Math.round(5 + (seed / 0x100000000) * 90) + '%';
+  };
+  for (let i = 1; i <= 4; i++) {
+    vars['--dash-glow-' + i + '-x'] = position();
+    vars['--dash-glow-' + i + '-y'] = position();
+  }
+  return vars;
 }

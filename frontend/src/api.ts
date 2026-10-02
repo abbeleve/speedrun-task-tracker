@@ -270,6 +270,7 @@ export interface Prefs {
   dashPalette?: string; // id of the home page's palette (see dashPalette.ts)
   dashPalettes?: DashPalette[]; // the palettes the user made
   dashGlass?: GlassPages; // the other pages that wear the dashboard's look
+  dashBackdropSeed?: number; // saved positions of the backdrop's colored glows
 }
 
 export async function loadPrefs(): Promise<Prefs> {

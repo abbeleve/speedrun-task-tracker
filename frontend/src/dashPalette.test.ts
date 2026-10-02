@@ -4,14 +4,19 @@ import {
   BUILTIN_PALETTES,
   cachePalettes,
   cachedPalettes,
+  DEFAULT_BACKDROP_SEED,
   DEFAULT_GLASS,
   DEFAULT_PALETTE_ID,
   isUserPalette,
+  MAX_BACKDROP_SEED,
   MAX_USER_PALETTES,
   newPaletteId,
   normalizePalettes,
   PALETTE_CACHE_KEY,
+  paletteStyle,
+  parseBackdropSeed,
   parseGlass,
+  randomBackdropSeed,
   resolvePalette,
 } from './dashPalette';
 
@@ -87,16 +92,52 @@ describe('parseGlass', () => {
   });
 });
 
+describe('backdrop positions', () => {
+  it('accepts saved integer seeds and defaults malformed or missing values', () => {
+    expect(parseBackdropSeed(0)).toBe(DEFAULT_BACKDROP_SEED);
+    expect(parseBackdropSeed(123456)).toBe(123456);
+    expect(parseBackdropSeed(MAX_BACKDROP_SEED)).toBe(MAX_BACKDROP_SEED);
+    for (const value of [undefined, null, false, '123', -1, 1.5, NaN, Infinity, MAX_BACKDROP_SEED + 1]) {
+      expect(parseBackdropSeed(value)).toBe(DEFAULT_BACKDROP_SEED);
+    }
+  });
+
+  it('picks a new non-default seed even when the random result repeats', () => {
+    expect(randomBackdropSeed(0, () => 0)).toBe(1);
+    expect(randomBackdropSeed(1, () => 0)).toBe(2);
+    expect(randomBackdropSeed(MAX_BACKDROP_SEED, () => 1 - Number.EPSILON)).toBe(1);
+  });
+
+  it('keeps the original layout when reset and keeps the palette colors when shuffled', () => {
+    expect(paletteStyle(SPRING)).toEqual({ '--dash-base': SPRING.base, '--dash-accent': SPRING.accent });
+    expect(paletteStyle(SPRING, 0)).toEqual(paletteStyle(SPRING));
+    for (const seed of [1, 123456, MAX_BACKDROP_SEED]) {
+      const style = paletteStyle(SPRING, seed);
+      expect(style).toEqual(paletteStyle(SPRING, seed));
+      expect(style['--dash-base']).toBe(SPRING.base);
+      expect(style['--dash-accent']).toBe(SPRING.accent);
+      const centers = Object.entries(style).filter(([key]) => key.startsWith('--dash-glow-'));
+      expect(centers).toHaveLength(8);
+      for (const [, value] of centers) {
+        expect(value.endsWith('%')).toBe(true);
+        expect(parseFloat(value)).toBeGreaterThanOrEqual(5);
+        expect(parseFloat(value)).toBeLessThanOrEqual(95);
+      }
+    }
+    expect(paletteStyle(SPRING, 1)).not.toEqual(paletteStyle(SPRING, 123456));
+  });
+});
+
 describe('the local copy', () => {
   it('opens on the default until something has been chosen', () => {
-    const fresh = { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS };
+    const fresh = { active: DEFAULT_PALETTE_ID, own: [], glass: DEFAULT_GLASS, backdropSeed: DEFAULT_BACKDROP_SEED };
     expect(cachedPalettes(memoryStorage())).toEqual(fresh);
     expect(cachedPalettes(memoryStorage({ [PALETTE_CACHE_KEY]: '{oops' }))).toEqual(fresh);
   });
 
   it('reads back what it stored', () => {
     const storage = memoryStorage();
-    const state = { active: 'u-abc123', own: [SPRING], glass: { calendar: false, tracker: true } };
+    const state = { active: 'u-abc123', own: [SPRING], glass: { calendar: false, tracker: true }, backdropSeed: 123456 };
     cachePalettes(state, storage);
     expect(cachedPalettes(storage)).toEqual(state);
   });
@@ -106,13 +147,14 @@ describe('adoptServerPalettes', () => {
   it('takes the account’s palettes and pages', () => {
     expect(
       adoptServerPalettes(
-        { dashPalette: 'u-abc123', dashPalettes: [SPRING], dashGlass: { calendar: true, tracker: false } },
+        { dashPalette: 'u-abc123', dashPalettes: [SPRING], dashGlass: { calendar: true, tracker: false }, dashBackdropSeed: 123456 },
         false
       )
     ).toEqual({
       active: 'u-abc123',
       own: [SPRING],
       glass: { calendar: true, tracker: false },
+      backdropSeed: 123456,
     });
   });
 
@@ -121,6 +163,7 @@ describe('adoptServerPalettes', () => {
       active: DEFAULT_PALETTE_ID,
       own: [],
       glass: DEFAULT_GLASS,
+      backdropSeed: DEFAULT_BACKDROP_SEED,
     });
   });
 

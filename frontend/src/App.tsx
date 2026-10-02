@@ -118,7 +118,10 @@ function App() {
   // The home page's colours (see dashPalette.ts).
   const palette = useDashPalette();
   const shownPalette = palette.current;
-  const paletteVars = useMemo(() => paletteStyle(shownPalette), [shownPalette]);
+  const paletteVars = useMemo(
+    () => paletteStyle(shownPalette, palette.backdropSeed),
+    [shownPalette, palette.backdropSeed]
+  );
 
   const [view, setView] = useState<'timeline' | 'spiral' | 'list' | 'story'>(() => {
     const saved = localStorage.getItem('speedrun_view');

@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import type { DashPalette, GlassPages } from './dashPalette';
 import { isUserPalette, newPaletteId, PALETTE_NAME_MAX } from './dashPalette';
 import type { DashPaletteStore } from './useDashPalette';
-import { IconCheck, IconClose, IconPalette, IconPencil, IconPlus } from './icons';
+import { IconCheck, IconClose, IconPalette, IconPencil, IconPlus, IconShuffle, IconUndo } from './icons';
 
 // A palette's two colours as one round swatch, split on the diagonal.
 const swatchStyle = (p: DashPalette): CSSProperties => ({
@@ -150,6 +150,30 @@ export default function PalettePicker({ store, page, shown }: {
                   </li>
                 ))}
               </ul>
+
+              <p className="palette-sub">Расположение фона</p>
+              <div className="palette-background-actions">
+                <button
+                  type="button"
+                  className="pill-btn"
+                  onClick={store.shuffleBackdrop}
+                  disabled={!shown}
+                  title={shown ? 'Расположить цвета на фоне по-новому' : 'Включите стекло для этой страницы'}
+                >
+                  <IconShuffle size={15} />
+                  Случайный фон
+                </button>
+                <button
+                  type="button"
+                  className="pill-btn"
+                  onClick={store.resetBackdrop}
+                  disabled={!shown || store.backdropSeed === 0}
+                  title="Вернуть исходное расположение"
+                >
+                  <IconUndo size={15} />
+                  Сбросить
+                </button>
+              </div>
 
               <p className="palette-sub">Цветовая гамма</p>
               <ul className="palette-list">{builtIn.map(item)}</ul>

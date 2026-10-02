@@ -5,8 +5,10 @@ import {
   BUILTIN_PALETTES,
   cachePalettes,
   cachedPalettes,
+  DEFAULT_BACKDROP_SEED,
   DEFAULT_PALETTE_ID,
   MAX_USER_PALETTES,
+  randomBackdropSeed,
   resolvePalette,
 } from './dashPalette';
 import type { DashPalette, GlassPages, PaletteState } from './dashPalette';
@@ -27,6 +29,9 @@ export interface DashPaletteStore {
   // The other pages that wear the look, and the switch for each.
   glass: GlassPages;
   setGlass: (page: keyof GlassPages, on: boolean) => void;
+  backdropSeed: number;
+  shuffleBackdrop: () => void;
+  resetBackdrop: () => void;
 }
 
 // The dashboard's look: opens with this browser's copy, then follows the
@@ -66,7 +71,12 @@ export function useDashPalette(): DashPaletteStore {
     setState(next);
     cachePalettes(next);
     api
-      .savePrefs({ dashPalette: next.active, dashPalettes: next.own, dashGlass: next.glass })
+      .savePrefs({
+        dashPalette: next.active,
+        dashPalettes: next.own,
+        dashGlass: next.glass,
+        dashBackdropSeed: next.backdropSeed,
+      })
       .catch((error) => {
         console.error('Failed to save the dashboard palette', error);
       });
@@ -101,6 +111,15 @@ export function useDashPalette(): DashPaletteStore {
     [commit]
   );
 
+  const shuffleBackdrop = useCallback(
+    () => commit((prev) => ({ ...prev, backdropSeed: randomBackdropSeed(prev.backdropSeed) })),
+    [commit]
+  );
+  const resetBackdrop = useCallback(
+    () => commit((prev) => (prev.backdropSeed === DEFAULT_BACKDROP_SEED ? prev : { ...prev, backdropSeed: DEFAULT_BACKDROP_SEED })),
+    [commit]
+  );
+
   const palettes = useMemo(() => [...BUILTIN_PALETTES, ...state.own], [state.own]);
   const current = preview ?? resolvePalette(state.active, state.own);
 
@@ -115,5 +134,8 @@ export function useDashPalette(): DashPaletteStore {
     canAdd: state.own.length < MAX_USER_PALETTES,
     glass: state.glass,
     setGlass,
+    backdropSeed: state.backdropSeed,
+    shuffleBackdrop,
+    resetBackdrop,
   };
 }
