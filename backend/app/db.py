@@ -125,6 +125,23 @@ CREATE TABLE IF NOT EXISTS habit_entries (
     manual REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, habit_id, date)
 );
+
+-- Web Push (see push.py): one row per browser that turned notifications on.
+-- It belongs to the login that subscribed, so logging out stops the pushes.
+-- `time_zone` is the browser's IANA zone: task slots are local minutes.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    session_token TEXT NOT NULL REFERENCES sessions(token) ON DELETE CASCADE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    time_zone TEXT NOT NULL
+);
+
+-- The server's VAPID key, made on first use. A single row.
+CREATE TABLE IF NOT EXISTS vapid_key (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    private_pem TEXT NOT NULL
+);
 """
 
 
@@ -139,7 +156,7 @@ def _db_path() -> str:
 
 # Bumped whenever the schema changes. Stored in SQLite's built-in
 # ``PRAGMA user_version`` so migrations run once per database.
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 
 def init_db() -> None:

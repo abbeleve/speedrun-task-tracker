@@ -250,3 +250,21 @@ class PrefsIn(BaseModel):
 # auto portion is derived live from the day's plan on the frontend.
 class HabitEntryIn(BaseModel):
     manual: float = 0
+
+
+# A browser's push subscription, as its PushSubscription.toJSON() gives it,
+# plus the browser's IANA time zone (see push.py).
+class PushKeysIn(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=200)
+    auth: str = Field(min_length=1, max_length=100)
+
+
+class PushSubscriptionIn(BaseModel):
+    # The server POSTs to this URL, so only https is taken.
+    endpoint: str = Field(pattern=r'^https://', max_length=2000)
+    keys: PushKeysIn
+    timeZone: str = Field(min_length=1, max_length=64)
+
+
+class PushEndpointIn(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2000)

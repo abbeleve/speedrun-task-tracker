@@ -55,6 +55,7 @@ import { useAuth } from './auth';
 import { paletteStyle } from './dashPalette';
 import { useDashPalette } from './useDashPalette';
 import PalettePicker from './PalettePicker';
+import PushToggle from './PushToggle';
 import DashBackdrop from './DashBackdrop';
 import './App.css';
 import './calendar.css';
@@ -683,6 +684,7 @@ function App() {
 
         <div className="header-tools">
           <PalettePicker store={palette} page={page} shown={glassOn} />
+          <PushToggle />
           <button
             type="button"
             className="icon-btn"

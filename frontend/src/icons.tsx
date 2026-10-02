@@ -102,6 +102,21 @@ export const IconMoon = (p: IconProps) => (
   </Icon>
 );
 
+// Pushes about blocks on (bell) or off (bell struck through).
+export const IconBell = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 8.5a6 6 0 0 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15 6 8.5" />
+    <path d="M10.25 20.5a2 2 0 0 0 3.5 0" />
+  </Icon>
+);
+
+export const IconBellOff = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 8.5a6 6 0 0 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15 6 8.5" />
+    <path d="M10.25 20.5a2 2 0 0 0 3.5 0M3.5 3.5l17 17" />
+  </Icon>
+);
+
 export const IconLogOut = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9.5 20.5H6a2.5 2.5 0 0 1-2.5-2.5V6A2.5 2.5 0 0 1 6 3.5h3.5" />

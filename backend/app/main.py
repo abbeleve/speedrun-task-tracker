@@ -4,17 +4,18 @@ All data is stored per-user in a SQLite file. Authentication uses opaque bearer
 tokens; every read/write endpoint is scoped to the authenticated user.
 """
 
+import asyncio
 import json
 import os
 import sqlite3
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
-from . import db, security
+from . import db, push, security
 from .deps import bearer_scheme, get_current_user, get_db
 from .schemas import (
     ColorPresetIn,
@@ -25,6 +26,8 @@ from .schemas import (
     HabitIn,
     LoginIn,
     PrefsIn,
+    PushEndpointIn,
+    PushSubscriptionIn,
     RegisterIn,
     RunIn,
     SleepIn,
@@ -40,7 +43,12 @@ async def lifespan(_app: FastAPI):
     db.init_db()
     # Ensure the pictures directory exists so it is a clear drop-in target.
     os.makedirs(motivation_dir(), exist_ok=True)
+    # Pushes about blocks that start or run out (see push.py).
+    pusher = asyncio.create_task(push.run_forever())
     yield
+    pusher.cancel()
+    with suppress(asyncio.CancelledError):
+        await pusher
 
 
 app = FastAPI(title='SpeedRun Task Tracker API', lifespan=lifespan)
@@ -729,3 +737,53 @@ def put_habit_entry(
         )
     conn.commit()
     return {'ok': True}
+
+
+# ── Web Push (see push.py) ──────────────────────────────────────────
+
+@app.get('/api/push/key')
+def get_push_key(user=Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    return {'publicKey': push.public_key(push.vapid_key(conn))}
+
+
+@app.put('/api/push/subscription', status_code=204)
+def put_push_subscription(
+    body: PushSubscriptionIn,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    if push.zone(body.timeZone) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, 'Unknown time zone')
+    # A browser that another account had subscribed now belongs to this login.
+    conn.execute(
+        """
+        INSERT INTO push_subscriptions (endpoint, session_token, p256dh, auth, time_zone)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET
+            session_token = excluded.session_token,
+            p256dh = excluded.p256dh,
+            auth = excluded.auth,
+            time_zone = excluded.time_zone
+        """,
+        (body.endpoint, credentials.credentials, body.keys.p256dh, body.keys.auth, body.timeZone),
+    )
+    conn.commit()
+    return None
+
+
+@app.delete('/api/push/subscription', status_code=204)
+def delete_push_subscription(
+    body: PushEndpointIn,
+    user=Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    conn.execute(
+        """
+        DELETE FROM push_subscriptions WHERE endpoint = ?
+        AND session_token IN (SELECT token FROM sessions WHERE user_id = ?)
+        """,
+        (body.endpoint, user['id']),
+    )
+    conn.commit()
+    return None

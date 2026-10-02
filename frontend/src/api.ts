@@ -292,6 +292,21 @@ export function savePrefs(patch: Prefs): Promise<void> {
   return promise;
 }
 
+// ── Web Push (see push.ts) ─────────────────────────────────────────
+
+export async function loadPushKey(): Promise<string> {
+  const { publicKey } = await apiFetch<{ publicKey: string }>('/push/key');
+  return publicKey;
+}
+
+export async function savePushSubscription(subscription: PushSubscriptionJSON, timeZone: string): Promise<void> {
+  await apiFetch('/push/subscription', { method: 'PUT', body: JSON.stringify({ ...subscription, timeZone }) });
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  await apiFetch('/push/subscription', { method: 'DELETE', body: JSON.stringify({ endpoint }) });
+}
+
 // ── Habits (home-page tracker) ─────────────────────────────────────
 
 export async function loadHabits(): Promise<Habit[]> {

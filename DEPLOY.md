@@ -159,6 +159,9 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### HTTPS (рекомендуется — иначе token будет летать открыто)
 
+Без HTTPS не будут работать и push-уведомления: браузер разрешает их только на
+`https://` (и на `localhost` при разработке). Сертификат нужен на домен.
+
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d tracker.example.com

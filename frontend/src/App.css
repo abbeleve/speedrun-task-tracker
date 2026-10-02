@@ -231,6 +231,12 @@
   transform: scale(0.94);
 }
 
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .header-nav-btn:not(.active):hover {
     color: var(--text-primary);
@@ -6697,6 +6703,18 @@
   .home-page {
     padding: 12px 10px 24px;
     gap: 14px;
+  }
+}
+
+/* The narrowest phones: the four header tools and the navigation still
+   share one row. */
+@media (max-width: 380px) {
+  .header-tools .icon-btn {
+    width: 30px;
+  }
+
+  .header-nav-btn {
+    padding: 0 10px;
   }
 }
 

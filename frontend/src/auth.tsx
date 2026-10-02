@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import * as api from './api';
+import { disablePush } from './push';
 import './auth.css';
 
 interface AuthContextValue {
@@ -50,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // The next account on this browser must not get this one's pushes.
+    await disablePush().catch(() => undefined);
     await api.logout();
     setUser(null);
   };
