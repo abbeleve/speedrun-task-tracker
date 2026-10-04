@@ -192,6 +192,8 @@ class HabitTargetIn(BaseModel):
 # the human-readable label ('раз', 'мин', ...). `order` is the habit's position
 # in the home-page grid. `chart` is how its card draws today's progress:
 # 'dots' (a dotted arc) or 'gauge' (radial capsules over two progress bars).
+# `streak` turns on the streak — days in a row the quota was met — with its
+# fire on the card and the pushes when the day runs low (see streak.py).
 class HabitIn(BaseModel):
     id: str
     name: str
@@ -203,6 +205,7 @@ class HabitIn(BaseModel):
     unit: str = ''
     order: int = 0
     chart: str = Field(default='dots', pattern=r'^(dots|gauge)$')
+    streak: StrictBool = False
 
 
 # Per-user display choices. Every field is optional: a PUT carries only the

@@ -41,6 +41,7 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
   );
   const [wholeHistory, setWholeHistory] = useState(false);
   const [unit, setUnit] = useState(habit?.unit ?? defaultUnit(habit?.format ?? 'count'));
+  const [streak, setStreak] = useState(habit?.streak ?? false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [emojiSearch, setEmojiSearch] = useState('');
 
@@ -100,6 +101,7 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
       targets: nextTargets,
       unit: unit.trim(),
       order: habit?.order ?? nextOrder,
+      streak,
       // Picked on the card, not here — editing a habit must not reset it.
       ...(habit?.chart ? { chart: habit.chart } : {}),
     });
@@ -290,6 +292,19 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
             </ol>
           </div>
         )}
+
+        <div className="cal-modal-row">
+          <div className="hab-streak">
+            <label className="cal-check">
+              <input type="checkbox" checked={streak} onChange={(e) => setStreak(e.target.checked)} />
+              <span>🔥 Серия</span>
+            </label>
+            <span className="cal-repeat-hint">
+              Огонь на карточке считает дни подряд с выполненной целью. За 3, 2 и 1 час до полуночи
+              напомню, если цель ещё не выполнена
+            </span>
+          </div>
+        </div>
 
         <div className="cal-modal-row">
           <div className="cal-field cal-field--grow">

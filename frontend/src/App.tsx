@@ -56,6 +56,8 @@ import { paletteStyle } from './dashPalette';
 import { useDashPalette } from './useDashPalette';
 import PalettePicker from './PalettePicker';
 import PushToggle from './PushToggle';
+import StreakAlerts from './StreakAlerts';
+import { streakWarnStage } from './streak';
 import DashBackdrop from './DashBackdrop';
 import './App.css';
 import './calendar.css';
@@ -253,6 +255,19 @@ function App() {
       setPage(next);
     },
     [reloadPlan]
+  );
+
+  // A streak warning's "К привычке": the dashboard, scrolled to that card.
+  const openHabit = useCallback(
+    (habitId: string) => {
+      goHome();
+      setTimeout(() => {
+        document
+          .querySelector(`[data-habit-id="${CSS.escape(habitId)}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+    },
+    [goHome]
   );
 
   const openCalendarFromHome = useCallback(() => leaveHome('calendar'), [leaveHome]);
@@ -1140,6 +1155,15 @@ function App() {
           aria-hidden="true"
         />
       )}
+
+      <StreakAlerts
+        habits={habits.habits}
+        entries={habits.entries}
+        tasks={store.tasks}
+        date={todayKey}
+        stage={streakWarnStage(now)}
+        onOpen={openHabit}
+      />
     </div>
   );
 }

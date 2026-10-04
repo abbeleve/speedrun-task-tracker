@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Habit, HabitChart, HabitEntry, Task } from './types';
 import type { HabitStore } from './habitStore';
 import { shiftDayKey } from './history';
@@ -12,6 +12,8 @@ import {
   parseHabitAmount,
 } from './habits';
 import { gaugeStatus, HABIT_CHARTS, habitChartOf, habitPercent } from './habitChart';
+import { forgetCelebration, habitStreak, markCelebrated, wasCelebrated } from './streak';
+import { StreakBadge, StreakBurst } from './StreakFlame';
 import HabitDialog from './HabitDialog';
 import HabitDial from './HabitDial';
 import HabitGauge from './HabitGauge';
@@ -23,6 +25,9 @@ interface HabitGridProps {
   store: HabitStore;
   tasks: Task[]; // every task of the plan — the grid filters by date
   date: string; // 'YYYY-MM-DD' (local) — the day being tracked
+  // Hours left in the day once 3 or fewer (see streakWarnStage), else null:
+  // an unmet streak's fire starts to smoulder.
+  warnHours: number | null;
 }
 
 const STRIP_DAYS = 7;
@@ -52,7 +57,7 @@ function weekdayName(day: string): string {
 // semicircular row of dots in the habit's own colour framing today's
 // progress as an oversized number. Each card is independent — history, target
 // and unit all belong to one habit, nothing is aggregated across habits.
-function HabitGrid({ store, tasks, date }: HabitGridProps) {
+function HabitGrid({ store, tasks, date, warnHours }: HabitGridProps) {
   const [dialog, setDialog] = useState<Habit | 'new' | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   // Which habit's history is currently expanded. Only one at a time — opening
@@ -131,6 +136,7 @@ function HabitGrid({ store, tasks, date }: HabitGridProps) {
               entries={entries}
               date={date}
               days={stripDays}
+              warnHours={warnHours}
               isDragging={dragId === habit.id}
               isHistoryOpen={historyOpenId === habit.id}
               onToggleHistory={() =>
@@ -176,6 +182,7 @@ interface HabitCardProps {
   entries: HabitEntry[];
   date: string;
   days: StripDay[];
+  warnHours: number | null;
   isDragging: boolean;
   isHistoryOpen: boolean;
   onToggleHistory: () => void;
@@ -197,6 +204,9 @@ interface HabitCardProps {
 //               the gap it leaves, and yesterday's percentage under it;
 //       gauge — a fan of capsules around today's value and a pill saying how
 //               much is left, over two bars: yesterday and the last 7 days
+//   • for a streak habit, a little fire in the chart's top-left corner with
+//     the days in a row in it; meeting today's quota sets the card ablaze
+//     (StreakBurst) and flies the fire into it
 //   • a 7-day strip of "did I hit it" cells, only when the toggle is open
 //   • − / + steppers at the bottom, with the step itself shown between them
 //     Click anywhere on the card and the number keys retype that step, so
@@ -209,6 +219,7 @@ function HabitCard({
   entries,
   date,
   days,
+  warnHours,
   isDragging,
   isHistoryOpen,
   onToggleHistory,
@@ -274,9 +285,44 @@ function HabitCard({
   const yesterdayPct = habitPercent(yesterdayTotal, yesterdayTarget);
   const status = gaugeStatus(today, target, unit);
 
+  const streak = useMemo(
+    () => (habit.streak ? habitStreak(habit, date, tasks, entries) : null),
+    [habit, date, tasks, entries]
+  );
+  // The streak being celebrated (today's count) while the fire plays.
+  const [burst, setBurst] = useState<number | null>(null);
+  // Bumped as the celebration lands in the badge, to pop it.
+  const [pop, setPop] = useState(0);
+  const badgeFireRef = useRef<HTMLSpanElement>(null);
+  const prevLit = useRef<boolean | null>(null);
+  const lit = streak?.todayDone ?? false;
+  const streakDays = streak?.days ?? 0;
+
+  // Today's quota met → the fire, once a day per habit, whether it was met
+  // right here or on the calendar while the page was away. Dropping back
+  // below the quota here re-arms it, so meeting it again earns the fire again.
+  useEffect(() => {
+    const was = prevLit.current;
+    prevLit.current = lit;
+    if (!habit.streak) return;
+    if (!lit) {
+      if (was) forgetCelebration(habit.id, date);
+      return;
+    }
+    if (wasCelebrated(habit.id, date)) return;
+    markCelebrated(habit.id, date);
+    setBurst(streakDays);
+  }, [habit.id, habit.streak, date, lit, streakDays]);
+
+  const endBurst = useCallback(() => {
+    setBurst(null);
+    setPop((n) => n + 1);
+  }, []);
+
   return (
     <li
       className={`habit-card${complete ? ' done' : ''}${isDragging ? ' dragging' : ''}${isHistoryOpen ? ' history-open' : ''}`}
+      data-habit-id={habit.id}
       draggable
       tabIndex={0}
       onKeyDown={onCardKeyDown}
@@ -319,6 +365,17 @@ function HabitCard({
       </button>
 
       <div className="habit-card-stage">
+        {streak && (
+          <StreakBadge
+            streak={streak}
+            days={burst !== null ? Math.max(0, burst - 1) : streak.days}
+            lit={burst === null && streak.todayDone}
+            warnHours={warnHours}
+            unit={unit}
+            pop={pop}
+            flameRef={badgeFireRef}
+          />
+        )}
         {chart === 'gauge' ? (
           <div key="gauge" className={`habit-card-dial${chartSwitched ? ' habit-card-chart-in' : ''}`}>
             <div className="habit-card-dial-label" aria-hidden>
@@ -460,6 +517,7 @@ function HabitCard({
         </button>
       </div>
 
+      {burst !== null && <StreakBurst days={burst} target={badgeFireRef} onDone={endBurst} />}
     </li>
   );
 }

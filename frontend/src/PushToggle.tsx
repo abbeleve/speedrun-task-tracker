@@ -3,8 +3,8 @@ import { IconBell, IconBellOff } from './icons';
 import { disablePush, enablePush, pushSupported, syncPush, type PushState } from './push';
 
 const TITLES: Record<Exclude<PushState, 'unsupported'>, string> = {
-  on: 'Уведомления о блоках включены — выключить',
-  off: 'Уведомлять о начале и конце блоков',
+  on: 'Уведомления о блоках и сериях включены — выключить',
+  off: 'Уведомлять о начале и конце блоков и о сериях привычек',
   denied: 'Уведомления запрещены в настройках браузера',
 };
 

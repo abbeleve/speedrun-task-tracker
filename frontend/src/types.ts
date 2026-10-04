@@ -193,6 +193,9 @@ export interface Habit {
   unit: string; // human label: 'раз', 'мин', …
   order: number;
   chart?: HabitChart; // absent on habits saved before the choice existed → 'dots'
+  // Count the days in a row the quota was met, with a fire on the card and
+  // warnings when the day runs low (see streak.ts). Absent → off.
+  streak?: boolean;
 }
 
 // The hand-entered portion of a habit's progress for one day (count habits,

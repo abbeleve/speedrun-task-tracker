@@ -1,5 +1,6 @@
 """Web Push: a browser on a PC or an Android phone is told when a block on the
-calendar starts, and when one runs out without being closed.
+calendar starts, when one runs out without being closed, and when a streak
+habit's quota is still not met 3, 2 and 1 hours before midnight (streak.py).
 
 Each browser that turns notifications on stores its push subscription (see
 ``push_subscriptions`` in db.py). A loop started with the app reads the plan
@@ -28,7 +29,7 @@ from py_vapid import Vapid02
 from py_vapid.utils import b64urlencode
 from pywebpush import WebPushException, webpush
 
-from . import db
+from . import db, streak
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,21 @@ def due_events(tasks: list[dict], tz: ZoneInfo, since_ms: float, until_ms: float
     return events
 
 
+def warning_moments(tz: ZoneInfo, since_ms: float, until_ms: float) -> list[tuple[str, int]]:
+    """The (day, hours left) pairs whose streak warning falls in
+    ``(since_ms, until_ms]``: 3, 2 and 1 hours before each local midnight."""
+    first = datetime.fromtimestamp(since_ms / 1000, tz).date()
+    last = datetime.fromtimestamp(until_ms / 1000, tz).date()
+    moments = []
+    for i in range((last - first).days + 1):
+        day = first + timedelta(days=i)
+        midnight = _midnight_ms(str(day + timedelta(days=1)), tz)
+        for hours in streak.WARN_HOURS:
+            if since_ms < midnight - hours * 3_600_000 <= until_ms:
+                moments.append((str(day), hours))
+    return moments
+
+
 def _tasks_around(
     conn: sqlite3.Connection, user_id: int, tz: ZoneInfo, since_ms: float, until_ms: float
 ) -> list[dict]:
@@ -177,7 +193,9 @@ def send_due(since_ms: float, until_ms: float) -> None:
             if tz is None:
                 continue
             tasks = _tasks_around(conn, user_id, tz, since_ms, until_ms)
-            for event in due_events(tasks, tz, since_ms, until_ms):
+            events = due_events(tasks, tz, since_ms, until_ms)
+            events += streak.warning_events(conn, user_id, warning_moments(tz, since_ms, until_ms))
+            for event in events:
                 group = [sub for sub in group if _push(conn, key, sub, event)]
     finally:
         conn.close()

@@ -1,5 +1,6 @@
 // Web Push on this browser (a PC or an Android phone): it subscribes with the
-// backend's key, and the backend pushes when a block starts or runs out (see
+// backend's key, and the backend pushes when a block starts or runs out, and
+// when a streak habit's quota is unmet late in the day (see
 // backend/app/push.py). public/sw.js shows what arrives.
 
 import * as api from './api';
@@ -62,6 +63,13 @@ export async function syncPush(): Promise<PushState> {
   if (Notification.permission !== 'granted' || !(await heldSubscription())) return 'off';
   await subscribe();
   return 'on';
+}
+
+// Whether the server pushes to this browser — then what it pushes need not
+// also be said on the page.
+export async function pushActive(): Promise<boolean> {
+  if (!pushSupported() || Notification.permission !== 'granted') return false;
+  return (await heldSubscription()) !== null;
 }
 
 // Must be called straight from a click: only then may the browser ask.

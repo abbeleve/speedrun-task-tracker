@@ -5,6 +5,7 @@ import type { Task } from './types';
 import type { HabitStore } from './habitStore';
 import { signedDur } from './format';
 import { overtakeSegments } from './weekOvertake';
+import { streakWarnStage } from './streak';
 import HabitGrid from './HabitGrid';
 import KanbanPage from './KanbanPage';
 import DaysPage from './DaysPage';
@@ -106,7 +107,7 @@ function HomePage({
   return (
     <div className="home-page">
       <WeekOvertakeBar sec={weekOvertakeSec} />
-      <HabitGrid store={habits} tasks={tasks} date={todayKey()} />
+      <HabitGrid store={habits} tasks={tasks} date={todayKey()} warnHours={streakWarnStage(Date.now())} />
       <section className="home-panel home-panel--activity">
         <ActivityHeatmap stats={stats} habits={habits.habits} entries={habits.entries} tasks={tasks} />
       </section>
