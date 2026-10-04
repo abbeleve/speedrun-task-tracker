@@ -27,6 +27,15 @@ export function deadlineLabel(deadline: Deadline, includeDate = true): string {
   return includeDate ? `${label} · ${time}` : time;
 }
 
+// The few characters a block has room for: the due time when the block is on
+// the due day itself (nothing for a date-only one, the flag says it), else the
+// day and month, with the year only when it differs from the block's.
+export function deadlineShortLabel(deadline: Deadline, taskDay: string): string {
+  if (deadline.dueDay === taskDay) return deadline.dueTime === null ? '' : clockTime(deadlineDueMs(deadline));
+  const sameYear = deadline.dueDay.slice(0, 4) === taskDay.slice(0, 4);
+  return new Date(dayStartMs(deadline.dueDay)).toLocaleDateString('ru-RU', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function openDeadlines(deadlines: Deadline[]): Deadline[] {
   return deadlines.filter((deadline) => deadline.completedAt === null)
     .sort((a, b) => deadlineDueMs(a) - deadlineDueMs(b) || a.id.localeCompare(b.id));

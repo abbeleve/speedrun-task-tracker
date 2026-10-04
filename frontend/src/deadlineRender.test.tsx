@@ -32,7 +32,7 @@ describe('deadline calendar presentation', () => {
     expect(html).toContain('Блоки закрыты · дедлайн открыт');
     expect(html).toContain('cal-deadline-flag');
     expect(html).toContain('Launch website');
-    expect(html).toContain('cal-task-deadline-badge');
+    expect(html).toContain('cal-block-due');
     expect(html).not.toMatch(/Запас по плану|Время до дедлайна|Осталось до/);
   });
   it('keeps upcoming deadlines visible when the due date is outside the day view', () => {

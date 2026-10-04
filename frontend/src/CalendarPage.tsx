@@ -8,7 +8,7 @@ import type { CalDesign } from './calendarDesign';
 import { adoptServerDesign, cacheDesign, cachedDesign } from './calendarDesign';
 import type { DayStore } from './dayStore';
 import type { DeadlineStore } from './deadlineStore';
-import { deadlineClusters, deadlineLabel, deadlinePlanLate, deadlineState, openDeadlines } from './deadlines';
+import { deadlineClusters, deadlineLabel, deadlinePlanLate, deadlineShortLabel, deadlineState, openDeadlines } from './deadlines';
 import DeadlineDialog, { DeadlineList } from './DeadlineDialog';
 import DeadlineGuides from './DeadlineGuides';
 import { IconDesignCards, IconDesignClassic, IconFlag, IconLayoutColumns, IconLayoutRows } from './icons';
@@ -2174,13 +2174,18 @@ function CalendarPage({
     if (items.length === 1) openDeadline(items[0]);
     else setDeadlinePicker(items.map((item) => item.id));
   };
-  const deadlineBadge = (task: Task, compact = false) => {
+  // A block's deadline is written in the block's own ink: a flag beside its
+  // times, or alone in its head when the times do not fit. Its state is a dot
+  // on the flag, which reads on every task colour.
+  const deadlineBadge = (task: Task, inHead: boolean) => {
     const deadline = task.deadlineId ? deadlineById.get(task.deadlineId) : null;
     if (!deadline) return null;
-    const label = `${deadline.name} · ${deadlineLabel(deadline)} · ${deadline.completedAt !== null ? 'закрыт' : deadlineState(deadline, now) === 'overdue' ? 'просрочен' : 'открыт'}`;
-    return <button type="button" className={`cal-task-deadline-badge ${deadlineState(deadline, now)}${compact ? ' icon-only' : ''}${latePlans.has(deadline.id) ? ' plan-late' : ''}`}
+    const state = latePlans.has(deadline.id) && deadline.completedAt === null ? 'plan-late' : deadlineState(deadline, now);
+    const label = `${deadline.name} · ${deadlineLabel(deadline)} · ${state === 'done' ? 'закрыт' : state === 'overdue' ? 'просрочен' : state === 'plan-late' ? 'план выходит за срок' : 'открыт'}`;
+    const text = inHead ? '' : deadlineShortLabel(deadline, task.day);
+    return <button type="button" className={`cal-block-due ${state}${inHead ? ' in-head' : ''}`}
       aria-label={label} title={label} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openDeadline(deadline); }}>
-      <IconFlag size={12} /><span>{deadline.completedAt !== null ? '✓' : deadlineLabel(deadline, deadline.dueDay !== task.day)}</span>
+      <span className="cal-block-due-flag"><IconFlag size={11} /></span>{text && <span className="cal-block-due-text">{text}</span>}
     </button>;
   };
   const deadlineFlag = (items: Deadline[], style: React.CSSProperties, across: boolean, dateOnly = false) => {
@@ -2298,7 +2303,7 @@ function CalendarPage({
         <div className="cal-block-head">
           <span className="cal-block-emoji">{task.emoji}</span>
           <span className="cal-block-name">{task.name || 'Без названия'}</span>
-          {deadlineBadge(task, !showMeta || compact)}
+          {(!showMeta || compact) && deadlineBadge(task, true)}
           {task.pinned && (
             <span className="cal-block-pin" title="Закреплено — снимите флажок в редакторе, чтобы перенести">
               📌
@@ -2321,6 +2326,7 @@ function CalendarPage({
             <span>
               {hhmm(seg.topMin)}–{hhmm(seg.topMin + lengthMin)}
             </span>
+            {!compact && deadlineBadge(task, false)}
             <strong className="cal-block-duration">{dur(lengthMin * 60)}</strong>
           </div>
         )}

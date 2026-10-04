@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Deadline, Task } from './types';
-import { deadlineClusters, deadlineDueMs, deadlineLabel, deadlinePlanLate, deadlineState, openDeadlines } from './deadlines';
+import { deadlineClusters, deadlineDueMs, deadlineLabel, deadlineShortLabel, deadlinePlanLate, deadlineState, openDeadlines } from './deadlines';
 import { shiftPatches } from './schedule';
 
 const deadline = (patch: Partial<Deadline> = {}): Deadline => ({ id: 'launch', name: 'Launch', description: null, dueDay: '2026-10-02', dueTime: 18 * 60, completedAt: null, ...patch });
@@ -34,6 +34,12 @@ describe('independent deadline semantics', () => {
     expect(deadlineLabel(deadline({ dueTime: null }), false)).toBe('весь день');
     expect(deadlineLabel(deadline())).toContain('2026');
     expect(deadlineLabel(deadline())).not.toMatch(/осталось|запас|через/);
+  });
+  it('fits the due date on a block in a few characters', () => {
+    expect(deadlineShortLabel(deadline(), '2026-10-02')).toBe('18:00');
+    expect(deadlineShortLabel(deadline({ dueTime: null }), '2026-10-02')).toBe('');
+    expect(deadlineShortLabel(deadline(), '2026-10-01')).not.toMatch(/2026|18:00/);
+    expect(deadlineShortLabel(deadline(), '2025-12-30')).toContain('2026');
   });
   it('does not treat completed blocks or backlog slots as a late plan', () => {
     const late = task({ day: '2026-10-03' });
