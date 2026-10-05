@@ -1,6 +1,9 @@
-import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import * as api from './api';
 import { disablePush } from './push';
+import { prepareIntroScene } from './intro';
+import type { IntroKind } from './intro';
+import LoginIntro from './LoginIntro';
 import './auth.css';
 
 interface AuthContextValue {
@@ -9,6 +12,11 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  // The intro to play over the app as it opens (LoginIntro.tsx), or null
+  // once it has played: on every load with a saved session, and after every
+  // sign-in and registration.
+  intro: IntroKind | null;
+  finishIntro: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>(null!);
@@ -16,6 +24,8 @@ const AuthContext = createContext<AuthContextValue>(null!);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [intro, setIntro] = useState<IntroKind | null>(() => (api.getToken() ? 'return' : null));
+  const finishIntro = useCallback(() => setIntro(null), []);
 
   useEffect(() => {
     let active = true;
@@ -24,11 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
+      // The intro covers the screen while the session is checked; have its
+      // scene built meanwhile.
+      prepareIntroScene();
       try {
         const m = await api.me();
         if (active) setUser(m.username);
       } catch {
         api.setToken(null);
+        if (active) setIntro(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -41,12 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (username: string, password: string) => {
     const r = await api.login(username, password);
     api.setToken(r.token);
+    setIntro('return');
     setUser(r.username);
   };
 
   const register = async (username: string, password: string) => {
     const r = await api.register(username, password);
     api.setToken(r.token);
+    setIntro('welcome');
     setUser(r.username);
   };
 
@@ -58,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, intro, finishIntro }}>
       {children}
     </AuthContext.Provider>
   );
@@ -71,18 +87,26 @@ export function useAuth(): AuthContextValue {
 }
 
 // Gate shown around the main app: waits while the token is validated, then
-// either renders children (authenticated) or the login page.
+// either renders children (authenticated) or the login page. The intro plays
+// over the app; with a saved session it already covers the screen while the
+// token is checked, and it stays the same element when the app mounts under
+// it, so the shot runs on unbroken.
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) {
+  const { user, loading, intro, finishIntro } = useAuth();
+  if (!loading && !user) return <LoginPage />;
+  if (loading && !intro) {
     return (
       <div className="auth-page">
         <div className="auth-card auth-card-loading">Загрузка…</div>
       </div>
     );
   }
-  if (!user) return <LoginPage />;
-  return <>{children}</>;
+  return (
+    <>
+      {user ? children : null}
+      {intro && <LoginIntro kind={intro} user={user} onDone={finishIntro} />}
+    </>
+  );
 }
 
 export function LoginPage() {
@@ -92,6 +116,12 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // The intro plays the moment the sign-in goes through; build its scene
+  // while the form is being filled in.
+  useEffect(() => {
+    prepareIntroScene();
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

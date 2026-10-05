@@ -1,0 +1,226 @@
+/* The intro over the app as it opens (LoginIntro.tsx). A night sky in the
+   palette's hue that holds the 3D shot, the caption under the watch, and —
+   once the dial's face opens — a round hole onto the app underneath. */
+
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  overflow: hidden;
+  /* The scene's clear colour (introBackground in intro.ts). */
+  background: var(--intro-bg);
+  color: #fff;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.intro-stage,
+.intro-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.intro-canvas {
+  display: block;
+  opacity: 0;
+}
+
+.intro--playing .intro-canvas {
+  animation: intro-fade-in 400ms var(--ease-out) both;
+}
+
+/* The go's flash: a burst of the palette's light from the dial, driven frame
+   by frame from the shot's clock. */
+.intro-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.85) 0,
+    color-mix(in srgb, var(--intro-base) 55%, rgba(255, 255, 255, 0.5)) 18%,
+    color-mix(in srgb, var(--intro-base) 30%, transparent) 42%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+}
+
+/* The face's opening: everything inside the circle shows the app. */
+.intro[data-open] {
+  --intro-feather: calc(var(--intro-hole) * 0.04 + 2px);
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent var(--intro-hole),
+    #000 calc(var(--intro-hole) + var(--intro-feather))
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent var(--intro-hole),
+    #000 calc(var(--intro-hole) + var(--intro-feather))
+  );
+}
+
+/* ── the caption under the watch ─────────────────────────────────────── */
+
+.intro-caption {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: calc(50% + var(--intro-watch-r, 26vh) * 1.12);
+  text-align: center;
+  pointer-events: none;
+}
+
+.intro-title {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: clamp(30px, 5.2vw, 56px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  white-space: pre;
+  perspective: 600px;
+  text-shadow:
+    0 0 18px color-mix(in srgb, var(--intro-base) 75%, transparent),
+    0 0 42px color-mix(in srgb, var(--intro-base) 45%, transparent);
+}
+
+.intro-letter {
+  display: inline-block;
+  opacity: 0;
+  transform-origin: 50% 100%;
+}
+
+.intro-greeting {
+  margin-top: 10px;
+  font-size: clamp(14px, 1.6vw, 18px);
+  font-weight: 500;
+  color: color-mix(in srgb, var(--intro-base) 25%, rgba(255, 255, 255, 0.78));
+  opacity: 0;
+}
+
+.intro-skip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px));
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.42);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-skip-touch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .intro-skip-fine {
+    display: none;
+  }
+
+  .intro-skip-touch {
+    display: inline;
+  }
+}
+
+/* The letters flip up out of the dial's plane one after another; the
+   greeting follows; all of it is gone by the go. */
+.intro--playing .intro-letter {
+  animation: intro-letter-in 700ms var(--ease-out) calc(var(--intro-text-in) + var(--i) * 28ms) both;
+}
+
+.intro--playing .intro-greeting {
+  animation: intro-rise 600ms var(--ease-out) calc(var(--intro-text-in) + 260ms) both;
+}
+
+.intro--playing .intro-caption {
+  animation: intro-caption-out 300ms var(--ease-out) var(--intro-text-out) both;
+}
+
+.intro--playing .intro-skip {
+  animation:
+    intro-fade-in 400ms var(--ease-out) 600ms both,
+    intro-fade-out 250ms var(--ease-out) var(--intro-text-out) forwards;
+}
+
+/* Skipped: the whole overlay fades away. */
+.intro--leaving {
+  opacity: 0;
+  transition: opacity var(--intro-skip-fade) var(--ease-out);
+}
+
+/* No motion: the title simply shows in the middle, and the overlay fades. */
+.intro--still {
+  animation: intro-fade-out 300ms ease calc(var(--intro-still) - 300ms) forwards;
+}
+
+.intro--still .intro-caption {
+  top: 50%;
+  transform: translateY(-50%);
+  animation: intro-fade-in 300ms ease both;
+}
+
+.intro--still :is(.intro-letter, .intro-greeting) {
+  opacity: 1;
+}
+
+@keyframes intro-letter-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em) rotateX(-75deg);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes intro-caption-out {
+  from {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+    filter: blur(4px);
+  }
+}
+
+@keyframes intro-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes intro-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

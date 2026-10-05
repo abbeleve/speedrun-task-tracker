@@ -7,9 +7,10 @@ export default defineConfig({
   server: {
     proxy: {
       // Dev only: forward /api to the FastAPI backend (see backend/).
-      // In production Nginx serves /api to the same origin.
+      // In production Nginx serves /api to the same origin. API_PROXY_TARGET
+      // points a second checkout at a backend of its own.
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.API_PROXY_TARGET ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },
