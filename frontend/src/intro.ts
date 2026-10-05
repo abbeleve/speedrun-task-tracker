@@ -4,24 +4,30 @@
 // (introScene.ts) and the overlay around it (LoginIntro.tsx) stay in step and
 // the timing can be tested without a GPU:
 //
-//   warp      the camera streaks down a helix of task blocks — twelve to a
-//             turn, an hour of five-minute blocks — through hyperspace;
-//   assemble  the stars spiral in and settle into a stopwatch, and its hand
-//             runs one lap, filling the dial behind it like a split;
-//   go        the lap closes: a shockwave, the hub bursts, and the dial's
-//             face opens into a window onto the app, which the camera dives
-//             through.
+//   build  the camera swings round a stopwatch as it builds itself: a bead
+//          draws the bezel round from twelve, the ticks pop up one after
+//          another, the crown drops on and the hand grows out of the hub;
+//   lap    a click of the crown, and the hand runs one lap, filling the dial
+//          behind it in the palette's colour;
+//   go     a second click closes the lap: a ring pulses out, and the dial's
+//          face opens into a window onto the app, which the camera dives
+//          through.
 import type { IntroScene } from './introScene';
 import { cachedPalettes, resolvePalette } from './dashPalette';
 import type { DashPalette } from './dashPalette';
 
 // Seconds from the start of the shot.
 export const INTRO_TIMES = {
-  flightEnd: 2.0, // the warp eases out to the camera's resting distance
-  morphStart: 0.45, // the particles start to gather into the watch …
-  morphEnd: 1.95, // … and the last of them has landed
-  tiltEnd: 2.2, // the watch has turned to face the camera
-  textIn: 1.45, // the title and the greeting rise in
+  orbitEnd: 2.4, // the camera has swung round to face the watch, at rest
+  bezelStart: 0.05, // the bezel is drawn round from twelve …
+  bezelEnd: 0.85, // … and closes
+  ticksStart: 0.3, // the first tick pops up at twelve …
+  ticksEnd: 1.3, // … and the last one has landed
+  crownStart: 0.8, // the crown drops onto the bezel …
+  crownEnd: 1.3, // … and has settled
+  handStart: 1.05, // the hub and the hand grow out of the middle …
+  handEnd: 1.45, // … to their full size
+  textIn: 1.6, // the title and the greeting rise in
   lapStart: 1.55, // the hand leaves twelve …
   go: 2.55, // … and is back on it: the lap is closed
   holeStart: 2.62, // the dial's face opens …
@@ -52,35 +58,38 @@ export const SKIP_FADE_MS = 260;
 export const WATCH_RADIUS = 3;
 export const FACE_RADIUS = WATCH_RADIUS * 0.78;
 
-// How far behind its resting point the camera starts, and so how long the
-// warp flight is.
-export const FLIGHT_LENGTH = 62;
-
 export const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const span = (t: number, from: number, to: number) => clamp01((t - from) / (to - from));
 
 export const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
 export const easeInCubic = (x: number) => x ** 3;
 export const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+export const easeInOutSine = (x: number) => (1 - Math.cos(Math.PI * x)) / 2;
+// Past the mark and back: the pop of a part landing in place.
+export const easeOutBack = (x: number) => 1 + 2.70158 * (x - 1) ** 3 + 1.70158 * (x - 1) ** 2;
 
 export interface IntroFrame {
-  // 0 → 1: the warp flight, eased; the camera has reached its resting
-  // distance at 1.
-  flight: number;
-  // How hard the stars streak: the flight's speed, 1 at the start, easing to
-  // nothing, plus a kick from the dive.
-  warp: number;
-  // 0 → 1: the gathering clock. Each particle takes its own slice of it (the
-  // shader staggers and eases them).
-  morph: number;
-  // 1 → 0: how far the watch is still turned away from the camera.
-  tilt: number;
+  // 0 → 1: the camera's swing from its opening angle round to face the watch
+  // square on, at its resting distance (linear; cameraPose eases it).
+  orbit: number;
+  // 0 → 1, eased: how far round from twelve the bezel (and the glass inside
+  // it) has been drawn.
+  bezel: number;
+  // 0 → 1: the ticks' clock. Each tick pops up on a slice of it of its own
+  // (tickProgress), clockwise from twelve.
+  ticks: number;
+  // 0 → 1: the crown's drop onto the bezel (the scene bounces it in).
+  crown: number;
+  // 0 → 1: the hub and the hand growing out of the middle.
+  hand: number;
   // 0 → 1: the hand's lap, eased in and out; the dial fills behind it.
   lap: number;
-  // 0 → 1: after the go, the hub and the hand fly apart.
-  burst: number;
-  // 0 → 1: the shockwave's run outwards (linear; it fades as it goes).
-  shock: number;
+  // 0 → 1: how far the crown is pushed down — a click to start the lap, and
+  // one to stop it.
+  press: number;
+  // 0 → 1: after the go, a ring's run outwards from the bezel (linear; it
+  // fades as it goes).
+  pulse: number;
   // 0 → 1: the camera's dive from its resting distance through the dial.
   dive: number;
   // 0 → 1: how far the face has opened, as a share of its radius.
@@ -88,23 +97,43 @@ export interface IntroFrame {
   done: boolean;
 }
 
+// A click of the crown: down and back up in this long, centred on its moment,
+// which comes just before the hand starts (or stops).
+const CLICK = 0.2;
+const CLICK_LEAD = 0.04;
+
+function click(t: number, at: number): number {
+  const x = 1 - Math.abs(t - at) / (CLICK / 2);
+  return x > 0 ? x * x * (3 - 2 * x) : 0;
+}
+
 export function introFrame(t: number): IntroFrame {
   const T = INTRO_TIMES;
-  const f = span(t, 0, T.flightEnd);
-  const dive = easeInCubic(span(t, T.go, T.diveEnd));
   return {
-    flight: easeOutCubic(f),
-    // The derivative of the ease-out, normalised to 1 at the start.
-    warp: (1 - f) ** 2 + 0.6 * dive,
-    morph: span(t, T.morphStart, T.morphEnd),
-    tilt: 1 - easeOutCubic(span(t, 0.5, T.tiltEnd)),
+    orbit: span(t, 0, T.orbitEnd),
+    bezel: easeInOutCubic(span(t, T.bezelStart, T.bezelEnd)),
+    ticks: span(t, T.ticksStart, T.ticksEnd),
+    crown: span(t, T.crownStart, T.crownEnd),
+    hand: span(t, T.handStart, T.handEnd),
     lap: easeInOutCubic(span(t, T.lapStart, T.go)),
-    burst: easeOutCubic(span(t, T.go, T.go + 0.5)),
-    shock: span(t, T.go, T.go + 0.7),
-    dive,
+    press: Math.max(click(t, T.lapStart - CLICK_LEAD), click(t, T.go - CLICK_LEAD)),
+    pulse: span(t, T.go, T.go + 0.7),
+    dive: easeInCubic(span(t, T.go, T.diveEnd)),
     hole: easeOutCubic(span(t, T.holeStart, T.holeEnd)),
     done: t >= T.end,
   };
+}
+
+// Sixty ticks round the dial, every fifth a long one.
+export const TICK_COUNT = 60;
+// Each tick's share of the ticks' clock: they overlap, so the pop runs round
+// the dial like a wave.
+const TICK_SLICE = 0.25;
+
+// 0 → 1: how far tick `index` (clockwise from twelve) has popped up.
+export function tickProgress(clock: number, index: number): number {
+  const delay = (index / (TICK_COUNT - 1)) * (1 - TICK_SLICE);
+  return clamp01((clock - delay) / TICK_SLICE);
 }
 
 // Where the camera rests while the watch is on show: far enough back that the
@@ -138,14 +167,13 @@ export function introPalette(): DashPalette {
 // on the sign-in page while the form is filled in, and on a reload while the
 // saved session is checked.
 function readyIntroScene(): Promise<IntroScene> {
-  const { base, accent } = introPalette();
+  const { base } = introPalette();
   return loadIntroScene().then(async ({ createIntroScene }) => {
     const scene = createIntroScene({
       width: window.innerWidth,
       height: window.innerHeight,
       pixelRatio: window.devicePixelRatio || 1,
       base,
-      accent,
     });
     try {
       await scene.warmUp();
@@ -190,11 +218,57 @@ export function handBackIntroScene(p: Promise<IntroScene>): void {
   });
 }
 
-// The camera's distance from the dial at a frame.
+// Where the camera opens: in close, up and off to the left of the dial,
+// looking a little above its middle (where the bezel starts to draw), and
+// rolled a touch. Angles in radians; the distance is a share of the resting
+// one. The orbit takes all of it back to nothing: square on, at rest.
+export const CAMERA_START = { azimuth: -1.15, elevation: 0.42, roll: 0.2, lookY: 1.2, distance: 0.5 };
+
+// The share of the orbit by which the camera has pulled back to its resting
+// distance and centred the watch — well before the caption rises under it.
+const PULL_BACK = 0.8;
+
+// How far the camera has pulled back and centred the watch, 0 → 1.
+const pulledBack = (frame: IntroFrame) => easeOutCubic(clamp01(frame.orbit / PULL_BACK));
+
+export interface CameraPose {
+  azimuth: number; // round the dial's upright axis; 0 is square on
+  elevation: number; // above the dial's plane
+  roll: number; // about the line of sight
+  lookY: number; // how far above the dial's middle the camera looks
+  distance: number; // from the point it looks at
+}
+
+// The camera pulls back quickly, but swings round all the way through the
+// build and the lap, and only comes square on just before the dive — one
+// unbroken move.
+export function cameraPose(frame: IntroFrame, rest: number): CameraPose {
+  const x = frame.orbit;
+  const k = 1 - (easeOutCubic(x) + easeInOutSine(x)) / 2;
+  return {
+    azimuth: CAMERA_START.azimuth * k,
+    elevation: CAMERA_START.elevation * k,
+    roll: CAMERA_START.roll * k,
+    lookY: CAMERA_START.lookY * (1 - pulledBack(frame)),
+    distance: cameraDistance(frame, rest),
+  };
+}
+
+// The camera's position in the world, for a pose: the watch faces +z.
+export function cameraPosition(pose: CameraPose): [number, number, number] {
+  const flat = Math.cos(pose.elevation) * pose.distance;
+  return [
+    Math.sin(pose.azimuth) * flat,
+    pose.lookY + Math.sin(pose.elevation) * pose.distance,
+    Math.cos(pose.azimuth) * flat,
+  ];
+}
+
+// The camera's distance from the point it looks at, at a frame.
 export function cameraDistance(frame: IntroFrame, rest: number): number {
-  const flying = rest + FLIGHT_LENGTH * (1 - frame.flight);
+  const orbiting = rest * (1 - (1 - CAMERA_START.distance) * (1 - pulledBack(frame)));
   // The dive ends just short of the dial's plane, inside the open face.
-  return flying - frame.dive * (rest - 0.35);
+  return orbiting - frame.dive * (rest - 0.35);
 }
 
 // The face's opening on screen, in CSS pixels: a circle of the face's radius
@@ -240,138 +314,38 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-// The parts of the watch the particles gather into, and each one's share of
-// them. The hand turns with the lap; the hub and the hand fly apart at the go.
-export const WATCH_PARTS = [
-  { kind: 'bezel', share: 0.45 },
-  { kind: 'back', share: 0.1 },
-  { kind: 'ticks', share: 0.2 },
-  { kind: 'crown', share: 0.08 },
-  { kind: 'button', share: 0.04 },
-  { kind: 'hub', share: 0.03 },
-  { kind: 'hand', share: 0.1 },
-] as const;
-
-export type WatchPart = (typeof WATCH_PARTS)[number]['kind'];
-
-export const PART_INDEX: Record<WatchPart, number> = Object.fromEntries(
-  WATCH_PARTS.map((p, i) => [p.kind, i])
-) as Record<WatchPart, number>;
-
-export interface WatchPoint {
+// The task blocks that drift round the watch, all in one pale tone, fading
+// into the night with depth — what gives the camera's swing its parallax.
+// They keep behind the dial's plane and off its axis, so the camera, which
+// stays in front of the dial, never flies into one.
+export interface FloatingBlock {
   x: number;
   y: number;
   z: number;
-  part: WatchPart;
-  // Clockwise from twelve, 0 → 2π: where on the dial the point sits, so the
-  // lap can fill the bezel and the ticks behind the hand.
-  angle: number;
+  length: number; // the block's long side, world units
+  shade: number; // 0 → 1: how bright its tone is
+  tilt: [number, number, number]; // its resting turn, radians
+  spin: number; // how fast it turns about its own axis, radians a second
 }
+
+export const BLOCK_RING = { inner: 5, outer: 14, near: -0.6, far: -14 };
 
 const TAU = Math.PI * 2;
 
-// Clockwise from twelve, for a point in the dial's plane.
-export const dialAngle = (x: number, y: number) => {
-  const a = Math.atan2(x, y);
-  return a < 0 ? a + TAU : a;
-};
-
-// `count` points on the stopwatch, split between its parts by their shares.
-// The watch faces +z; twelve o'clock is +y.
-export function watchPoints(count: number, random: () => number): WatchPoint[] {
-  const R = WATCH_RADIUS;
-  const points: WatchPoint[] = [];
-  const at = (x: number, y: number, z: number, part: WatchPart) =>
-    points.push({ x, y, z, part, angle: dialAngle(x, y) });
-
-  WATCH_PARTS.forEach(({ kind, share }, i) => {
-    // The last part takes whatever rounding left over.
-    const n = i === WATCH_PARTS.length - 1 ? count - points.length : Math.round(count * share);
-    for (let k = 0; k < n; k++) {
-      const u = random();
-      const v = random();
-      const w = random();
-      switch (kind) {
-        case 'bezel': {
-          // A torus: round the dial, and round its tube.
-          const a = u * TAU;
-          const b = v * TAU;
-          const r = R + 0.14 * Math.cos(b);
-          at(Math.sin(a) * r, Math.cos(a) * r, 0.2 * Math.sin(b), kind);
-          break;
-        }
-        case 'back': {
-          const a = u * TAU;
-          const r = R * 0.97 + (v - 0.5) * 0.08;
-          at(Math.sin(a) * r, Math.cos(a) * r, -0.38 + (w - 0.5) * 0.06, kind);
-          break;
-        }
-        case 'ticks': {
-          // Sixty ticks; every fifth is a long one.
-          const tick = Math.floor(u * 60);
-          const a = (tick / 60) * TAU + (w - 0.5) * 0.012;
-          const inner = tick % 5 === 0 ? 0.8 : 0.86;
-          const r = R * (inner + v * (0.92 - inner));
-          at(Math.sin(a) * r, Math.cos(a) * r, 0.04, kind);
-          break;
-        }
-        case 'crown': {
-          // A stem up from twelve, and the button on top of it.
-          if (u < 0.35) at((v - 0.5) * 0.24, R + 0.15 + w * 0.3, (random() - 0.5) * 0.2, kind);
-          else at((v - 0.5) * 0.76, R + 0.45 + w * 0.25, (random() - 0.5) * 0.3, kind);
-          break;
-        }
-        case 'button': {
-          // The lap button, at about two o'clock.
-          const a = 0.85 + (u - 0.5) * 0.12;
-          const r = R + 0.12 + v * 0.32;
-          at(Math.sin(a) * r, Math.cos(a) * r, (w - 0.5) * 0.24, kind);
-          break;
-        }
-        case 'hub': {
-          const a = u * TAU;
-          const r = Math.sqrt(v) * 0.2;
-          at(Math.sin(a) * r, Math.cos(a) * r, 0.12, kind);
-          break;
-        }
-        case 'hand': {
-          // Pointing at twelve: a short tail below the hub, a long needle
-          // above it, thickest at the root.
-          const along = -0.16 * R + u * 0.9 * R;
-          const width = 0.05 * (1 - Math.max(0, along) / (0.8 * R)) + 0.012;
-          at((v - 0.5) * width * 2, along, 0.1 + (w - 0.5) * 0.04, kind);
-          break;
-        }
-      }
-    }
+export function floatingBlocks(count: number, random: () => number): FloatingBlock[] {
+  const { inner, outer, near, far } = BLOCK_RING;
+  return Array.from({ length: count }, (_, i) => {
+    // Spread evenly round the axis, with a jitter, so no side is left bare.
+    const a = ((i + random() * 0.8) / count) * TAU;
+    const r = inner + Math.sqrt(random()) * (outer - inner);
+    return {
+      x: Math.sin(a) * r,
+      y: Math.cos(a) * r,
+      z: far + random() * (near - far),
+      length: 0.6 + random() * 1.1,
+      shade: 0.18 + random() * 0.3,
+      tilt: [random() * TAU, random() * TAU, random() * TAU],
+      spin: (random() - 0.5) * 0.7,
+    };
   });
-  return points;
-}
-
-// The helix of task blocks the warp flies down: twelve blocks to a turn, one
-// turn an hour. Each block sits tangent to the turn, `distance` units ahead
-// of the dial, and is as long as its (made-up) task.
-export interface HelixBlock {
-  angle: number; // around the flight path, radians
-  distance: number; // from the dial's plane, world units
-  length: number; // along the turn
-  color: string;
-}
-
-export const HELIX_RADIUS = 2.5;
-
-export function helixBlocks(
-  count: number,
-  near: number,
-  far: number,
-  colors: readonly string[],
-  random: () => number
-): HelixBlock[] {
-  const step = (far - near) / Math.max(1, count - 1);
-  return Array.from({ length: count }, (_, i) => ({
-    angle: (i / 12) * TAU + (random() - 0.5) * 0.12,
-    distance: near + i * step,
-    length: 0.45 + random() * 0.75,
-    color: colors[Math.floor(random() * colors.length)],
-  }));
 }

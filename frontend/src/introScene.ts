@@ -2,43 +2,46 @@
 // three.js is a large library, and nothing else in the app needs it — and
 // drawn into a canvas of its own, frame by frame, from the intro's clock.
 //
+// It keeps to one colour and white: a stopwatch of pale, matte solids builds
+// itself while the camera swings round it, and the palette's hue is only the
+// bead that draws the bezel, the hand, and the lap it fills in. A slow drift
+// of pale blocks and dust, fading into the night, gives the move its depth.
+//
 // It has to start at once, on every reload, and a shader program costs
-// ~0.1 s to compile on some drivers, so the shot is drawn with six of them
-// and no post-processing: the glow is painted in (a halo under the watch's
-// particles, soft shockwaves, the overlay's flash) rather than bloomed.
+// ~0.1 s to compile on some drivers, so the shot is drawn with four of them
+// and no post-processing.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
-  FLIGHT_LENGTH,
-  HELIX_RADIUS,
-  PART_INDEX,
+  TICK_COUNT,
   WATCH_RADIUS,
-  FACE_RADIUS,
-  cameraDistance,
-  helixBlocks,
+  cameraPose,
+  cameraPosition,
+  clamp01,
+  easeOutBack,
+  easeOutCubic,
+  floatingBlocks,
   holeRadiusPx,
   introBackground,
   introFrame,
   restDistance,
   seededRandom,
-  watchPoints,
+  tickProgress,
 } from './intro';
 import type { IntroFrame } from './intro';
-import { TASK_COLORS } from './types';
 
 const FOV = 55;
+const TAU = Math.PI * 2;
 
-// How long the star field runs ahead of the camera, and how far streaks
-// stretch at full warp.
-const FIELD_LENGTH = 160;
-const STREAK_LENGTH = 16;
+// The lamp, fixed in the world — high on the right, in front — so the light
+// turns across the watch as the camera swings round it.
+const LIGHT = new THREE.Vector3(0.55, 0.75, 0.6).normalize();
 
 export interface IntroSceneOptions {
   width: number; // CSS pixels
   height: number;
   pixelRatio: number;
-  base: string; // the palette's colours, '#rrggbb'
-  accent: string;
+  base: string; // the palette's colour, '#rrggbb' — the one colour in the shot
 }
 
 export interface IntroSceneFrame extends IntroFrame {
@@ -61,77 +64,15 @@ export interface IntroScene {
   dispose: () => void;
 }
 
-const STREAK_VERTEX = /* glsl */ `
-  attribute float aTail;
-  attribute vec3 aColor;
-  uniform float uCamZ;
-  uniform float uStretch;
-  uniform float uLength;
-  varying vec3 vColor;
-  varying float vAlpha;
-  void main() {
-    vec3 p = position;
-    // The field wraps round the camera, so it never runs out.
-    float rel = mod(p.z - uCamZ, uLength) - uLength;
-    p.z = uCamZ + rel - aTail * uStretch;
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    gl_Position = projectionMatrix * mv;
-    float depth = -rel / uLength;
-    vAlpha = (1.0 - aTail) * smoothstep(1.0, 0.55, depth) * smoothstep(0.0, 0.03, depth);
-    vColor = aColor;
-  }
-`;
-
-const STREAK_FRAGMENT = /* glsl */ `
-  uniform float uGain;
-  varying vec3 vColor;
-  varying float vAlpha;
-  void main() {
-    gl_FragColor = vec4(vColor * uGain, vAlpha);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
-  }
-`;
-
-const STAR_VERTEX = /* glsl */ `
-  attribute vec3 aColor;
-  uniform float uCamZ;
-  uniform float uLength;
-  uniform float uSize;
-  varying vec3 vColor;
-  varying float vAlpha;
-  void main() {
-    vec3 p = position;
-    float rel = mod(p.z - uCamZ, uLength) - uLength;
-    p.z = uCamZ + rel;
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    gl_Position = projectionMatrix * mv;
-    gl_PointSize = uSize;
-    float depth = -rel / uLength;
-    vAlpha = smoothstep(1.0, 0.5, depth) * smoothstep(0.0, 0.05, depth);
-    vColor = aColor;
-  }
-`;
-
-const STAR_FRAGMENT = /* glsl */ `
-  varying vec3 vColor;
-  varying float vAlpha;
-  void main() {
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.0, d);
-    gl_FragColor = vec4(vColor, a * vAlpha);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
-  }
-`;
-
-// The task blocks: their own colour, lit by a lamp over the camera's
-// shoulder, with a glossy highlight and a rim of light round the edges — the
-// look of a studio-lit material, at a fraction of its compile time.
-const BLOCK_VERTEX = /* glsl */ `
+// The solids — the watch's parts and the drifting blocks: their tone, lit by
+// the lamp and a soft sky, with a small highlight and a faint rim, fading
+// into the night with distance. A sweep cuts a part off past an angle,
+// clockwise from twelve in its own plane, which is how the bezel is drawn.
+const SOLID_VERTEX = /* glsl */ `
   varying vec3 vColor;
   varying vec3 vNormal;
   varying vec3 vView;
+  varying vec2 vLocal;
   void main() {
     vec4 local = vec4(position, 1.0);
     vec3 n = normal;
@@ -143,6 +84,7 @@ const BLOCK_VERTEX = /* glsl */ `
     gl_Position = projectionMatrix * mv;
     vNormal = normalize(normalMatrix * n);
     vView = -mv.xyz;
+    vLocal = position.xy;
     #ifdef USE_INSTANCING_COLOR
       vColor = instanceColor;
     #else
@@ -151,348 +93,274 @@ const BLOCK_VERTEX = /* glsl */ `
   }
 `;
 
-const BLOCK_FRAGMENT = /* glsl */ `
+const SOLID_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
   uniform vec3 uLight; // view space
+  uniform vec3 uFog;
+  uniform vec2 uFogRange;
+  uniform float uSweep;
   varying vec3 vColor;
   varying vec3 vNormal;
   varying vec3 vView;
+  varying vec2 vLocal;
+  const float TAU = 6.28318530718;
   void main() {
-    vec3 n = normalize(vNormal);
+    float a = atan(vLocal.x, vLocal.y);
+    if (a < 0.0) a += TAU;
+    if (a > uSweep * TAU) discard;
+    // The inside of a part cut open by the sweep is lit as a surface too.
+    vec3 n = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
     vec3 v = normalize(vView);
+    vec3 albedo = uColor * vColor;
     float diffuse = max(dot(n, uLight), 0.0);
-    float spec = pow(max(dot(n, normalize(uLight + v)), 0.0), 40.0);
-    float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-    vec3 c = vColor * (0.3 + 0.7 * diffuse) + spec * 0.8 + vColor * rim * 1.1;
-    gl_FragColor = vec4(c, 1.0);
-    #include <tonemapping_fragment>
+    float sky = 0.5 + 0.5 * n.y;
+    float spec = pow(max(dot(n, normalize(uLight + v)), 0.0), 56.0);
+    float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+    vec3 c = albedo * (0.14 + 0.12 * sky + 0.74 * diffuse + 0.3 * rim) + spec * 0.35;
+    float fog = smoothstep(uFogRange.x, uFogRange.y, length(vView));
+    gl_FragColor = vec4(mix(c, uFog, fog), 1.0);
     #include <colorspace_fragment>
   }
 `;
 
-// The watch's particles. Each one flies from its place among the stars to its
-// place on the watch on a slice of the gathering clock of its own, swirling
-// round the axis as it comes; the hand turns with the lap, the dial fills
-// behind the hand, and at the go the hub and the hand fly apart.
-const WATCH_VERTEX = /* glsl */ `
-  attribute vec3 aStart;
-  attribute vec4 aInfo; // delay, size, part, random
-  attribute float aAngle;
-  uniform float uTime;
-  uniform float uMorph;
-  uniform float uLap;
-  uniform float uBurst;
-  uniform float uScale;
-  uniform float uMaxSize;
-  // 1 for the particles themselves; the halo under them draws each one
-  // larger and fainter.
-  uniform float uSizeK;
-  uniform float uAlphaK;
-  uniform vec3 uStar;
-  uniform vec3 uBezel;
-  uniform vec3 uBack;
-  uniform vec3 uTick;
-  uniform vec3 uTrim;
-  uniform vec3 uHub;
-  uniform vec3 uHand;
-  uniform vec3 uFill;
-  varying vec3 vColor;
-  varying float vAlpha;
-
-  const float TAU = 6.28318530718;
-
-  vec2 rotate(vec2 v, float a) {
-    float c = cos(a), s = sin(a);
-    return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
-  }
-
+// The flat parts — the glass, the lap's fill and the go's ring: one colour,
+// swept round from twelve like the bezel, and with a tail, fading back from
+// the head of the sweep, for the lap.
+const FLAT_VERTEX = /* glsl */ `
+  varying vec2 vLocal;
   void main() {
-    float part = aInfo.z;
-    float seed = aInfo.w;
-    float spread = 0.5;
-    float p = clamp((uMorph - aInfo.x * spread) / (1.0 - spread), 0.0, 1.0);
-    float e = 1.0 - pow(1.0 - p, 3.0);
-
-    vec3 target = position;
-    bool hand = part > 5.5;
-    bool core = part > 4.5; // the hub and the hand
-    // Clockwise is a negative turn about +z.
-    if (hand) target.xy = rotate(target.xy, -uLap * TAU);
-
-    vec3 pos = mix(aStart, target, e);
-    pos.xy = rotate(pos.xy, (1.0 - e) * (2.2 + seed * 2.4));
-    // Once landed, a faint shimmer keeps the watch alive.
-    pos += e * 0.015 * vec3(sin(uTime * 3.1 + seed * 40.0), cos(uTime * 2.7 + seed * 31.0), 0.0);
-
-    // The go: the core flies apart towards the camera, scattering every way
-    // (the hand would otherwise leave as one beam), and the rest shrugs.
-    vec2 out2 = normalize(target.xy + vec2(0.0001, 0.0002));
-    if (core) out2 = rotate(out2, (seed - 0.5) * 5.0);
-    float kick = core ? 3.5 + seed * 6.0 : 0.25 * seed;
-    pos.xy += out2 * uBurst * kick;
-    pos.z += core ? uBurst * (2.0 + seed * 5.0) : 0.0;
-
-    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-    gl_Position = projectionMatrix * mv;
-    gl_PointSize = min(uMaxSize, uSizeK * aInfo.y * uScale / -mv.z);
-
-    vec3 c = uBezel;
-    if (part > 0.5) c = uBack;
-    if (part > 1.5) c = uTick;
-    if (part > 2.5) c = uTrim;
-    if (part > 4.5) c = uHub;
-    if (hand) c = uHand;
-    // The lap fills the bezel and the ticks it has passed.
-    bool fillable = part < 0.5 || (part > 1.5 && part < 2.5);
-    if (fillable && aAngle < uLap * TAU) c = mix(c, uFill, 0.85);
-    // A head on the needle.
-    if (hand && position.y > ${(WATCH_RADIUS * 0.6).toFixed(3)}) c *= 1.6;
-
-    vColor = mix(uStar, c, e);
-    float near = smoothstep(0.25, 1.6, -mv.z);
-    vAlpha = uAlphaK * mix(0.3, 1.0, e) * near * (core ? 1.0 - uBurst : 1.0);
+    vLocal = position.xy;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const WATCH_FRAGMENT = /* glsl */ `
-  varying vec3 vColor;
+const FLAT_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform float uSweep;
+  uniform float uTail;
+  varying vec2 vLocal;
+  const float TAU = 6.28318530718;
+  void main() {
+    float a = atan(vLocal.x, vLocal.y);
+    if (a < 0.0) a += TAU;
+    float end = uSweep * TAU;
+    if (a > end) discard;
+    float k = mix(1.0, 0.18 + 0.82 * a / max(end, 0.0001), uTail);
+    gl_FragColor = vec4(uColor, uOpacity * k);
+    #include <colorspace_fragment>
+  }
+`;
+
+// The dust: soft pale motes drifting on their own, smaller and fainter with
+// distance.
+const DUST_VERTEX = /* glsl */ `
+  attribute float aSeed;
+  uniform float uTime;
+  uniform float uScale;
+  uniform float uMaxSize;
+  uniform vec2 uFogRange;
+  varying float vAlpha;
+  void main() {
+    vec3 p = position;
+    p.xy += 0.25 * vec2(sin(uTime * 0.5 + aSeed * 40.0), cos(uTime * 0.4 + aSeed * 23.0));
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    float depth = -mv.z;
+    gl_PointSize = clamp(0.035 * uScale / depth, 1.0, uMaxSize);
+    vAlpha = 0.5 * (1.0 - smoothstep(uFogRange.x, uFogRange.y, depth)) * smoothstep(0.4, 2.5, depth);
+  }
+`;
+
+const DUST_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
   varying float vAlpha;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.05, d);
-    gl_FragColor = vec4(vColor, a * a * vAlpha);
-    #include <tonemapping_fragment>
+    gl_FragColor = vec4(uColor, smoothstep(0.5, 0.1, d) * vAlpha);
     #include <colorspace_fragment>
   }
 `;
+
+type Uniform<T> = { value: T };
 
 export function createIntroScene(options: IntroSceneOptions): IntroScene {
   let { width, height } = options;
   const pixelRatio = Math.min(options.pixelRatio, 2);
   const small = Math.min(width, height) < 600;
   const random = seededRandom(0x5eed);
+  const R = WATCH_RADIUS;
 
-  const base = new THREE.Color(options.base);
-  const accent = new THREE.Color(options.accent);
   const white = new THREE.Color('#ffffff');
-  const light = base.clone().lerp(white, 0.45);
+  const sky = new THREE.Color(introBackground(options.base));
+  // What the watch and the blocks are made of: white, cooled a touch towards
+  // the palette.
+  const pale = new THREE.Color('#e6e9ee').lerp(new THREE.Color(options.base), 0.05);
+  const dim = pale.clone().multiplyScalar(0.5);
+  // The palette's hue, lifted a little so it reads on a night of its own hue.
+  const hue = new THREE.Color(options.base).lerp(white, 0.1);
+  const glassColor = sky.clone().lerp(pale, 0.01);
 
   const canvas = document.createElement('canvas');
   canvas.className = 'intro-canvas';
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height, false);
-  // Neutral keeps the palette's hues and only rolls off the brightest
-  // overlaps; the sky is the clear colour, so it is exactly the overlay's.
-  renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.setClearColor(introBackground(options.base), 1);
+  // No tone mapping: the colours are kept in range by hand, so the fog fades
+  // into exactly the clear colour — which is exactly the overlay's.
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setClearColor(sky, 1);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(FOV, width / height, 0.05, 400);
+  const camera = new THREE.PerspectiveCamera(FOV, width / height, 0.05, 200);
   let rest = restDistance(width / height, FOV);
 
-  // ── the star field: streaks at warp, points at rest ──────────────────
-  const starCount = small ? 900 : 1600;
-  const heads = new Float32Array(starCount * 3);
-  const starColors = new Float32Array(starCount * 3);
-  const tint = new THREE.Color();
-  for (let i = 0; i < starCount; i++) {
-    const a = random() * Math.PI * 2;
-    const r = 3 + Math.sqrt(random()) * 34;
-    heads.set([Math.sin(a) * r, Math.cos(a) * r, random() * FIELD_LENGTH], i * 3);
-    const pick = random();
-    tint.copy(pick < 0.55 ? white : pick < 0.85 ? light : accent).multiplyScalar(0.6 + random() * 0.8);
-    starColors.set([tint.r, tint.g, tint.b], i * 3);
-  }
+  // The lamp, turned into the camera's view every frame, and the fog, which
+  // begins a little behind the resting watch.
+  const lightView = new THREE.Vector3();
+  const fogRange = new THREE.Vector2();
+  const placeFog = () => fogRange.set(rest + 3, rest + 26);
+  placeFog();
 
-  const streakPositions = new Float32Array(starCount * 6);
-  const streakColors = new Float32Array(starCount * 6);
-  const streakTail = new Float32Array(starCount * 2);
-  for (let i = 0; i < starCount; i++) {
-    streakPositions.set(heads.subarray(i * 3, i * 3 + 3), i * 6);
-    streakPositions.set(heads.subarray(i * 3, i * 3 + 3), i * 6 + 3);
-    streakColors.set(starColors.subarray(i * 3, i * 3 + 3), i * 6);
-    streakColors.set(starColors.subarray(i * 3, i * 3 + 3), i * 6 + 3);
-    streakTail[i * 2 + 1] = 1;
-  }
-  const streakGeometry = new THREE.BufferGeometry();
-  streakGeometry.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
-  streakGeometry.setAttribute('aColor', new THREE.BufferAttribute(streakColors, 3));
-  streakGeometry.setAttribute('aTail', new THREE.BufferAttribute(streakTail, 1));
-  const streakUniforms = {
-    uCamZ: { value: 0 },
-    uStretch: { value: 0 },
-    uLength: { value: FIELD_LENGTH },
-    uGain: { value: 1.6 },
-  };
-  const streaks = new THREE.LineSegments(
-    streakGeometry,
+  const solid = (color: THREE.Color, sweep: Uniform<number> = { value: 1 }, side: THREE.Side = THREE.FrontSide) =>
     new THREE.ShaderMaterial({
-      vertexShader: STREAK_VERTEX,
-      fragmentShader: STREAK_FRAGMENT,
-      uniforms: streakUniforms,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    })
-  );
-  streaks.frustumCulled = false;
-  scene.add(streaks);
-
-  const starGeometry = new THREE.BufferGeometry();
-  starGeometry.setAttribute('position', new THREE.BufferAttribute(heads, 3));
-  starGeometry.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
-  const starUniforms = {
-    uCamZ: streakUniforms.uCamZ,
-    uLength: { value: FIELD_LENGTH },
-    uSize: { value: 2.2 * pixelRatio },
-  };
-  const stars = new THREE.Points(
-    starGeometry,
-    new THREE.ShaderMaterial({
-      vertexShader: STAR_VERTEX,
-      fragmentShader: STAR_FRAGMENT,
-      uniforms: starUniforms,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    })
-  );
-  stars.frustumCulled = false;
-  scene.add(stars);
-
-  // ── the helix of task blocks ─────────────────────────────────────────
-  const blockColors = [...TASK_COLORS, options.base, options.accent];
-  const blocks = helixBlocks(small ? 40 : 52, 6, FLIGHT_LENGTH - 6, blockColors, random);
-  const blockGeometry = new RoundedBoxGeometry(1, 0.3, 0.62, 3, 0.09);
-  const blockMaterial = new THREE.ShaderMaterial({
-    vertexShader: BLOCK_VERTEX,
-    fragmentShader: BLOCK_FRAGMENT,
-    uniforms: { uLight: { value: new THREE.Vector3(0.45, 0.6, 0.66).normalize() } },
-  });
-  const helix = new THREE.InstancedMesh(blockGeometry, blockMaterial, blocks.length);
-  const blockColor = blocks.map((b) => new THREE.Color(b.color));
-  const dummy = new THREE.Object3D();
-  const placeBlocks = () => {
-    blocks.forEach((b, i) => {
-      dummy.position.set(Math.sin(b.angle) * HELIX_RADIUS, Math.cos(b.angle) * HELIX_RADIUS, rest + b.distance);
-      dummy.rotation.set(0, 0, -b.angle);
-      dummy.scale.set(b.length, 1, 1);
-      dummy.updateMatrix();
-      helix.setMatrixAt(i, dummy.matrix);
-      helix.setColorAt(i, blockColor[i]);
+      vertexShader: SOLID_VERTEX,
+      fragmentShader: SOLID_FRAGMENT,
+      uniforms: {
+        uColor: { value: color },
+        uLight: { value: lightView },
+        uFog: { value: sky },
+        uFogRange: { value: fogRange },
+        uSweep: sweep,
+      },
+      side,
     });
-    helix.instanceMatrix.needsUpdate = true;
-    if (helix.instanceColor) helix.instanceColor.needsUpdate = true;
-  };
-  placeBlocks();
-  scene.add(helix);
-  const lit = new THREE.Color();
+
+  const flat = (color: THREE.Color, opacity: number, sweep: Uniform<number> = { value: 1 }, transparent = true) =>
+    new THREE.ShaderMaterial({
+      vertexShader: FLAT_VERTEX,
+      fragmentShader: FLAT_FRAGMENT,
+      uniforms: { uColor: { value: color }, uOpacity: { value: opacity }, uSweep: sweep, uTail: { value: 0 } },
+      transparent,
+      depthWrite: !transparent,
+      side: THREE.DoubleSide,
+    });
+
+  const dummy = new THREE.Object3D();
+  const tint = new THREE.Color();
 
   // ── the stopwatch ────────────────────────────────────────────────────
   const watch = new THREE.Group();
   scene.add(watch);
 
-  const points = watchPoints(small ? 5200 : 9500, random);
-  const n = points.length;
-  const target = new Float32Array(n * 3);
-  const start = new Float32Array(n * 3);
-  const info = new Float32Array(n * 4);
-  const angle = new Float32Array(n);
-  points.forEach((pt, i) => {
-    target.set([pt.x, pt.y, pt.z], i * 3);
-    // They start out as stars all round the watch, some behind the camera's
-    // resting point, so they stream past it on their way in.
-    const a = random() * Math.PI * 2;
-    const r = 3 + Math.sqrt(random()) * 17;
-    start.set([Math.sin(a) * r, Math.cos(a) * r, -25 + random() * 70], i * 3);
-    const part = PART_INDEX[pt.part];
-    const size = pt.part === 'hub' ? 0.08 : pt.part === 'back' ? 0.035 : 0.035 + random() * 0.025;
-    // The bezel lands first, the hand last.
-    const order = pt.part === 'hand' ? 0.55 + random() * 0.45 : random() * 0.85;
-    info.set([order, size, part, random()], i * 4);
-    angle[i] = pt.angle;
-  });
-  const watchGeometry = new THREE.BufferGeometry();
-  watchGeometry.setAttribute('position', new THREE.BufferAttribute(target, 3));
-  watchGeometry.setAttribute('aStart', new THREE.BufferAttribute(start, 3));
-  watchGeometry.setAttribute('aInfo', new THREE.BufferAttribute(info, 4));
-  watchGeometry.setAttribute('aAngle', new THREE.BufferAttribute(angle, 1));
-  const glow = (c: THREE.Color, k: number) => c.clone().multiplyScalar(k);
-  const watchUniforms = {
-    uTime: { value: 0 },
-    uMorph: { value: 0 },
-    uLap: { value: 0 },
-    uBurst: { value: 0 },
-    uScale: { value: 1 },
-    uMaxSize: { value: 48 * pixelRatio },
-    uSizeK: { value: 1 },
-    uAlphaK: { value: 1 },
-    uStar: { value: glow(white, 0.55) },
-    uBezel: { value: glow(light, 0.5) },
-    uBack: { value: glow(base, 0.3) },
-    uTick: { value: glow(light.clone().lerp(white, 0.6), 0.75) },
-    uTrim: { value: glow(light, 0.6) },
-    uHub: { value: glow(white, 1.6) },
-    uHand: { value: glow(accent, 1.4) },
-    uFill: { value: glow(accent.clone().lerp(white, 0.15), 0.8) },
-  };
-  const watchMaterial = (sizeK: number, alphaK: number) =>
-    new THREE.ShaderMaterial({
-      vertexShader: WATCH_VERTEX,
-      fragmentShader: WATCH_FRAGMENT,
-      // The same clock for both; only the size and the strength differ.
-      uniforms: { ...watchUniforms, uSizeK: { value: sizeK }, uAlphaK: { value: alphaK } },
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-  // Every particle over a wide, faint glow of its own.
-  const halo = new THREE.Points(watchGeometry, watchMaterial(5, 0.07));
-  const particles = new THREE.Points(watchGeometry, watchMaterial(1, 1));
-  for (const p of [halo, particles]) {
-    p.frustumCulled = false;
-    watch.add(p);
+  // The bezel, drawn round from twelve by a bead of the palette's colour,
+  // with the glass wiped in behind it; a pale cap rounds off the end it
+  // started from until the ring closes.
+  const TUBE = 0.15;
+  const sweep = { value: 0 };
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(R, TUBE, 24, 180), solid(pale, sweep, THREE.DoubleSide));
+  const bead = new THREE.Mesh(new THREE.SphereGeometry(TUBE * 1.3, 24, 16), solid(hue));
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(TUBE, 24, 16), solid(pale));
+  cap.position.set(0, R, 0);
+  // The glass is the one opaque flat part, so whatever drifts behind the
+  // watch stays behind it.
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(R - TUBE * 0.5, 128), flat(glassColor, 1, sweep, false));
+  glass.position.z = -0.02;
+  watch.add(bezel, bead, cap, glass);
+
+  // Sixty ticks; every fifth is a long one.
+  const ticks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), solid(white), TICK_COUNT);
+  ticks.frustumCulled = false;
+  watch.add(ticks);
+
+  // The lap's fill: a band of the palette's colour behind the ticks.
+  const lapSweep = { value: 0 };
+  const bandMaterial = flat(hue, 0.7, lapSweep);
+  const band = new THREE.Mesh(new THREE.RingGeometry(0.79 * R, 0.935 * R, 180, 1), bandMaterial);
+  band.position.z = 0.01;
+  watch.add(band);
+
+  // The crown on its stem, and a pusher either side of it at ten and two.
+  // They drop in together; only the crown clicks.
+  const top = new THREE.Group();
+  const crown = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.4, 20), solid(pale));
+  stem.position.y = R + 0.3;
+  const button = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.4, 6, 20), solid(pale));
+  button.rotation.z = Math.PI / 2;
+  button.position.y = R + 0.6;
+  crown.add(stem, button);
+  top.add(crown);
+  for (const side of [-1, 1]) {
+    const a = side * 0.72;
+    const pusher = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.16, 4, 16), solid(pale));
+    pusher.position.set(Math.sin(a) * (R + 0.26), Math.cos(a) * (R + 0.26), 0);
+    pusher.rotation.z = -a;
+    top.add(pusher);
   }
+  watch.add(top);
 
-  // The dark glass of the face, which becomes the window onto the app.
-  const faceMaterial = new THREE.MeshBasicMaterial({
-    color: base.clone().lerp(new THREE.Color('#000000'), 0.97),
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-  });
-  const face = new THREE.Mesh(new THREE.CircleGeometry(FACE_RADIUS * 1.02, 96), faceMaterial);
-  face.position.z = -0.08;
-  // Behind the hand and the hub, whatever the transparent sort decides.
-  face.renderOrder = -1;
-  watch.add(face);
-
-  // Two shockwaves at the go, the second a beat behind the first: soft
-  // bands, brightest a little inside their rim and fading out both ways.
-  const shockGeometry = new THREE.RingGeometry(0.972, 1.012, 160, 2);
-  const ringColor = glow(light.clone().lerp(white, 0.35), 1.5);
-  const shockShade = new Float32Array(shockGeometry.attributes.position.count * 3);
-  for (let i = 0; i < shockGeometry.attributes.position.count; i++) {
-    const r = Math.hypot(shockGeometry.attributes.position.getX(i), shockGeometry.attributes.position.getY(i));
-    const c = r > 0.98 && r < 1.005 ? ringColor : new THREE.Color(0, 0, 0);
-    shockShade.set([c.r, c.g, c.b], i * 3);
+  // The hub, and the hand: a needle pointing at twelve, tapering to its tip,
+  // with a short tail below the hub.
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.12, 32), solid(pale));
+  hub.rotation.x = Math.PI / 2;
+  hub.position.z = 0.16;
+  const handGeometry = new THREE.BoxGeometry(0.095, 0.9 * R, 0.05, 1, 6, 1);
+  handGeometry.translate(0, 0.29 * R, 0);
+  const handPositions = handGeometry.attributes.position;
+  for (let i = 0; i < handPositions.count; i++) {
+    const along = clamp01(handPositions.getY(i) / (0.74 * R));
+    handPositions.setX(i, handPositions.getX(i) * (1 - 0.6 * along));
   }
-  shockGeometry.setAttribute('color', new THREE.BufferAttribute(shockShade, 3));
-  const shocks = [0, 0.12].map((delay) => {
-    const material = new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const ring = new THREE.Mesh(shockGeometry, material);
-    ring.visible = false;
-    watch.add(ring);
-    return { ring, material, delay };
-  });
+  handGeometry.computeVertexNormals();
+  const hand = new THREE.Mesh(handGeometry, solid(hue));
+  hand.position.z = 0.1;
+  watch.add(hub, hand);
 
+  // The go's ring, running out from the bezel.
+  const pulseMaterial = flat(hue, 0);
+  const pulse = new THREE.Mesh(new THREE.RingGeometry(0.975, 1, 180, 1), pulseMaterial);
+  watch.add(pulse);
+
+  // ── the drift round it ───────────────────────────────────────────────
+  const field = new THREE.Group();
+  scene.add(field);
+  const blocks = floatingBlocks(small ? 12 : 16, random);
+  const blockMesh = new THREE.InstancedMesh(new RoundedBoxGeometry(1, 0.3, 0.62, 2, 0.08), solid(white), blocks.length);
+  blockMesh.frustumCulled = false;
+  blocks.forEach((b, i) => blockMesh.setColorAt(i, tint.copy(pale).multiplyScalar(b.shade)));
+  field.add(blockMesh);
+
+  const dustCount = small ? 160 : 260;
+  const dustPositions = new Float32Array(dustCount * 3);
+  const dustSeeds = new Float32Array(dustCount);
+  for (let i = 0; i < dustCount; i++) {
+    dustPositions.set([(random() - 0.5) * 36, (random() - 0.5) * 28, -16 + random() * 26], i * 3);
+    dustSeeds[i] = random();
+  }
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  dustGeometry.setAttribute('aSeed', new THREE.BufferAttribute(dustSeeds, 1));
   const pointScale = () => (height * pixelRatio) / (2 * Math.tan((FOV * Math.PI) / 360));
+  const dustUniforms = {
+    uTime: { value: 0 },
+    uScale: { value: pointScale() },
+    uMaxSize: { value: 3 * pixelRatio },
+    uFogRange: { value: fogRange },
+    uColor: { value: pale },
+  };
+  const dust = new THREE.Points(
+    dustGeometry,
+    new THREE.ShaderMaterial({
+      vertexShader: DUST_VERTEX,
+      fragmentShader: DUST_FRAGMENT,
+      uniforms: dustUniforms,
+      transparent: true,
+      depthWrite: false,
+    })
+  );
+  dust.frustumCulled = false;
+  scene.add(dust);
 
   const resize = (w: number, h: number) => {
     width = w;
@@ -500,72 +368,113 @@ export function createIntroScene(options: IntroSceneOptions): IntroScene {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     rest = restDistance(w / h, FOV);
-    placeBlocks();
+    placeFog();
     renderer.setSize(w, h, false);
-    watchUniforms.uScale.value = pointScale();
+    dustUniforms.uScale.value = pointScale();
   };
-  watchUniforms.uScale.value = pointScale();
 
   const watchRadius = () =>
     (WATCH_RADIUS / rest / Math.tan((FOV * Math.PI) / 360)) * (height / 2);
 
   const draw = (t: number, render = true): IntroSceneFrame => {
     const f = introFrame(t);
-    const distance = cameraDistance(f, rest);
 
-    // The camera rolls as it corkscrews down the helix, and levels out as it
-    // arrives.
-    const roll = (1 - f.flight) * 1.4;
-    camera.position.set(0, 0, distance);
-    camera.up.set(Math.sin(roll), Math.cos(roll), 0);
-    camera.lookAt(0, 0, 0);
+    // The camera swings round from its opening angle, rolling level as it
+    // comes, and settles square on before the dive.
+    const pose = cameraPose(f, rest);
+    camera.position.set(...cameraPosition(pose));
+    camera.up.set(0, 1, 0);
+    camera.lookAt(0, pose.lookY, 0);
+    camera.rotateZ(pose.roll);
+    camera.updateMatrixWorld();
+    lightView.copy(LIGHT).transformDirection(camera.matrixWorldInverse);
 
-    streakUniforms.uCamZ.value = distance;
-    streakUniforms.uStretch.value = f.warp * STREAK_LENGTH;
-    streaks.visible = f.warp > 0.01;
+    // The bezel and the glass, as far round as the bead has drawn them. The
+    // bead shrinks away as the ring closes.
+    sweep.value = f.bezel;
+    bezel.visible = glass.visible = f.bezel > 0;
+    bead.visible = f.bezel > 0 && f.bezel < 1;
+    cap.visible = bead.visible;
+    const head = f.bezel * TAU;
+    bead.position.set(Math.sin(head) * R, Math.cos(head) * R, 0);
+    bead.scale.setScalar(Math.max(1e-4, Math.min(1, (1 - f.bezel) * 8)));
 
-    // Each block flares as the camera passes it, and dims again behind it.
-    blocks.forEach((b, i) => {
-      const passed = distance - (rest + b.distance);
-      const flare = passed < 0 && passed > -6 ? (1 + passed / 6) ** 2 : 0;
-      helix.setColorAt(i, lit.copy(blockColor[i]).multiplyScalar(1 + flare * 3.5));
-    });
-    if (helix.instanceColor) helix.instanceColor.needsUpdate = true;
-    helix.visible = f.flight < 0.995;
-
-    // The watch turns to face the camera as it gathers, then just breathes.
-    const sway = Math.sin(t * 1.4) * 0.05 * (1 - f.lap);
-    watch.rotation.set(-f.tilt * 0.4, f.tilt * 0.95 + sway, 0);
-
-    watchUniforms.uTime.value = t;
-    watchUniforms.uMorph.value = f.morph;
-    watchUniforms.uLap.value = f.lap;
-    watchUniforms.uBurst.value = f.burst;
-    // The glass settles in once the bezel round it has mostly landed.
-    faceMaterial.opacity = 0.75 * Math.min(1, Math.max(0, f.morph * 2 - 0.8));
-
-    for (const s of shocks) {
-      const k = Math.max(0, Math.min(1, (f.shock * 0.7 - s.delay) / 0.7));
-      s.ring.visible = k > 0 && k < 1;
-      s.ring.scale.setScalar(WATCH_RADIUS * (1 + k * 3.2));
-      s.material.opacity = (1 - k) ** 2.2;
+    // The ticks pop up round the dial and drop onto it; then the hand lights
+    // each one it passes, brightest just behind it.
+    const lapAngle = f.lap * TAU;
+    for (let i = 0; i < TICK_COUNT; i++) {
+      const p = tickProgress(f.ticks, i);
+      const a = (i / TICK_COUNT) * TAU;
+      const long = i % 5 === 0;
+      const behind = lapAngle - a;
+      const lit = f.lap > 0 && behind >= 0;
+      const flare = lit ? Math.exp(-behind * 5) : 0;
+      const r = (long ? 0.86 : 0.895) * R;
+      const length = (long ? 0.36 : 0.15) * easeOutBack(p) * (1 + flare * 0.4);
+      dummy.position.set(Math.sin(a) * r, Math.cos(a) * r, 0.05 + (1 - easeOutCubic(p)) * 0.8);
+      dummy.rotation.set(0, 0, -a);
+      dummy.scale.set((long ? 0.08 : 0.04) * Math.min(1, p * 3) + 1e-4, length + 1e-4, long ? 0.06 : 0.04);
+      dummy.updateMatrix();
+      ticks.setMatrixAt(i, dummy.matrix);
+      if (lit) tint.copy(white).multiplyScalar(1 + flare);
+      else tint.copy(long ? pale : dim);
+      ticks.setColorAt(i, tint);
     }
+    ticks.instanceMatrix.needsUpdate = true;
+    if (ticks.instanceColor) ticks.instanceColor.needsUpdate = true;
+
+    // The crown falls in from above the frame and bounces to rest, then
+    // clicks down to start the lap, and again to stop it.
+    top.visible = f.crown > 0;
+    top.position.y = (1 - easeOutBack(f.crown)) * 3.2;
+    crown.position.y = -0.14 * f.press;
+
+    const grow = Math.max(easeOutBack(f.hand), 1e-4);
+    hub.visible = hand.visible = f.hand > 0;
+    hub.scale.setScalar(grow);
+    hand.scale.set(1, grow, 1);
+    // Clockwise is a negative turn about +z.
+    hand.rotation.z = -lapAngle;
+
+    // The fill trails the hand like a comet's tail, and at the go it lights
+    // all the way round.
+    lapSweep.value = f.lap;
+    band.visible = f.lap > 0;
+    bandMaterial.uniforms.uTail.value = 1 - clamp01(f.pulse * 5);
+
+    pulse.visible = f.pulse > 0 && f.pulse < 1;
+    pulse.scale.setScalar(R * (1 + easeOutCubic(f.pulse) * 2.6));
+    pulseMaterial.uniforms.uOpacity.value = 0.9 * (1 - f.pulse) ** 2;
+
+    // The blocks bob and turn, and the whole drift wheels slowly round.
+    blocks.forEach((b, i) => {
+      dummy.position.set(b.x, b.y + Math.sin(t * 0.7 + b.tilt[0]) * 0.15, b.z);
+      dummy.rotation.set(b.tilt[0] + t * b.spin, b.tilt[1] + t * b.spin * 0.6, b.tilt[2]);
+      dummy.scale.set(b.length, 1, 1);
+      dummy.updateMatrix();
+      blockMesh.setMatrixAt(i, dummy.matrix);
+    });
+    blockMesh.instanceMatrix.needsUpdate = true;
+    field.rotation.z = t * 0.05;
+    dustUniforms.uTime.value = t;
 
     if (render) renderer.render(scene, camera);
     return {
       ...f,
-      holeRadius: holeRadiusPx(f, distance, height, FOV),
-      flash: f.shock > 0 ? (1 - f.shock) ** 3 : 0,
+      holeRadius: holeRadiusPx(f, pose.distance, height, FOV),
+      flash: f.pulse > 0 ? 0.5 * (1 - f.pulse) ** 3 : 0,
     };
   };
 
   // Every program the shot needs, compiled off the main thread where the
   // browser can (KHR_parallel_shader_compile), then drawn once with
-  // everything showing — the shockwaves are hidden until the go, and a
-  // program's first use would otherwise stall that very frame.
+  // everything showing — most of the watch is hidden at the start, and a
+  // program's first use would otherwise stall the frame it appears in.
   const warmUp = async () => {
     draw(0, false);
-    for (const s of shocks) s.ring.visible = true;
+    scene.traverse((obj) => {
+      obj.visible = true;
+    });
     await renderer.compileAsync(scene, camera);
     renderer.render(scene, camera);
     draw(0);
@@ -579,7 +488,8 @@ export function createIntroScene(options: IntroSceneOptions): IntroScene {
       if (Array.isArray(material)) material.forEach((m) => m.dispose());
       else material?.dispose();
     });
-    helix.dispose();
+    ticks.dispose();
+    blockMesh.dispose();
     renderer.dispose();
     // The canvas leaves with the overlay; give its context back now rather
     // than whenever the collector gets to it.

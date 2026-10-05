@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BLOCK_RING,
   FACE_RADIUS,
-  FLIGHT_LENGTH,
   INTRO_TIMES,
-  WATCH_PARTS,
+  TICK_COUNT,
   WATCH_RADIUS,
   cameraDistance,
-  dialAngle,
-  helixBlocks,
+  cameraPose,
+  cameraPosition,
+  easeOutBack,
+  floatingBlocks,
   holeRadiusPx,
   introBackground,
   introFrame,
   introGreeting,
   restDistance,
   seededRandom,
-  watchPoints,
+  tickProgress,
 } from './intro';
 
 const T = INTRO_TIMES;
@@ -22,9 +24,15 @@ const FOV = 55;
 const samples = Array.from({ length: 141 }, (_, i) => i * 0.025);
 
 describe('introFrame', () => {
-  it('opens at full warp with nothing gathered yet', () => {
+  it('opens on an empty sky, with the camera at its opening angle', () => {
     const f = introFrame(0);
-    expect(f).toMatchObject({ flight: 0, warp: 1, morph: 0, tilt: 1, lap: 0, burst: 0, hole: 0, done: false });
+    expect(f).toMatchObject({ orbit: 0, bezel: 0, ticks: 0, crown: 0, hand: 0, lap: 0, pulse: 0, hole: 0, done: false });
+  });
+
+  it('builds the watch before the hand sets off', () => {
+    const f = introFrame(T.lapStart);
+    expect(f).toMatchObject({ bezel: 1, ticks: 1, crown: 1, lap: 0 });
+    expect(f.hand).toBeGreaterThan(0.9);
   });
 
   it('closes the lap exactly at the go, and only then opens the face', () => {
@@ -37,11 +45,11 @@ describe('introFrame', () => {
   it('is done at the end, with the camera through the dial', () => {
     expect(introFrame(T.end - 0.01).done).toBe(false);
     const f = introFrame(T.end);
-    expect(f).toMatchObject({ done: true, flight: 1, morph: 1, lap: 1, dive: 1, hole: 1, tilt: 0 });
+    expect(f).toMatchObject({ done: true, orbit: 1, bezel: 1, lap: 1, dive: 1, hole: 1, pulse: 1 });
   });
 
   it('only ever moves forward', () => {
-    for (const key of ['flight', 'morph', 'lap', 'burst', 'shock', 'dive', 'hole'] as const) {
+    for (const key of ['orbit', 'bezel', 'ticks', 'crown', 'hand', 'lap', 'pulse', 'dive', 'hole'] as const) {
       const values = samples.map((t) => introFrame(t)[key]);
       values.forEach((v, i) => {
         expect(v).toBeGreaterThanOrEqual(0);
@@ -51,11 +59,28 @@ describe('introFrame', () => {
     }
   });
 
-  it('streaks hardest at the start and goes still once the flight lands', () => {
-    const warp = samples.filter((t) => t <= T.flightEnd).map((t) => introFrame(t).warp);
-    warp.forEach((w, i) => i > 0 && expect(w).toBeLessThanOrEqual(warp[i - 1]));
-    expect(introFrame(T.flightEnd).warp).toBe(0);
-    expect(introFrame(T.go + 0.1).warp).toBeGreaterThan(0);
+  it('clicks the crown just before the lap starts and just before it stops', () => {
+    expect(introFrame(T.lapStart - 0.04).press).toBeCloseTo(1);
+    expect(introFrame(T.go - 0.04).press).toBeCloseTo(1);
+    for (const t of [0, T.ticksEnd, (T.lapStart + T.go) / 2, T.end]) expect(introFrame(t).press).toBe(0);
+  });
+});
+
+describe('the ticks', () => {
+  it('pop up one after another, clockwise from twelve', () => {
+    expect(tickProgress(0, 0)).toBe(0);
+    expect(tickProgress(1, TICK_COUNT - 1)).toBe(1);
+    for (const clock of [0.2, 0.5, 0.8]) {
+      for (let i = 1; i < TICK_COUNT; i++) {
+        expect(tickProgress(clock, i)).toBeLessThanOrEqual(tickProgress(clock, i - 1));
+      }
+    }
+  });
+
+  it('land with a pop past their mark and back', () => {
+    expect(easeOutBack(0)).toBeCloseTo(0);
+    expect(easeOutBack(1)).toBeCloseTo(1);
+    expect(Math.max(...samples.map((t) => easeOutBack(t / 3.5)))).toBeGreaterThan(1.05);
   });
 });
 
@@ -75,12 +100,41 @@ describe('the camera', () => {
     expect(projected(WATCH_RADIUS * 1.05, d) / Math.min(1, aspect)).toBeLessThan(1);
   });
 
-  it('flies in from the far end of the helix, rests, then dives through the dial', () => {
+  it('opens in close and off to the side, and swings round to face the watch square on', () => {
     const rest = restDistance(1.6, FOV);
-    expect(cameraDistance(introFrame(0), rest)).toBeCloseTo(rest + FLIGHT_LENGTH);
-    expect(cameraDistance(introFrame(T.flightEnd), rest)).toBeCloseTo(rest);
+    const opening = cameraPose(introFrame(0), rest);
+    expect(opening.distance).toBeCloseTo(rest / 2);
+    expect(Math.abs(opening.azimuth)).toBeGreaterThan(1);
+    expect(opening.elevation).toBeGreaterThan(0.3);
+    for (const t of [T.orbitEnd, T.go]) {
+      const pose = cameraPose(introFrame(t), rest);
+      for (const angle of [pose.azimuth, pose.elevation, pose.roll, pose.lookY]) expect(angle).toBeCloseTo(0);
+      const [x, y, z] = cameraPosition(pose);
+      expect([x, y, z].map((c) => c + 0)).toEqual([0, 0, rest]);
+    }
+  });
+
+  it('rests, then dives through the dial', () => {
+    const rest = restDistance(1.6, FOV);
+    expect(cameraDistance(introFrame(T.orbitEnd), rest)).toBeCloseTo(rest);
     expect(cameraDistance(introFrame(T.go), rest)).toBeCloseTo(rest);
     expect(cameraDistance(introFrame(T.diveEnd), rest)).toBeCloseTo(0.35);
+  });
+
+  it.each([
+    [1920, 1080],
+    [375, 812],
+  ])('never flies into a drifting block on a %sx%s screen', (w, h) => {
+    const rest = restDistance(w / h, FOV);
+    const blocks = floatingBlocks(32, seededRandom(0x5eed));
+    for (const t of samples) {
+      const [x, y, z] = cameraPosition(cameraPose(introFrame(t), rest));
+      // In front of the dial all the way, and the blocks are all behind it.
+      expect(z).toBeGreaterThan(0.3);
+      for (const b of blocks) {
+        expect(Math.hypot(x - b.x, y - b.y, z - b.z)).toBeGreaterThan(b.length / 2 + 0.5);
+      }
+    }
   });
 });
 
@@ -123,55 +177,22 @@ describe('the caption and the sky', () => {
   });
 });
 
-describe('the watch', () => {
-  it('reads the dial clockwise from twelve', () => {
-    expect(dialAngle(0, 1)).toBeCloseTo(0);
-    expect(dialAngle(1, 0)).toBeCloseTo(Math.PI / 2);
-    expect(dialAngle(0, -1)).toBeCloseTo(Math.PI);
-    expect(dialAngle(-1, 0)).toBeCloseTo((3 * Math.PI) / 2);
-  });
-
-  it('shares the particles out between the parts, and places every one on its part', () => {
-    const points = watchPoints(5000, seededRandom(7));
-    expect(points).toHaveLength(5000);
-    const R = WATCH_RADIUS;
-    for (const { kind, share } of WATCH_PARTS) {
-      expect(points.filter((p) => p.part === kind).length).toBeCloseTo(5000 * share, -1);
-    }
-    for (const p of points) {
-      const r = Math.hypot(p.x, p.y);
-      expect(p.angle).toBeGreaterThanOrEqual(0);
-      expect(p.angle).toBeLessThan(Math.PI * 2);
-      if (p.part === 'bezel') expect(Math.abs(r - R)).toBeLessThanOrEqual(0.141);
-      // The ticks and everything inside them stay off the face's rim, which
-      // the opening follows.
-      if (p.part === 'ticks') {
-        expect(r).toBeGreaterThanOrEqual(R * 0.79);
-        expect(r).toBeLessThanOrEqual(R * 0.93);
-      }
-      if (p.part === 'hub') expect(r).toBeLessThanOrEqual(0.2);
-      if (p.part === 'hand') expect(r).toBeLessThanOrEqual(R * 0.75);
-      if (p.part === 'crown') expect(p.y).toBeGreaterThan(R);
+describe('floatingBlocks', () => {
+  it('rings the watch, off its axis and behind its dial', () => {
+    const blocks = floatingBlocks(40, seededRandom(3));
+    expect(blocks).toHaveLength(40);
+    for (const b of blocks) {
+      const r = Math.hypot(b.x, b.y);
+      expect(r).toBeGreaterThanOrEqual(BLOCK_RING.inner);
+      expect(r).toBeLessThanOrEqual(BLOCK_RING.outer);
+      expect(b.z).toBeLessThanOrEqual(BLOCK_RING.near);
+      expect(b.z).toBeGreaterThanOrEqual(BLOCK_RING.far);
+      expect(b.shade).toBeGreaterThan(0);
+      expect(b.shade).toBeLessThanOrEqual(1);
     }
   });
 
   it('is the same shot every time', () => {
-    expect(watchPoints(300, seededRandom(1))).toEqual(watchPoints(300, seededRandom(1)));
-  });
-});
-
-describe('helixBlocks', () => {
-  it('lays twelve blocks to a turn, evenly from near to far', () => {
-    const blocks = helixBlocks(25, 6, 54, ['#111111', '#222222'], seededRandom(3));
-    expect(blocks).toHaveLength(25);
-    expect(blocks[0].distance).toBe(6);
-    expect(blocks[24].distance).toBe(54);
-    // A full turn later, a block is back where the first one was.
-    expect(blocks[12].angle - blocks[0].angle).toBeCloseTo(Math.PI * 2, 0);
-    for (const b of blocks) {
-      expect(['#111111', '#222222']).toContain(b.color);
-      expect(b.length).toBeGreaterThan(0.4);
-      expect(b.length).toBeLessThan(1.25);
-    }
+    expect(floatingBlocks(20, seededRandom(1))).toEqual(floatingBlocks(20, seededRandom(1)));
   });
 });
