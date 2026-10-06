@@ -48,8 +48,8 @@ interface StripDay {
 }
 
 function weekdayName(day: string): string {
-  const [, m, d] = day.split('-').map(Number);
-  const dt = new Date(2000, m - 1, d);
+  const [y, m, d] = day.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', '');
 }
 
