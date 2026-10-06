@@ -87,3 +87,8 @@
   .cal-deadline-flag::after { content: ''; position: absolute; inset: -11px; }
   .cal-upcoming-deadline, .cal-deadline-list-item, .cal-deadline-linked-task { min-height: 44px; }
 }
+.cal-backlog-deadline { --deadline-tone: var(--text-secondary); color: var(--deadline-tone); cursor: pointer; }
+.cal-backlog-deadline.soon { --deadline-tone: color-mix(in srgb, var(--accent-gold) 60%, var(--text-primary)); }
+.cal-backlog-deadline.overdue, .cal-backlog-deadline.plan-late { --deadline-tone: color-mix(in srgb, var(--accent-red) 75%, var(--text-primary)); font-weight: 600; }
+.cal-backlog-deadline.done { opacity: .6; text-decoration: line-through; }
+@media (hover: hover) and (pointer: fine) { .cal-backlog-deadline:hover { border-color: var(--deadline-tone); } }

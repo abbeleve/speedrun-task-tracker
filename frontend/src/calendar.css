@@ -1443,7 +1443,11 @@
 /* ── backlog rail ────────────────────────────────────────────── */
 
 .cal-backlog {
-  width: 250px;
+  position: relative;
+  width: var(--backlog-width, 300px);
+  /* However wide it was dragged on a big screen, a small one keeps most of
+     its width for the grid. */
+  max-width: 45vw;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1463,17 +1467,73 @@
   border-style: dashed;
 }
 
+/* The rail's left edge, half in the gap before the sheet: drag it to make
+   the rail wider or narrower. A grip shows on hover. */
+.cal-backlog-resize {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: -10px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.cal-backlog-resize::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--text-secondary);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 150ms ease;
+}
+
+.cal-backlog-resize:hover::after,
+.cal-backlog-resize:focus-visible::after,
+.cal-backlog-resize:active::after {
+  opacity: 0.7;
+}
+
+.cal-backlog-resize:focus-visible {
+  outline: none;
+}
+
+/* Nothing to drag with a finger. */
+@media (hover: none) {
+  .cal-backlog-resize {
+    display: none;
+  }
+}
+
 .cal-backlog-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
 }
 
 .cal-backlog-head h3 {
+  margin-right: auto;
   font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
   color: var(--cal-ink);
+  white-space: nowrap;
+}
+
+.cal-backlog-total {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Same dark pill track as the toolbar switches. */
@@ -1512,37 +1572,127 @@
   line-height: 1.3;
 }
 
+.cal-backlog-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--track-bg);
+  color: var(--text-dim);
+  transition: border-color 150ms ease;
+}
+
+.cal-backlog-search:focus-within {
+  border-color: var(--accent-blue);
+  color: var(--text-secondary);
+}
+
+.cal-backlog-search svg {
+  flex: none;
+}
+
+.cal-backlog-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
 .cal-backlog-list {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
   overflow-y: auto;
   min-height: 0;
 }
 
+/* One day's tasks under its name, how many there are and how long they run. */
+.cal-backlog-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cal-backlog-group-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  padding: 0 2px;
+}
+
+.cal-backlog-group-label {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cal-ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+button.cal-backlog-group-label {
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.cal-backlog-group-label:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.cal-backlog-group--overdue .cal-backlog-group-label {
+  color: var(--accent-red);
+}
+
+.cal-backlog-group-sum {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-backlog-group-action {
+  margin-left: auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.cal-backlog-group-action:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* A backlog card: the task's emoji on a badge of its colour, then all of its
+   name — never cut short — the start of its notes and a row of facts. */
 .cal-backlog-card {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border-radius: 16px;
-  background: var(--card-fill);
-  color: #18181b;
-  font-size: 0.78rem;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 6px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--track-bg);
+  color: var(--text-primary);
   cursor: grab;
-}
-
-/* The chip parts are dressed for the month grid; on a backlog card they take
-   the card's own ink. */
-.cal-backlog-card .cal-chip-name {
-  color: inherit;
-  font-weight: 600;
-}
-
-.cal-backlog-card .cal-chip-time {
-  color: inherit;
-  opacity: 0.7;
-  font-weight: 500;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .cal-backlog-card:active {
@@ -1551,31 +1701,191 @@
 
 .cal-backlog-card.pinned {
   cursor: pointer;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 45%, transparent);
+  border-style: dashed;
 }
 
-.cal-backlog-save-template {
+.cal-backlog-card-emoji {
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--card-fill);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.cal-backlog-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cal-backlog-card-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The notes are a reminder of what the task is about, not the whole of it:
+   two lines here, the rest in the editor. */
+.cal-backlog-card-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.cal-backlog-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.cal-backlog-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--track-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-backlog-chip svg {
+  flex: none;
+}
+
+.cal-backlog-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-backlog-chip--day.overdue {
+  color: var(--accent-red);
+}
+
+.cal-backlog-card-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: -3px;
+}
+
+.cal-backlog-act {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: inherit;
-  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+}
+
+.cal-backlog-act:hover:not(:disabled) {
+  background: var(--track-bg);
+  color: var(--text-primary);
+}
+
+.cal-backlog-act--place:hover:not(:disabled) {
+  color: var(--accent-green);
 }
 
 .cal-backlog-save-template:hover {
   color: var(--accent-gold);
 }
 
-.cal-backlog-pin {
-  flex: none;
-  font-size: 0.68rem;
+.cal-backlog-act:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* With a mouse the actions stay quiet until the card is pointed at; a
+   finger has no hover, so they keep their full strength there. */
+@media (hover: hover) and (pointer: fine) {
+  .cal-backlog-card:hover {
+    border-color: color-mix(in srgb, var(--card-fill) 55%, var(--border));
+    box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.45);
+  }
+
+  .cal-backlog-act:not(:disabled) {
+    opacity: 0.6;
+  }
+
+  .cal-backlog-card:hover .cal-backlog-act:not(:disabled),
+  .cal-backlog-act:focus-visible {
+    opacity: 1;
+  }
 }
 
 .cal-backlog-empty {
   font-size: 0.75rem;
+  line-height: 1.4;
   color: var(--text-dim);
+}
+
+/* How the rail and the grid are worked, folded away under one line. */
+.cal-backlog-help {
+  flex: none;
+  max-height: 45%;
+  overflow-y: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+}
+
+.cal-backlog-help summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cal-backlog-help summary:hover {
+  color: var(--text-primary);
+}
+
+/* Shown or hidden by pointer type further down, so no display of its own. */
+ul.cal-backlog-hint {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+ul.cal-backlog-hint li + li {
+  margin-top: 4px;
+}
+
+.cal-backlog-hint svg {
+  vertical-align: -2px;
 }
 
 .cal-template-page,
@@ -2222,7 +2532,7 @@
 /* calendar.css is loaded after App.css, so restore the animated background on
    calendar surfaces whose base rules use the `background` shorthand. */
 .cal-block.task-color-flow,
-.cal-backlog-card.task-color-flow,
+.cal-backlog-card-emoji.task-color-flow,
 .cal-chip.task-color-flow,
 .cal-reminder.task-color-flow,
 .cal-flow-preview.task-color-flow {
@@ -2394,7 +2704,12 @@
 
   .cal-backlog {
     width: auto;
-    max-height: min(240px, 38dvh);
+    max-width: none;
+    max-height: min(300px, 42dvh);
+  }
+
+  .cal-backlog-resize {
+    display: none;
   }
 }
 

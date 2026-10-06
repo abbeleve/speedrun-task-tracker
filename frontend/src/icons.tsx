@@ -327,3 +327,11 @@ export const IconSnowflake = (p: IconProps) => (
     <path d="M14.5 20 12 17.5 9.5 20M6.3 18.2l.9-3.45-3.4-.95M3.8 10.2l3.4-.95-.9-3.45" />
   </Icon>
 );
+
+// The backlog's search field.
+export const IconSearch = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m16 16 4.5 4.5" />
+  </Icon>
+);

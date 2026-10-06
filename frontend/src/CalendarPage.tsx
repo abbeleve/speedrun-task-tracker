@@ -86,6 +86,9 @@ import { CUT_KEY_CODE, NOW_PULL_PX, armsCut, cloneTask, cutTarget, cutTask } fro
 import { taskFromTemplate } from './taskTemplates';
 import type { DialogAnchor } from './TaskDialog';
 import TaskDialog from './TaskDialog';
+import BacklogTasks, { BacklogResizer } from './BacklogTasks';
+import type { BacklogSlot } from './backlog';
+import { backlogWorkSec, clampBacklogWidth, pluralTasks } from './backlog';
 import SessionPopover from './SessionPopover';
 import { sequenceGradientColors, sequenceGradientForTasks } from './sequenceGradients';
 import { taskColorAnimationClass, taskColorStyle } from './taskAppearance';
@@ -336,6 +339,10 @@ function CalendarPage({
     return saved === null ? !isPhoneScreen() : saved !== 'false';
   });
   const [backlogTab, setBacklogTab] = useState<'tasks' | 'templates'>('tasks');
+  // Per device, like whether the rail is shown: screens differ in what fits.
+  const [backlogWidth, setBacklogWidth] = useState(() =>
+    clampBacklogWidth(Number(localStorage.getItem('speedrun_backlog_width')))
+  );
   const [deadlineEditor, setDeadlineEditor] = useState<{
     deadline: Deadline; isNew: boolean; onCreated?: (id: string) => void;
   } | null>(null);
@@ -437,6 +444,10 @@ function CalendarPage({
   useEffect(() => {
     localStorage.setItem('speedrun_backlog_visible', String(backlogVisible));
   }, [backlogVisible]);
+
+  useEffect(() => {
+    localStorage.setItem('speedrun_backlog_width', String(backlogWidth));
+  }, [backlogWidth]);
 
   useEffect(() => {
     let active = true;
@@ -1703,6 +1714,33 @@ function CalendarPage({
       });
     },
     [slotAt, store]
+  );
+
+  // «В план» on a backlog card: the task takes the free slot the card offered.
+  // A day that is not on screen is brought into view, so the block is seen
+  // landing rather than just leaving the backlog.
+  const placeFromBacklog = useCallback(
+    (task: Task, slot: BacklogSlot) => {
+      if (task.pinned) return;
+      store.patchTask(task.id, {
+        day: slot.day,
+        start: slot.start,
+        status: 'in-progress',
+      });
+      if (!visibleDays.includes(slot.day)) setAnchor(slot.day);
+    },
+    [store, visibleDays]
+  );
+
+  // Tasks left over from days already gone are planned for today instead —
+  // still in the backlog, still without a time.
+  const backlogToToday = useCallback(
+    (items: Task[]) => {
+      store.patchTasks(
+        items.filter((task) => !task.pinned).map((task) => ({ id: task.id, patch: { day: today } }))
+      );
+    },
+    [store, today]
   );
 
   // ── navigation ───────────────────────────────────────────────────
@@ -3814,9 +3852,16 @@ function CalendarPage({
         {backlogVisible && <aside
           className={`cal-backlog${gesture?.kind === 'move' && gesture.toBacklog ? ' drop-target' : ''}`}
           ref={backlogTab === 'tasks' ? backlogRef : null}
+          style={{ '--backlog-width': `${backlogWidth}px` } as React.CSSProperties}
         >
+          <BacklogResizer width={backlogWidth} onWidth={setBacklogWidth} />
           <header className="cal-backlog-head">
             <h3>🗂 Бэклог</h3>
+            {openTasks.length > 0 && (
+              <span className="cal-backlog-total" title="Задач в бэклоге · запланированной работы">
+                {openTasks.length} {pluralTasks(openTasks.length)} · {dur(backlogWorkSec(openTasks))}
+              </span>
+            )}
             {backlogTab === 'tasks' && <button
                 type="button"
                 className="cal-btn cal-btn--icon"
@@ -3835,54 +3880,23 @@ function CalendarPage({
             <button type="button" role="tab" aria-selected={backlogTab === 'tasks'} className={backlogTab === 'tasks' ? 'active' : ''} onClick={() => setBacklogTab('tasks')}>Задачи</button>
             <button type="button" role="tab" aria-selected={backlogTab === 'templates'} className={backlogTab === 'templates' ? 'active' : ''} onClick={() => setBacklogTab('templates')}>Шаблоны</button>
           </div>
-          {backlogTab === 'tasks' ? <>
-            <p className="cal-backlog-hint cal-backlog-hint--mouse">
-              Перетащи карточку на сетку, чтобы поставить время. Перетащи блок с сетки сюда — вернуть в бэклог.
-              Зажми ЛКМ на пустом месте сетки на секунду и веди — выделишь пачку блоков.
-              С Ctrl веди сразу, без ожидания — хоть с пустого места, хоть с блока.
-              Рамка выделяет только задетые блоки внутри одного дня — параллельные можно выбрать по отдельности.
-              Ctrl + клик по блоку — добавить его в пачку или убрать.
-              Зажми C и кликни по блоку — разрежешь его на две части в этом месте;
-              у красной линии «сейчас» разрез прилипает к текущему времени
-            </p>
-            <p className="cal-backlog-hint cal-backlog-hint--touch">
-              Нажми на карточку и выбери «В календарь», чтобы поставить время. Удерживай блок на
-              сетке, чтобы перетащить его — в том числе сюда, обратно в бэклог.
-            </p>
-            <div className="cal-backlog-list" role="tabpanel">
-              {openTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={`cal-backlog-card ${taskColorAnimationClass(task.colorAnimation)}${task.pinned ? ' pinned' : ''}`}
-                  style={taskColorStyle(task.color, task.colorAnimation) as React.CSSProperties}
-                  draggable={!task.pinned}
-                  onDragStart={(e) => {
-                    if (task.pinned) {
-                      e.preventDefault();
-                      return;
-                    }
-                    e.dataTransfer.setData('text/plain', task.id);
-                  }}
-                  onClick={(e) => openDialog(task, false, e)}
-                >
-                  <span className="cal-chip-emoji">{task.emoji}</span>
-                  <span className="cal-chip-name">{task.name}</span>
-                  <span className="cal-chip-time">{dur(task.plannedTime)}</span>
-                  {deadlineBadge(task, true)}
-                  {task.pinned && <span className="cal-backlog-pin" title="Закреплено">📌</span>}
-                  <button
-                    type="button"
-                    className="cal-backlog-save-template"
-                    title="Сохранить как шаблон"
-                    aria-label={`Сохранить «${task.name}» как шаблон`}
-                    onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onClick={(e) => { e.stopPropagation(); startTemplate(task); }}
-                  >☆</button>
-                </div>
-              ))}
-              {openTasks.length === 0 && <p className="cal-backlog-empty">Пусто</p>}
-            </div>
-          </> : <div className="cal-template-page" role="tabpanel">
+          {backlogTab === 'tasks' ? (
+            <BacklogTasks
+              tasks={openTasks}
+              plan={tasks}
+              now={now}
+              today={today}
+              habits={habits}
+              deadlineById={deadlineById}
+              latePlans={latePlans}
+              onOpen={(task, e) => openDialog(task, false, e)}
+              onSaveTemplate={startTemplate}
+              onPlace={placeFromBacklog}
+              onMoveToToday={backlogToToday}
+              onShowDay={setAnchor}
+              onOpenDeadline={openDeadline}
+            />
+          ) : <div className="cal-template-page" role="tabpanel">
             <p className="cal-backlog-hint">Шаблон хранит параметры задачи без даты и времени. Создай из него новую задачу в бэклоге, когда она понадобится.</p>
             <label className="cal-template-day">День для новой задачи
               <input type="date" value={templateDay} onChange={(e) => setTemplateDay(e.target.value)} />
