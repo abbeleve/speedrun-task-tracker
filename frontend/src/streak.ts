@@ -6,18 +6,41 @@
 // puts it at risk. Each day is judged against the quota it had then
 // (habitTargetOn), like every other view of the habit's past.
 //
+// Savers (заморозки): one comes every calendar week, Monday-first, from the
+// week the streak was switched on (`streakSince`), and the unused ones pile
+// up. A day that ends with its quota unmet while a streak is running spends
+// one by itself: the streak is frozen — kept, not grown — instead of burning
+// out. Only once no saver is left does a missed day break it. Days before
+// `streakSince` had no savers, so a miss there breaks the streak as before.
+// Like the streak, the savers are derived from the history, never stored.
+//
 // The backend counts the same way (backend/app/streak.py) to push a warning
 // 3, 2 and 1 hours before midnight; streakWarningText is worded like its own.
 
 import type { Habit, HabitEntry, Task } from './types';
 import { defaultUnit, habitTargetOn, isHabitComplete } from './habits';
 import { isDone } from './schedule';
-import { shiftDayKey } from './history';
+import { shiftDayKey, startOfWeek } from './history';
 
 export interface HabitStreak {
   days: number; // days in a row the quota was met — today included once met
   todayDone: boolean; // today's quota is met: the fire is lit
   left: number; // what is still missing to today's quota, in the habit's units
+  savers: number; // savers in hand, this week's included
+  frozen: string[]; // the past days a saver kept the streak alive, oldest first
+}
+
+// The week savers first came: habits that had the streak on before savers
+// existed collect them from here.
+export const STREAK_SAVERS_FROM = '2026-10-05';
+
+export function streakSince(habit: Habit): string {
+  return habit.streakSince || STREAK_SAVERS_FROM;
+}
+
+// A saver comes on the day the streak was switched on and every Monday after.
+function gainsSaver(date: string, since: string): boolean {
+  return date === since || startOfWeek(date) === date;
 }
 
 // Every day's progress for one habit at once — the same sum as habitTotal,
@@ -51,12 +74,41 @@ export function habitStreak(
 ): HabitStreak {
   const totals = dailyTotals(habit, tasks, entries);
   const met = (date: string) => isHabitComplete(totals.get(date) ?? 0, habitTargetOn(habit, date));
+  const since = streakSince(habit);
+  // Up to the first day with savers the run is counted back plainly — a day
+  // with nothing recorded is never met, so the walk always ends — …
+  const first = since < today ? since : today;
+  let run = 0;
+  for (let date = shiftDayKey(first, -1); met(date); date = shiftDayKey(date, -1)) run++;
+  // … and from there it is walked forward, the savers arriving and being spent
+  // in the order the days came.
+  let savers = 0;
+  const frozen: string[] = [];
+  for (let date = first; date < today; date = shiftDayKey(date, 1)) {
+    if (gainsSaver(date, since)) savers++;
+    if (met(date)) {
+      run++;
+    } else if (run > 0 && savers > 0) {
+      savers--;
+      frozen.push(date);
+    } else {
+      run = 0;
+    }
+  }
+  // Today's saver is already in hand; it is only spent once the day is over.
+  if (today >= since && gainsSaver(today, since)) savers++;
   const todayDone = met(today);
-  let days = todayDone ? 1 : 0;
-  // A day with nothing recorded is never met, so the walk always ends.
-  for (let date = shiftDayKey(today, -1); met(date); date = shiftDayKey(date, -1)) days++;
   const left = Math.max(0, habitTargetOn(habit, today) - (totals.get(today) ?? 0));
-  return { days, todayDone, left };
+  return { days: run + (todayDone ? 1 : 0), todayDone, left, savers, frozen };
+}
+
+// 1 заморозка, 2 заморозки, 5 заморозок.
+export function pluralSavers(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'заморозка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'заморозки';
+  return 'заморозок';
 }
 
 // The hours before midnight at which an unmet streak is warned about.
@@ -85,11 +137,21 @@ export function formatAmount(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-// "Серия 12 дней сгорит через 3 ч — осталось 4 раз", or, with no streak to
-// lose yet, a nudge to start one.
-export function streakWarningText(habit: Habit, days: number, left: number, hours: number): string {
+// "Серия 12 дней сгорит через 3 ч — осталось 4 раз"; with a saver in hand,
+// "Серию 12 дней через 3 ч спасёт заморозка — …"; with no streak to lose yet,
+// a nudge to start one.
+export function streakWarningText(
+  habit: Habit,
+  days: number,
+  left: number,
+  hours: number,
+  savers = 0
+): string {
   const unit = habit.unit || defaultUnit(habit.format);
   const rest = `осталось ${formatAmount(left)}${unit ? ` ${unit}` : ''}`;
+  if (days > 0 && savers > 0) {
+    return `Серию ${days} ${pluralDays(days)} через ${hours} ч спасёт заморозка — ${rest}`;
+  }
   if (days > 0) return `Серия ${days} ${pluralDays(days)} сгорит через ${hours} ч — ${rest}`;
   return `До конца дня ${hours} ч — ${rest}. Начни серию!`;
 }

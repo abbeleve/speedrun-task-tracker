@@ -19,7 +19,7 @@ import HabitDial from './HabitDial';
 import HabitGauge from './HabitGauge';
 import ChartSwitch from './ChartSwitch';
 import type { ChartSwitchOption } from './ChartSwitch';
-import { IconChartDots, IconChartGauge } from './icons';
+import { IconChartDots, IconChartGauge, IconSnowflake } from './icons';
 
 interface HabitGridProps {
   store: HabitStore;
@@ -205,9 +205,11 @@ interface HabitCardProps {
 //       gauge — a fan of capsules around today's value and a pill saying how
 //               much is left, over two bars: yesterday and the last 7 days
 //   • for a streak habit, a little fire in the chart's top-left corner with
-//     the days in a row in it; meeting today's quota sets the card ablaze
-//     (StreakBurst) and flies the fire into it
-//   • a 7-day strip of "did I hit it" cells, only when the toggle is open
+//     the days in a row in it and the savers in hand under it; meeting
+//     today's quota sets the card ablaze (StreakBurst) and flies the fire
+//     into it
+//   • a 7-day strip of "did I hit it" cells, only when the toggle is open —
+//     a missed day a saver covered is iced over
 //   • − / + steppers at the bottom, with the step itself shown between them
 //     Click anywhere on the card and the number keys retype that step, so
 //     "+25" is four keystrokes away without the card growing a single control.
@@ -266,9 +268,15 @@ function HabitCard({
       setStepDraft('');
     }
   };
+  const streak = useMemo(
+    () => (habit.streak ? habitStreak(habit, date, tasks, entries) : null),
+    [habit, date, tasks, entries]
+  );
+  const frozenDays = useMemo(() => new Set(streak?.frozen), [streak]);
   const dayStatuses = days.map((d) => ({
     ...d,
     ok: isHabitDoneOn(habit, d.date, tasks, entries),
+    frozen: frozenDays.has(d.date),
   }));
   const doneCount = dayStatuses.filter((d) => d.ok).length;
   const progress = target > 0
@@ -285,10 +293,6 @@ function HabitCard({
   const yesterdayPct = habitPercent(yesterdayTotal, yesterdayTarget);
   const status = gaugeStatus(today, target, unit);
 
-  const streak = useMemo(
-    () => (habit.streak ? habitStreak(habit, date, tasks, entries) : null),
-    [habit, date, tasks, entries]
-  );
   // The streak being celebrated (today's count) while the fire plays.
   const [burst, setBurst] = useState<number | null>(null);
   // Bumped as the celebration lands in the badge, to pop it.
@@ -372,6 +376,7 @@ function HabitCard({
             lit={burst === null && streak.todayDone}
             warnHours={warnHours}
             unit={unit}
+            savedYesterday={frozenDays.has(yesterday)}
             pop={pop}
             flameRef={badgeFireRef}
           />
@@ -471,9 +476,12 @@ function HabitCard({
               return (
                 <li
                   key={d.date}
-                  className={`habit-card-history-cell${d.ok ? ' ok' : ''}${isToday ? ' today' : ''}`}
-                  title={`${d.date}: ${d.ok ? 'выполнено' : 'не выполнено'}`}
+                  className={`habit-card-history-cell${d.ok ? ' ok' : ''}${d.frozen ? ' frozen' : ''}${isToday ? ' today' : ''}`}
+                  title={`${d.date}: ${
+                    d.ok ? 'выполнено' : d.frozen ? 'не выполнено — серию спасла заморозка' : 'не выполнено'
+                  }`}
                 >
+                  {d.frozen && <IconSnowflake className="habit-card-history-frost" size={9} strokeWidth={2.5} />}
                   <span className="habit-card-history-weekday">{d.weekdayShort}</span>
                   <span className="habit-card-history-day">{dayNum}</span>
                 </li>

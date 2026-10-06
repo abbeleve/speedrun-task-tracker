@@ -196,6 +196,10 @@ export interface Habit {
   // Count the days in a row the quota was met, with a fire on the card and
   // warnings when the day runs low (see streak.ts). Absent → off.
   streak?: boolean;
+  // 'YYYY-MM-DD' (local): the day the streak was first switched on. Its
+  // savers come weekly from then (see streak.ts). Absent on habits that had
+  // the streak before savers existed → STREAK_SAVERS_FROM.
+  streakSince?: string;
 }
 
 // The hand-entered portion of a habit's progress for one day (count habits,

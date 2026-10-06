@@ -6,6 +6,11 @@ A day's progress is the hand-entered part (``habit_entries``) plus what that
 day's closed blocks linked to the habit add (habits.ts's habitAuto): their
 minutes for a 'time' habit, one each for a 'count' habit. Each day is judged
 against the quota it had then (habits.ts's habitTargetOn).
+
+Savers: one a week, Monday-first, from the day the streak was switched on
+(``streakSince``); the unused ones pile up. A day that ends short of its quota
+while a streak is running spends one, and the streak is kept rather than
+broken. Before ``streakSince`` there were none, so a miss there breaks it.
 """
 
 import json
@@ -15,6 +20,9 @@ from datetime import date, timedelta
 # How many hours before midnight the warnings go out.
 WARN_HOURS = (3, 2, 1)
 _TITLE_MAX = 120
+# Habits that had the streak on before savers existed collect them from the
+# week savers first came (streak.ts's STREAK_SAVERS_FROM).
+SAVERS_FROM = '2026-10-05'
 
 
 def target_on(habit: dict, day: str) -> float:
@@ -58,14 +66,39 @@ def is_met(habit: dict, day: str, totals: dict[str, float]) -> bool:
     return target > 0 and totals.get(day, 0) >= target
 
 
-def streak_before(habit: dict, day: str, totals: dict[str, float]) -> int:
-    """Days in a row the quota was met, counting back from the day before ``day``."""
-    count = 0
-    current = date.fromisoformat(day) - timedelta(days=1)
+def _gains_saver(day: date, since: date) -> bool:
+    return day == since or day.weekday() == 0
+
+
+def streak_before(habit: dict, day: str, totals: dict[str, float]) -> tuple[int, int]:
+    """The streak carried into ``day`` — days in a row the quota was met up to
+    the day before, through the days a saver covered — and the savers in hand
+    on ``day``, the one it brings included."""
+    today = date.fromisoformat(day)
+    since = date.fromisoformat(habit.get('streakSince') or SAVERS_FROM)
+    first = min(since, today)
+    # Up to the first day with savers the run is counted back plainly…
+    run = 0
+    current = first - timedelta(days=1)
     while is_met(habit, str(current), totals):
-        count += 1
+        run += 1
         current -= timedelta(days=1)
-    return count
+    # …and from there walked forward, savers arriving and spent day by day.
+    savers = 0
+    current = first
+    while current < today:
+        if _gains_saver(current, since):
+            savers += 1
+        if is_met(habit, str(current), totals):
+            run += 1
+        elif run > 0 and savers > 0:
+            savers -= 1
+        else:
+            run = 0
+        current += timedelta(days=1)
+    if today >= since and _gains_saver(today, since):
+        savers += 1
+    return run, savers
 
 
 def plural_days(n: int) -> str:
@@ -81,10 +114,12 @@ def _number(n: float) -> str:
     return str(int(rounded)) if rounded == int(rounded) else str(rounded)
 
 
-def warning_text(habit: dict, streak: int, left: float, hours: int) -> str:
+def warning_text(habit: dict, streak: int, left: float, hours: int, savers: int = 0) -> str:
     """The body of a warning — the same words as streak.ts's streakWarningText."""
     unit = habit.get('unit') or ('мин' if habit.get('format') == 'time' else '')
     rest = f"осталось {_number(left)}{' ' + unit if unit else ''}"
+    if streak > 0 and savers > 0:
+        return f'Серию {streak} {plural_days(streak)} через {hours} ч спасёт заморозка — {rest}'
     if streak > 0:
         return f'Серия {streak} {plural_days(streak)} сгорит через {hours} ч — {rest}'
     return f'До конца дня {hours} ч — {rest}. Начни серию!'
@@ -122,11 +157,12 @@ def warning_events(conn: sqlite3.Connection, user_id: int, moments: list[tuple[s
             if is_met(habit, day, totals):
                 continue
             left = max(0, target_on(habit, day) - totals.get(day, 0))
+            run, savers = streak_before(habit, day, totals)
             title = f"🔥 {habit.get('emoji') or ''} {habit.get('name') or 'Привычка'}"
             events.append({
                 # One per habit and day: a later warning replaces the earlier one.
                 'tag': f"streak:{habit['id']}:{day}",
                 'title': ' '.join(title.split())[:_TITLE_MAX],
-                'body': warning_text(habit, streak_before(habit, day, totals), left, hours),
+                'body': warning_text(habit, run, left, hours, savers),
             })
     return events

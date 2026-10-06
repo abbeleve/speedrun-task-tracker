@@ -21,7 +21,13 @@ def test_habits_empty_and_upsert(client, auth_headers):
     # has applied from the beginning, and one without a chart gets the dots
     # and no streak.
     assert client.get('/api/habits', headers=auth_headers).json() == [
-        {**HABIT, 'targets': [{'since': '', 'target': 10}], 'chart': 'dots', 'streak': False}
+        {
+            **HABIT,
+            'targets': [{'since': '', 'target': 10}],
+            'chart': 'dots',
+            'streak': False,
+            'streakSince': '',
+        }
     ]
 
 
@@ -53,6 +59,15 @@ def test_habit_streak_switch_round_trips(client, auth_headers):
     assert client.get('/api/habits', headers=auth_headers).json()[0]['streak'] is True
     resp = client.put('/api/habits/h1', headers=auth_headers, json={**HABIT, 'streak': 'yes'})
     assert resp.status_code == 422
+
+
+def test_habit_streak_since_round_trips_and_must_be_a_real_day(client, auth_headers):
+    body = {**HABIT, 'streak': True, 'streakSince': '2026-10-06'}
+    client.put('/api/habits/h1', headers=auth_headers, json=body)
+    assert client.get('/api/habits', headers=auth_headers).json()[0]['streakSince'] == '2026-10-06'
+    for bad in ('2026-02-30', '20261006', '2026-W41-2'):
+        resp = client.put('/api/habits/h1', headers=auth_headers, json={**body, 'streakSince': bad})
+        assert resp.status_code == 422, bad
 
 
 def test_habit_update_keeps_one_row(client, auth_headers):

@@ -70,7 +70,7 @@ function StreakAlerts({ habits, entries, tasks, date, stage, onOpen }: StreakAle
             <strong>
               {habit.emoji} {habit.name}
             </strong>
-            <span>{streakWarningText(habit, streak.days, streak.left, stage)}</span>
+            <span>{streakWarningText(habit, streak.days, streak.left, stage, streak.savers)}</span>
           </div>
           <div className="streak-alert-actions">
             <button

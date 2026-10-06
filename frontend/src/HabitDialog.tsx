@@ -8,6 +8,7 @@ import {
 } from './types';
 import { defaultUnit, habitTargets, newHabitId, setHabitTarget } from './habits';
 import { todayKey } from './history';
+import { streakSince } from './streak';
 
 interface HabitDialogProps {
   // The habit being edited, or null to create a new one.
@@ -102,6 +103,15 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
       unit: unit.trim(),
       order: habit?.order ?? nextOrder,
       streak,
+      // Stamped the first time the streak is switched on, and kept after:
+      // switching it off and on again does not throw the savers away. A
+      // habit that had the streak before savers existed is stamped with the
+      // day it has been counting them from all along.
+      ...(habit?.streak || habit?.streakSince
+        ? { streakSince: streakSince(habit) }
+        : streak
+          ? { streakSince: today }
+          : {}),
       // Picked on the card, not here — editing a habit must not reset it.
       ...(habit?.chart ? { chart: habit.chart } : {}),
     });
@@ -301,7 +311,8 @@ function HabitDialog({ habit, nextOrder = 0, onSave, onDelete, onClose }: HabitD
             </label>
             <span className="cal-repeat-hint">
               Огонь на карточке считает дни подряд с выполненной целью. За 3, 2 и 1 час до полуночи
-              напомню, если цель ещё не выполнена
+              напомню, если цель ещё не выполнена. Каждую неделю — заморозка: если день закончится без
+              нормы, она сама сохранит серию. Неиспользованные копятся
             </span>
           </div>
         </div>

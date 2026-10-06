@@ -483,6 +483,100 @@
   }
 }
 
+/* ── Savers (заморозки) ─────────────────────────────────────────────
+   Ice is the theme's cyan, whatever the habit's own colour. */
+
+.streak-badge,
+.habit-card-history-cell.frozen {
+  --ice: var(--accent-cyan, #00b8e6);
+}
+
+.streak-badge-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.streak-savers {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px 1px 4px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ice) 32%, transparent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ice);
+  background: color-mix(in srgb, var(--ice) 13%, transparent);
+}
+
+.streak-savers svg {
+  flex: none;
+}
+
+.streak-savers.is-empty {
+  border-color: color-mix(in srgb, var(--text-dim) 30%, transparent);
+  color: var(--text-dim);
+  background: transparent;
+  opacity: 0.75;
+}
+
+/* One is about to be spent on tonight. */
+.streak-savers.is-armed {
+  animation: saver-armed 1.4s ease-in-out infinite;
+}
+
+@keyframes saver-armed {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 9px 1px color-mix(in srgb, var(--ice) 70%, transparent); }
+}
+
+/* Frozen — yesterday was missed and a saver spent on it — or about to be:
+   the fire is iced over. */
+.streak-badge:is(.is-frozen, .is-covered) .streak-flame {
+  --flame: color-mix(in srgb, var(--ice) 55%, var(--text-dim));
+}
+
+.streak-badge.is-frozen .streak-flame-svg {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ice) 55%, transparent));
+}
+
+.streak-badge.is-covered .streak-flame-svg {
+  animation-name: flame-frost;
+}
+
+@keyframes flame-frost {
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  50% { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--ice) 85%, transparent)); }
+}
+
+.streak-badge.is-covered .streak-badge-left {
+  color: var(--ice);
+  background: color-mix(in srgb, var(--ice) 15%, transparent);
+}
+
+/* A day a saver covered, in the card's 7-day history. */
+.habit-card-history-cell.frozen {
+  position: relative;
+  border-color: color-mix(in srgb, var(--ice) 45%, var(--border));
+  background: color-mix(in srgb, var(--ice) 14%, var(--bg-secondary));
+}
+
+.habit-card-history-cell.frozen .habit-card-history-day {
+  color: var(--ice);
+}
+
+.habit-card-history-frost {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--ice);
+}
+
 /* ── Habit dialog: the streak switch ────────────────────────────── */
 
 .hab-streak {
@@ -496,6 +590,7 @@
   .streak-badge.is-risk .streak-flame-svg,
   .streak-alert .streak-flame-svg,
   .streak-badge-fire.is-popping,
+  .streak-savers.is-armed,
   .streak-alert {
     animation: none;
   }

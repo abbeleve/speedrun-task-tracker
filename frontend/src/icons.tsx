@@ -318,3 +318,12 @@ export const IconShuffle = (p: IconProps) => (
     <path d="m18 4 3 3-3 3m0 4 3 3-3 3" />
   </Icon>
 );
+
+// A streak saver (заморозка).
+export const IconSnowflake = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 2.5v19M3.8 7.25l16.4 9.5M3.8 16.75l16.4-9.5" />
+    <path d="M9.5 4 12 6.5 14.5 4M17.7 5.8l-.9 3.45 3.4.95M20.2 13.8l-3.4.95.9 3.45" />
+    <path d="M14.5 20 12 17.5 9.5 20M6.3 18.2l.9-3.45-3.4-.95M3.8 10.2l3.4-.95-.9-3.45" />
+  </Icon>
+);

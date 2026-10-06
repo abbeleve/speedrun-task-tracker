@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, field_validator
 
 
 class RegisterIn(BaseModel):
@@ -194,6 +194,8 @@ class HabitTargetIn(BaseModel):
 # 'dots' (a dotted arc) or 'gauge' (radial capsules over two progress bars).
 # `streak` turns on the streak — days in a row the quota was met — with its
 # fire on the card and the pushes when the day runs low (see streak.py).
+# `streakSince` is the local day it was first switched on, which its weekly
+# savers count from; empty on habits from before savers.
 class HabitIn(BaseModel):
     id: str
     name: str
@@ -206,6 +208,15 @@ class HabitIn(BaseModel):
     order: int = 0
     chart: str = Field(default='dots', pattern=r'^(dots|gauge)$')
     streak: StrictBool = False
+    streakSince: str = Field(default='', pattern=r'^(\d{4}-\d{2}-\d{2})?$')
+
+    @field_validator('streakSince')
+    @classmethod
+    def _real_day(cls, value: str) -> str:
+        # Parsed by streak.py, so a well-formed but impossible day is refused.
+        if value:
+            date.fromisoformat(value)
+        return value
 
 
 # Per-user display choices. Every field is optional: a PUT carries only the

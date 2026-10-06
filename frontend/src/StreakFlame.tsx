@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { HabitStreak } from './streak';
-import { formatAmount, pluralDays } from './streak';
+import { formatAmount, pluralDays, pluralSavers } from './streak';
+import { IconSnowflake } from './icons';
 import './streak.css';
 
 // The streak's fire, in the habit's own colour: three tongues of flame — a
@@ -68,6 +69,8 @@ interface StreakBadgeProps {
   lit: boolean;
   warnHours: number | null; // 3 / 2 / 1 hours of the day left, or null
   unit: string;
+  // Yesterday ended short of the quota and a saver kept the streak alive.
+  savedYesterday: boolean;
   // Bumped when a celebration lands, to pop the badge.
   pop: number;
   flameRef: RefObject<HTMLSpanElement | null>;
@@ -76,30 +79,85 @@ interface StreakBadgeProps {
 // The little fire in the corner of a habit card's chart, with the streak's
 // length in it. Burning once today's quota is met; a cold, still shape until
 // then — a streak carried from yesterday keeps its number, a broken one reads
-// 0 — and with three hours or less to midnight it starts to smoulder red and
-// says how many hours are left.
-export function StreakBadge({ streak, days, lit, warnHours, unit, pop, flameRef }: StreakBadgeProps) {
+// 0 — and iced over while it is frozen: yesterday was missed and a saver
+// spent on it. With three hours or less to midnight it starts to smoulder and
+// says how many hours are left: red when the streak would burn, icy blue when
+// a saver will step in. Under the fire, the savers in hand.
+export function StreakBadge({
+  streak,
+  days,
+  lit,
+  warnHours,
+  unit,
+  savedYesterday,
+  pop,
+  flameRef,
+}: StreakBadgeProps) {
   const risk = !lit && warnHours !== null;
-  const state = lit ? 'is-lit' : risk ? 'is-risk' : days > 0 ? 'is-waiting' : 'is-cold';
+  // A saver will be spent tonight unless the quota is met first.
+  const covered = risk && days > 0 && streak.savers > 0;
+  const state = lit
+    ? 'is-lit'
+    : risk
+      ? `is-risk${covered ? ' is-covered' : ''}`
+      : savedYesterday && days > 0
+        ? 'is-frozen'
+        : days > 0
+          ? 'is-waiting'
+          : 'is-cold';
   const left = `${formatAmount(streak.left)}${unit ? ` ${unit}` : ''}`;
   const run = `${days} ${pluralDays(days)} подряд`;
   const title = lit
     ? `Серия: ${run} — сегодня норма выполнена`
-    : risk
-      ? days > 0
-        ? `Серия ${days} ${pluralDays(days)} сгорит через ${warnHours} ч — осталось ${left}`
-        : `До конца дня ${warnHours} ч — осталось ${left}, чтобы зажечь серию`
-      : days > 0
-        ? `Серия: ${run} — выполни норму сегодня, чтобы продлить`
-        : 'Серии пока нет — выполни норму сегодня, чтобы зажечь огонь';
+    : covered
+      ? `Серию ${days} ${pluralDays(days)} через ${warnHours} ч спасёт заморозка — осталось ${left}`
+      : risk
+        ? days > 0
+          ? `Серия ${days} ${pluralDays(days)} сгорит через ${warnHours} ч — осталось ${left}`
+          : `До конца дня ${warnHours} ч — осталось ${left}, чтобы зажечь серию`
+        : savedYesterday && days > 0
+          ? `Серия: ${run} — вчера её спасла заморозка. Выполни норму сегодня, чтобы продлить`
+          : days > 0
+            ? `Серия: ${run} — выполни норму сегодня, чтобы продлить`
+            : 'Серии пока нет — выполни норму сегодня, чтобы зажечь огонь';
   return (
-    <span className={`streak-badge ${state}`} role="img" aria-label={title} title={title}>
-      <span key={pop} ref={flameRef} className={`streak-badge-fire${pop > 0 ? ' is-popping' : ''}`}>
-        <StreakFlame lit={lit}>
-          <span className={numClass(days)}>{days}</span>
-        </StreakFlame>
+    <span className={`streak-badge ${state}`}>
+      <span className="streak-badge-main" role="img" aria-label={title} title={title}>
+        <span key={pop} ref={flameRef} className={`streak-badge-fire${pop > 0 ? ' is-popping' : ''}`}>
+          <StreakFlame lit={lit}>
+            <span className={numClass(days)}>{days}</span>
+          </StreakFlame>
+        </span>
+        {risk && <span className="streak-badge-left">{warnHours} ч</span>}
       </span>
-      {risk && <span className="streak-badge-left">{warnHours} ч</span>}
+      <StreakSavers savers={streak.savers} armed={covered} savedYesterday={savedYesterday} />
+    </span>
+  );
+}
+
+// The savers in hand: a snowflake and a count, dim at zero. Armed — glowing —
+// when one is about to be spent on tonight.
+function StreakSavers({ savers, armed, savedYesterday }: {
+  savers: number;
+  armed: boolean;
+  savedYesterday: boolean;
+}) {
+  const how =
+    'Если день закончится без нормы, заморозка сама сохранит серию. Новая — каждый понедельник, неиспользованные копятся';
+  const title = `${savedYesterday ? 'Вчера серию спасла заморозка. ' : ''}${
+    savers > 0
+      ? `${savers} ${pluralSavers(savers)} в запасе. ${how}`
+      : 'Заморозок нет — новая придёт в понедельник. Без неё пропущенный день сожжёт серию'
+  }`;
+  return (
+    <span
+      className={`streak-savers${savers === 0 ? ' is-empty' : ''}${armed ? ' is-armed' : ''}`}
+      role="img"
+      aria-label={title}
+      title={title}
+    >
+      <IconSnowflake size={11} strokeWidth={2.25} />
+      <span className="streak-savers-num">{savers}</span>
     </span>
   );
 }
