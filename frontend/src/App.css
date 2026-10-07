@@ -5089,21 +5089,32 @@
    sized like the ellipse, then one box per motion of the living backdrop
    (backdropFlow.ts): sideways, up and down, and the shape, which carries the
    gradient. Still, they lie exactly where a shuffled seed or the theme's own
-   layout puts them (--dash-glow-N-x / -y, set by paletteStyle). */
+   layout puts them (--dash-glow-N-x / -y, set by paletteStyle). The layer is
+   the container its glows measure themselves against. */
 .dash-backdrop {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  container-type: size;
 }
 
+/* A glow's centre follows the screen's proportions, its shape does not: the
+   radii (--glow-rx / -ry, in percent) are read off a 16:9 screen with the
+   same average side as this one. Taken off the screen itself, a tall window —
+   a 9:16 monitor, a phone — would squeeze every glow into a thin upright
+   oval; this way a 16:9 screen looks as it always did and any other keeps
+   the same soft, wide glows. */
 .dash-glow {
+  --glow-side: calc((100cqw + 100cqh) / 2);
+  --glow-ref-w: calc(1.28 * var(--glow-side));
+  --glow-ref-h: calc(0.72 * var(--glow-side));
   position: absolute;
   left: var(--glow-x);
   top: var(--glow-y);
-  width: calc(2 * var(--glow-rx));
-  height: calc(2 * var(--glow-ry));
+  width: calc(2 * var(--glow-rx) / 100 * var(--glow-ref-w));
+  height: calc(2 * var(--glow-ry) / 100 * var(--glow-ref-h));
   translate: -50% -50%;
 }
 
@@ -5120,8 +5131,8 @@
 .dash-glow--1 {
   --glow-x: var(--dash-glow-1-x, 50%);
   --glow-y: var(--dash-glow-1-y, 22%);
-  --glow-rx: 52%;
-  --glow-ry: 44%;
+  --glow-rx: 52;
+  --glow-ry: 44;
   --glow-fade: 72%;
   --glow-color: color-mix(in srgb, var(--dash-base) 30%, transparent);
 }
@@ -5129,53 +5140,53 @@
 .dash-glow--2 {
   --glow-x: var(--dash-glow-2-x, 92%);
   --glow-y: var(--dash-glow-2-y, 8%);
-  --glow-rx: 34%;
-  --glow-ry: 40%;
+  --glow-rx: 34;
+  --glow-ry: 40;
   --glow-color: color-mix(in srgb, var(--dash-base) 16%, transparent);
 }
 
 .dash-glow--3 {
   --glow-x: var(--dash-glow-3-x, 4%);
   --glow-y: var(--dash-glow-3-y, 90%);
-  --glow-rx: 40%;
-  --glow-ry: 46%;
+  --glow-rx: 40;
+  --glow-ry: 46;
   --glow-color: color-mix(in srgb, var(--dash-base) 16%, transparent);
 }
 
 .dash-glow--4 {
   --glow-x: var(--dash-glow-4-x, 74%);
   --glow-y: var(--dash-glow-4-y, 96%);
-  --glow-rx: 30%;
-  --glow-ry: 34%;
+  --glow-rx: 30;
+  --glow-ry: 34;
   --glow-color: color-mix(in srgb, var(--dash-base) 14%, transparent);
 }
 
 [data-theme='light'] .dash-glow--1 {
   --glow-y: var(--dash-glow-1-y, 24%);
-  --glow-rx: 56%;
-  --glow-ry: 46%;
+  --glow-rx: 56;
+  --glow-ry: 46;
   --glow-color: color-mix(in srgb, var(--dash-base) 42%, transparent);
 }
 
 [data-theme='light'] .dash-glow--2 {
   --glow-x: var(--dash-glow-2-x, 94%);
   --glow-y: var(--dash-glow-2-y, 6%);
-  --glow-rx: 36%;
-  --glow-ry: 42%;
+  --glow-rx: 36;
+  --glow-ry: 42;
   --glow-color: color-mix(in srgb, var(--dash-base) 32%, transparent);
 }
 
 [data-theme='light'] .dash-glow--3 {
   --glow-x: var(--dash-glow-3-x, 3%);
-  --glow-rx: 42%;
-  --glow-ry: 48%;
+  --glow-rx: 42;
+  --glow-ry: 48;
   --glow-color: color-mix(in srgb, var(--dash-base) 32%, transparent);
 }
 
 [data-theme='light'] .dash-glow--4 {
   --glow-x: var(--dash-glow-4-x, 72%);
   --glow-y: var(--dash-glow-4-y, 98%);
-  --glow-ry: 36%;
+  --glow-ry: 36;
   --glow-color: color-mix(in srgb, var(--dash-base) 28%, transparent);
 }
 
