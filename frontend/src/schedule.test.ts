@@ -11,6 +11,7 @@ import {
   firstGapAfterCurrent,
   isContinuous,
   layoutTasks,
+  lengthToEnd,
   mergeSuggestions,
   migrateDayTasks,
   reorderPatches,
@@ -432,6 +433,15 @@ describe('shifting a sequence', () => {
     expect(second).toMatchObject({ topMin: 0, bottomMin: hm(1, 30), startsHere: false });
   });
 
+  it('gives both pieces of a block over midnight the whole task', () => {
+    // Each piece draws its own share of the day, but carries the task itself,
+    // whose times and length are what the block's label reads.
+    const spilling = task({ start: hm(23), plannedTime: 2 * 3600 });
+    const pieces = [...daySegments([spilling], DAY), ...daySegments([spilling], '2026-03-11')];
+    expect(pieces.map((p) => p.bottomMin - p.topMin)).toEqual([60, 60]);
+    expect(pieces.every((p) => p.task.plannedTime === 2 * 3600)).toBe(true);
+  });
+
   it('keeps the gaps inside the sequence it moves', () => {
     const a = task({ start: hm(9), plannedTime: 3600 });
     const b = task({ start: hm(10, 30), plannedTime: 3600 });
@@ -518,6 +528,38 @@ describe('layoutTasks', () => {
     ]);
     expect(places.map((p) => p.col)).toEqual([0, 1, 0]);
     expect(places.every((p) => p.cols === 2)).toBe(true);
+  });
+});
+
+describe('dragging the end of a block', () => {
+  const at = (day: string, min: number) => dayStartMs(day) + min * 60_000;
+  const NEXT = '2026-03-11';
+
+  it('follows the end within the day, snapped', () => {
+    const block = task({ start: hm(10), plannedTime: 3600 });
+    expect(lengthToEnd(block, at(DAY, hm(11, 32)), 5, 10)).toBe(90);
+  });
+
+  it('pulls the end past midnight into the next day', () => {
+    const late = task({ start: hm(23), plannedTime: 3600 }); // 23:00–00:00
+    expect(lengthToEnd(late, at(NEXT, hm(1)), 5, 10)).toBe(120);
+  });
+
+  it('resizes the piece on the next day without collapsing the block', () => {
+    // 23:00–01:00, its end dragged on the next day's column to 01:30. Read as
+    // a minute of the day alone (90 − 1380) it used to shrink to the minimum.
+    const spilling = task({ start: hm(23), plannedTime: 2 * 3600 });
+    expect(lengthToEnd(spilling, at(NEXT, hm(1, 30)), 5, 10)).toBe(150);
+  });
+
+  it('pulls the end back before midnight', () => {
+    const spilling = task({ start: hm(23), plannedTime: 2 * 3600 });
+    expect(lengthToEnd(spilling, at(DAY, hm(23, 40)), 5, 10)).toBe(40);
+  });
+
+  it('never makes a block shorter than the minimum', () => {
+    const block = task({ start: hm(10), plannedTime: 3600 });
+    expect(lengthToEnd(block, at(DAY, hm(9)), 5, 10)).toBe(10);
   });
 });
 

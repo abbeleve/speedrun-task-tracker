@@ -15,7 +15,7 @@ import {
   resolveTaskEmoji,
 } from './types';
 import { INCREASING_SERIES, rearmEditedReminder } from './tasks';
-import { DAY_MIN, clampStartMin, isDone, taskEndMs } from './schedule';
+import { DAY_MIN, isDone, taskEndMs } from './schedule';
 import { isPhoneScreen } from './viewport';
 import { loadColorPresets as loadSavedColorPresets, saveColorPresets as saveSavedColorPresets } from './api';
 import type { ColorPreset } from './colorPresets';
@@ -452,7 +452,7 @@ function TaskDialog({
           ? { status: task.status === 'done' ? 'in-progress' : task.status, finishedAt: null, completedAt: null }
           : null),
       ...(placing
-        ? { status: 'in-progress', start: clampStartMin(fromTimeInput(time, DEFAULT_START_MIN), plannedTime) }
+        ? { status: 'in-progress', start: fromTimeInput(time, DEFAULT_START_MIN) }
         : null),
     };
     onSave(rearmEditedReminder(task, saved));

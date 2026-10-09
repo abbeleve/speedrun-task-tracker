@@ -589,6 +589,8 @@ export interface DaySegment {
   task: Task;
   topMin: number; // minutes from midnight of the rendered day
   bottomMin: number;
+  // The block's own times and length are those of `task`, the same in every
+  // day it touches; topMin/bottomMin are only the share this day draws.
   startsHere: boolean; // false when the block began on an earlier day
   endsHere: boolean; // false when it runs past midnight
   col: number;
@@ -658,6 +660,16 @@ export function daySegments(tasks: Task[], day: string, minDurationMin = 0): Day
   }
   closeCluster();
   return segments;
+}
+
+// How long a block becomes, in minutes, when its end is dragged to `endMs`.
+// The end is a moment rather than a minute of whichever day it is dragged
+// over, so it can be pulled past midnight into the next day, and the piece of
+// a block that already crosses midnight is resized from the next day without
+// collapsing. Snapped to `snapMin`, and never shorter than `minMin`.
+export function lengthToEnd(task: Task, endMs: number, snapMin: number, minMin: number): number {
+  const lengthMin = (endMs - taskStartMs(task)) / MIN_MS;
+  return Math.max(minMin, Math.round(lengthMin / snapMin) * snapMin);
 }
 
 // Where a task would land if it were dropped at `startMin` on `day`, keeping

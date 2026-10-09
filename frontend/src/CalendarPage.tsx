@@ -27,6 +27,7 @@ import {
   isReminder,
   isScheduled,
   isSession,
+  lengthToEnd,
   mergeSuggestions,
   newSessionId,
   shiftPatches,
@@ -154,6 +155,12 @@ function hhmm(minFromMidnight: number): string {
 
 const wallTime = clockTime;
 const dur = compactDur;
+
+// A block's whole slot, e.g. 23:00–01:00. Both pieces of a block that runs
+// over midnight read this, not just the share of it their own day draws.
+function slotTimes(task: Task): string {
+  return `${wallTime(taskStartMs(task))}–${wallTime(taskEndMs(task))}`;
+}
 
 function monthCells(day: string): string[] {
   const [y, m] = day.split('-').map(Number);
@@ -1070,14 +1077,22 @@ function CalendarPage({
   // Every gesture (drawing, moving, resizing, the lasso, zooming) reads the
   // pointer through this one mapping, so they all work the same way in the
   // timeline: there the row gives the day and the distance across the minute.
+  // The minute is kept inside the day, unless `overflow` lets a pointer pulled
+  // past either end of the grid read on into the next or the previous day —
+  // how an edge is dragged over midnight in a single day's view.
   const slotAt = useCallback(
-    (clientX: number, clientY: number): { day: string; dayIdx: number; min: number } | null => {
+    (
+      clientX: number,
+      clientY: number,
+      overflow = false
+    ): { day: string; dayIdx: number; min: number } | null => {
       const el = columnsRef.current;
       if (!el || visibleDays.length === 0) return null;
       const rect = el.getBoundingClientRect();
+      const inDay = (min: number) => (overflow ? min : Math.max(0, Math.min(DAY_MIN, min)));
       if (timeline) {
         const idx = rowAt(clientY - rect.top, timeline.rows);
-        const min = Math.max(0, Math.min(DAY_MIN, (clientX - rect.left) / pxPerMin));
+        const min = inDay((clientX - rect.left) / pxPerMin);
         return { day: visibleDays[idx], dayIdx: idx, min };
       }
       const colWidth = rect.width / visibleDays.length;
@@ -1085,7 +1100,7 @@ function CalendarPage({
         0,
         Math.min(visibleDays.length - 1, Math.floor((clientX - rect.left) / colWidth))
       );
-      const min = Math.max(0, Math.min(DAY_MIN, (clientY - rect.top) / pxPerMin));
+      const min = inDay((clientY - rect.top) / pxPerMin);
       return { day: visibleDays[idx], dayIdx: idx, min };
     },
     [visibleDays, pxPerMin, timeline]
@@ -1329,7 +1344,7 @@ function CalendarPage({
       if (g.kind === 'lasso' && g.pending && onTheSpot(g.pending.x, g.pending.y, e.clientX, e.clientY)) {
         return;
       }
-      const slot = slotAt(e.clientX, e.clientY);
+      const slot = slotAt(e.clientX, e.clientY, g.kind === 'resize' || g.kind === 'resize-start');
       if (!slot) return;
       if (g.kind === 'move') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
@@ -1361,8 +1376,10 @@ function CalendarPage({
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         setGestureState({ ...g, deltaMs: snapMs(cursorMs - g.anchorMs), moved: true });
       } else if (g.kind === 'resize') {
-        const lengthMin = Math.max(MIN_LENGTH_MIN, snap(slot.min - (g.task.start ?? 0)));
-        setGestureState({ ...g, lengthMin });
+        // The end goes where the pointer is on the day it is over, so it
+        // crosses midnight onto the next day's column (or row) like a move.
+        const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
+        setGestureState({ ...g, lengthMin: lengthToEnd(g.task, cursorMs, SNAP_MIN, MIN_LENGTH_MIN) });
       } else if (g.kind === 'resize-start') {
         const cursorMs = dayStartMs(slot.day) + slot.min * MIN_MS;
         const startMs = Math.min(snapMs(cursorMs), g.endMs - MIN_LENGTH_MIN * MIN_MS);
@@ -1698,7 +1715,8 @@ function CalendarPage({
     [slotAt, setGestureState]
   );
 
-  // Dropping a backlog card on the grid gives it a slot.
+  // Dropping a backlog card on the grid gives it a slot where it was dropped.
+  // One dropped late runs on over midnight, as a moved block does.
   const dropFromBacklog = useCallback(
     (e: React.DragEvent, day: string) => {
       e.preventDefault();
@@ -1708,8 +1726,7 @@ function CalendarPage({
       const slot = slotAt(e.clientX, e.clientY);
       if (!slot) return;
       store.patchTask(id, {
-        day,
-        start: clampStartMin(snap(slot.min), task.plannedTime),
+        ...slotAtMs(dayStartMs(day) + snap(slot.min) * MIN_MS),
         status: 'in-progress',
       });
     },
@@ -2106,10 +2123,8 @@ function CalendarPage({
         ? dragChain.chain.tasks.map((t) => t.id)
         : dragMulti
           ? dragMulti.tasks.map((t) => t.id)
-          : g?.kind === 'move'
+          : g?.kind === 'move' || g?.kind === 'resize' || g?.kind === 'resize-start'
             ? [g.task.id]
-            : g?.kind === 'resize-start'
-              ? [g.task.id]
             : []
     );
     if (livePreview) ghostIds.add(livePreview.id);
@@ -2179,6 +2194,15 @@ function CalendarPage({
       }
     } else if (g?.kind === 'move' && !g.toBacklog) {
       pushGhost(g.task.id, g.task, { day: g.day, start: g.startMin }, false);
+    } else if (g?.kind === 'resize') {
+      // Drawn from the gesture like the other edge, so an end pulled past
+      // midnight shows up in the next day too.
+      pushGhost(
+        g.task.id,
+        { ...g.task, plannedTime: g.lengthMin * 60 },
+        { day: g.task.day, start: g.task.start ?? 0 },
+        false
+      );
     } else if (g?.kind === 'resize-start') {
       pushGhost(
         g.task.id,
@@ -2257,9 +2281,9 @@ function CalendarPage({
   };
 
   // One saved block, in a day column or in a timeline row (`across`). Where
-  // it goes and whether its times fit come from `place`, given the length it
-  // is drawn at (live while its end is being dragged); its state, its ✓ and
-  // its edges are the same either way.
+  // it goes and whether its times fit come from `place`, given the length
+  // this day draws of it; its state, its ✓ and its edges are the same either
+  // way. A block being resized is drawn as a ghost instead (see dayLayers).
   const renderBlock = (
     seg: DaySegment,
     day: string,
@@ -2270,11 +2294,9 @@ function CalendarPage({
       compact?: boolean;
     }
   ) => {
-    const g = liveGesture;
     const task = seg.task;
-    const resizing = g?.kind === 'resize' && g.task.id === task.id;
     const topMin = seg.topMin;
-    const lengthMin = resizing ? g.lengthMin : seg.bottomMin - seg.topMin;
+    const lengthMin = seg.bottomMin - seg.topMin;
     const { style, showMeta, compact } = place(lengthMin);
     const tall = !across && typeof style.height === 'number' && style.height >= TALL_BLOCK_PX;
     const done = isDone(task);
@@ -2319,7 +2341,6 @@ function CalendarPage({
           task.pinned ? 'pinned' : '',
           taskColorAnimationClass(task.colorAnimation),
           selectedIds.has(task.id) ? 'selected' : '',
-          resizing ? 'dragging' : '',
           !seg.startsHere ? (across ? 'cont-start' : 'cont-top') : '',
           !seg.endsHere ? (across ? 'cont-end' : 'cont-bottom') : '',
         ]
@@ -2361,13 +2382,13 @@ function CalendarPage({
         </div>
         {showMeta && (
           <div className="cal-block-meta">
-            <span>
-              {hhmm(seg.topMin)}–{hhmm(seg.topMin + lengthMin)}
-            </span>
+            <span>{slotTimes(task)}</span>
             {!compact && deadlineBadge(task, false)}
-            <strong className="cal-block-duration">{dur(lengthMin * 60)}</strong>
+            <strong className="cal-block-duration">{dur(task.plannedTime)}</strong>
           </div>
         )}
+        {/* Each edge is where the block really starts or ends — not the
+            seam where a day cuts a block that runs over midnight. */}
         {seg.startsHere && !task.pinned && (
           <div
             className={`cal-block-resize ${across ? 'cal-block-resize--start' : 'cal-block-resize--top'}`}
@@ -2375,11 +2396,13 @@ function CalendarPage({
             title="Потянуть — изменить начало и длительность"
           />
         )}
-        <div
-          className={`cal-block-resize ${across ? 'cal-block-resize--end' : 'cal-block-resize--bottom'}`}
-          onPointerDown={(e) => startResize(e, task)}
-          title="Потянуть — изменить длительность"
-        />
+        {seg.endsHere && (
+          <div
+            className={`cal-block-resize ${across ? 'cal-block-resize--end' : 'cal-block-resize--bottom'}`}
+            onPointerDown={(e) => startResize(e, task)}
+            title="Потянуть — изменить длительность"
+          />
+        )}
         {cutMin !== null && (
           <div
             className={[
@@ -2442,10 +2465,8 @@ function CalendarPage({
       </div>
       {showMeta && (
         <div className="cal-block-meta">
-          <span>
-            {hhmm(ghost.topMin)}–{hhmm(ghost.topMin + ghost.lengthMin)}
-          </span>
-          <strong className="cal-block-duration">{dur(ghost.lengthMin * 60)}</strong>
+          <span>{slotTimes(ghost.task)}</span>
+          <strong className="cal-block-duration">{dur(ghost.task.plannedTime)}</strong>
         </div>
       )}
     </div>
@@ -2559,9 +2580,9 @@ function CalendarPage({
                 ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
               onPointerDown={(e) => startMove(e, task)}
-              title={`${task.pinned ? '📌 ' : ''}🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
-                seg.topMin + lengthMin
-              )}${expired ? ' · окно закрыто' : ''} — нажми, чтобы посмотреть`}
+              title={`${task.pinned ? '📌 ' : ''}🔔 ${task.name || 'Напоминание'} · ${slotTimes(task)}${
+                expired ? ' · окно закрыто' : ''
+              } — нажми, чтобы посмотреть`}
             />
           );
         })}
@@ -3008,9 +3029,7 @@ function CalendarPage({
                 bottom: 4 + seg.col * TL_REMINDER_PX,
                 ...taskColorStyle(task.color, task.colorAnimation),
               } as React.CSSProperties}
-              aria-label={`🔔 ${task.name || 'Напоминание'} · ${hhmm(seg.topMin)}–${hhmm(
-                seg.topMin + lengthMin
-              )}${expired ? ' · окно закрыто' : ''}`}
+              aria-label={`🔔 ${task.name || 'Напоминание'} · ${slotTimes(task)}${expired ? ' · окно закрыто' : ''}`}
               onPointerDown={(e) => startMove(e, task)}
               // In the 3-day and week views the day's own cards already
               // describe every rail; a single day has none, so the rail
@@ -3145,7 +3164,7 @@ function CalendarPage({
           <span className="cal-hover-card-name">{task.name || 'Без названия'}</span>
         </div>
         <div className="cal-hover-card-time">
-          {hhmm(task.start ?? 0)}–{wallTime(taskEndMs(task))}
+          {slotTimes(task)}
         </div>
         {task.deadlineId && deadlineById.has(task.deadlineId) && <div className="cal-hover-deadline"><IconFlag size={14} />{deadlineById.get(task.deadlineId)!.name} · {deadlineLabel(deadlineById.get(task.deadlineId)!)}</div>}
         {task.description && (
